@@ -1176,6 +1176,11 @@ try
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
 
+            if (payload.TryGetProperty("keepFreeSpaceProtectionOff", out var keepOff) &&
+                StorageConfigMigration.KeepFreeSpaceProtectionOff(updatedConfig, keepOff.GetString() ?? "",
+                    changesObj.Properties().Where(p => p.Value is Newtonsoft.Json.Linq.JArray).Select(p => p.Name)) is { } migrationError)
+                return Results.BadRequest(new { error = migrationError });
+
             return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr, registry, db, services, renames);
         }
         catch (Exception ex)
@@ -1788,6 +1793,11 @@ try
             var (valid, validationError) = ConfigValidationHelper.ValidateAll(updatedConfig);
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
+
+            if (payload.TryGetProperty("keepFreeSpaceProtectionOff", out var keepOff) &&
+                StorageConfigMigration.KeepFreeSpaceProtectionOff(updatedConfig, keepOff.GetString() ?? "",
+                    changesObj.Properties().Where(p => p.Value is Newtonsoft.Json.Linq.JArray).Select(p => p.Name)) is { } migrationError)
+                return Results.BadRequest(new { error = migrationError });
 
             return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr, registry, db, services, renames);
         }

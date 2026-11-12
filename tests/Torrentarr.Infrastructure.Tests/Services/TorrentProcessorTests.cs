@@ -736,6 +736,8 @@ public sealed class TorrentProcessorTests : IDisposable
         var client = new Mock<ITorrentClient>();
         client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
         client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync([torrent]);
+        client.Setup(c => c.GetTorrentFilesAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Name = "movie.mkv", Priority = 1 }]);
         client.SetupSequence(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false).ReturnsAsync(true);
         var registry = new Mock<ITorrentClientRegistry>();
@@ -764,6 +766,94 @@ public sealed class TorrentProcessorTests : IDisposable
         (await _db.TorrentLibrary.SingleAsync()).AutoDeletePendingAddedOn.Should().BeNull();
         client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>()), Times.Exactly(2));
         import.Verify(s => s.IsImportedAsync(torrent.Hash, category, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ConfirmedImportAutoDelete_WaitsForDeferredExcludedFileCleanupAcrossRestart()
+    {
+        using var directory = new DisposableDownloadDirectory();
+        var allowed = Path.Combine(directory.Path, "movie.mkv");
+        var excluded = Path.Combine(directory.Path, "sample.txt");
+        await File.WriteAllTextAsync(allowed, "movie");
+        await File.WriteAllTextAsync(excluded, "sample");
+        const string instance = "qBit";
+        const string category = "movies";
+        var torrent = new TorrentInfo
+        {
+            Hash = "cleanup-after-import",
+            ClientInstanceId = instance,
+            Category = category,
+            State = "uploading",
+            Progress = 1,
+            IsPrivate = false,
+            SavePath = directory.Path,
+            ContentPath = directory.Path,
+            AddedOn = DateTimeOffset.UtcNow.AddHours(-2).ToUnixTimeSeconds(),
+            CompletionOn = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds()
+        };
+        var config = new TorrentarrConfig();
+        config.QBitInstances[instance] = new()
+        {
+            Maintenance = { PathMappings = [new() { ClientPath = directory.Path, LocalPath = directory.Path }] }
+        };
+        config.ArrInstances["Radarr"] = new()
+        {
+            Category = category,
+            Type = "radarr",
+            Torrent = { AutoDelete = true, FileExtensionAllowlist = [@"\.mkv$"] }
+        };
+        var client = new Mock<ITorrentClient>();
+        client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
+        client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync([torrent]);
+        client.Setup(c => c.GetTorrentFilesAsync(torrent.Hash, It.IsAny<CancellationToken>())).ReturnsAsync(
+            [new() { Name = "movie.mkv", Priority = 1 }, new() { Name = "sample.txt", Priority = 0 }]);
+        client.Setup(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetClient(instance)).Returns(client.Object);
+        var seeding = new Mock<ISeedingService>();
+        seeding.Setup(s => s.EvaluateRemovalAsync(It.IsAny<TorrentInfo>(), TorrentRemovalIntent.SeedingLimit, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new RemovalDecision([]));
+        var import = new Mock<IArrImportService>();
+        import.Setup(s => s.TriggerImportAsync(torrent.Hash, torrent.ContentPath, category, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ImportResult { Success = true });
+        import.Setup(s => s.IsImportedAsync(torrent.Hash, category, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var safeDeletion = new Mock<ISafeDeletionService>();
+        safeDeletion.SetupSequence(s => s.DeleteOwnedFileAsync(instance, torrent.Hash, excluded, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false)
+            .ReturnsAsync(() => { File.Delete(excluded); return true; });
+        TorrentProcessor Processor(ImportPathTracker tracker) => new(NullLogger<TorrentProcessor>.Instance, registry.Object, _db, config,
+            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance), new DatabaseRestartCoordinator(),
+            import.Object, seeding.Object, tracker, safeDeletion: safeDeletion.Object);
+        var method = typeof(TorrentProcessor).GetMethod("ProcessSingleTorrentAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        Task Process(TorrentProcessor processor) => (Task)method.Invoke(processor,
+            [torrent, category, new TorrentProcessingStats(), CancellationToken.None])!;
+        var first = Processor(new ImportPathTracker());
+        await Process(first);
+        File.Delete(allowed);
+        await Process(first);
+        var saved = await _db.TorrentLibrary.SingleAsync();
+        saved.Imported.Should().BeTrue();
+        saved.AutoDeletePendingAddedOn.Should().Be(torrent.AddedOn);
+
+        var restarted = Processor(new ImportPathTracker());
+        await Process(restarted);
+        await Process(restarted);
+        File.Exists(excluded).Should().BeTrue();
+        safeDeletion.Verify(s => s.DeleteOwnedFileAsync(instance, torrent.Hash, excluded, It.IsAny<CancellationToken>()), Times.Once);
+        client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        await Process(Processor(new ImportPathTracker()));
+        File.Exists(excluded).Should().BeFalse();
+        saved.AutoDeletePendingAddedOn.Should().BeNull();
+        client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>()), Times.Once);
+        import.Verify(s => s.TriggerImportAsync(torrent.Hash, torrent.ContentPath, category, It.IsAny<CancellationToken>()), Times.Once);
+        client.Verify(c => c.SetFilePriorityAsync(It.IsAny<string>(), It.IsAny<int[]>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private sealed class DisposableDownloadDirectory : IDisposable
+    {
+        public string Path { get; } = Directory.CreateTempSubdirectory("torrentarr-cleanup-").FullName;
+        public void Dispose() => Directory.Delete(Path, recursive: true);
     }
 
     [Fact]

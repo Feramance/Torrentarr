@@ -142,7 +142,7 @@ public sealed class TransferHistoryTests
     }
 
     [Fact]
-    public async Task Collector_RecordsResponseMinuteWithoutWaitingToPollBehindTimeout()
+    public async Task Collector_PollsHealthyClientsWithoutWaitingBehindTimeout()
     {
         using var connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
@@ -174,7 +174,7 @@ public sealed class TransferHistoryTests
         registry.Setup(r => r.GetClient("slow")).Returns(slow.Object);
         registry.Setup(r => r.GetClient("healthy")).Returns(healthy.Object);
         var clock = new Mock<TimeProvider>();
-        clock.SetupSequence(c => c.GetUtcNow()).Returns(Now.AddSeconds(-1)).Returns(Now);
+        clock.Setup(c => c.GetUtcNow()).Returns(Now);
         var collector = new TransferHistoryCollector(provider.GetRequiredService<IServiceScopeFactory>(), config, registry.Object,
             NullLogger<TransferHistoryCollector>.Instance)
         { Clock = clock.Object };
@@ -188,6 +188,49 @@ public sealed class TransferHistoryTests
         var sample = await check.ServiceProvider.GetRequiredService<TorrentarrDbContext>().TransferSamples.SingleAsync();
         sample.ClientInstance.Should().Be("healthy");
         sample.Minute.Should().Be(Now.ToUnixTimeSeconds() / 60);
+    }
+
+    [Theory]
+    [InlineData(90)]
+    [InlineData(120)]
+    public async Task Collector_SlowScanIntervalsStillFillCompletedBuckets(int interval)
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        using var provider = new ServiceCollection().AddDbContext<TorrentarrDbContext>(o => o.UseSqlite(connection))
+            .BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+        db.Database.EnsureCreated();
+        var config = new TorrentarrConfig();
+        config.TorrentClients["one"] = new() { Host = "fixture", TorrentScanIntervalSeconds = interval };
+        var now = Now;
+        var clock = new Mock<TimeProvider>();
+        clock.Setup(c => c.GetUtcNow()).Returns(() => now);
+        var client = new Mock<ITorrentClient>();
+        client.Setup(c => c.GetTransferInfoAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() =>
+        {
+            now = now.AddSeconds(2);
+            return now < Now.AddMinutes(5).AddSeconds(2) ? new TorrentTransferRecord { DownloadSpeed = 42 } : null;
+        });
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetClient("one")).Returns(client.Object);
+        var collector = new TransferHistoryCollector(provider.GetRequiredService<IServiceScopeFactory>(), config, registry.Object,
+            NullLogger<TransferHistoryCollector>.Instance)
+        { Clock = clock.Object };
+
+        for (var minute = 0; minute < 10; minute++)
+        {
+            now = Now.AddMinutes(minute).AddSeconds(59);
+            await collector.CollectAsync(default);
+        }
+
+        var history = await TransferHistoryApi.QueryAsync(db, ["one"], "24h", Now.AddMinutes(10));
+        var points = history.Series.Single().Points;
+        points[^2].Samples.Should().Be(5);
+        points[^2].DownloadRate.Should().Be(42);
+        points[^1].Samples.Should().Be(0);
+        points[^1].DownloadRate.Should().BeNull();
     }
 
     [Fact]

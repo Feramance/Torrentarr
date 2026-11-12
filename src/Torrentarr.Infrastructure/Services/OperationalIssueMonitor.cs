@@ -39,7 +39,10 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
             var state = reloader.GetStatus();
             if (state.State is "error" or "applied") await Observe(new("config.apply", "system", "Configuration could not be applied", $"File={DiagnosticText.Safe(reloader.ConfigPath)}; accepted revision={state.AcceptedRevision}; state={state.State}; error={DiagnosticText.Safe(state.Error)}; components: {string.Join("; ", state.Components.Select(c => $"{c.Key}: applied={c.Value.AppliedRevision}, error={DiagnosticText.Safe(c.Value.Error)}"))}.", "Open Config and correct the indicated settings in the saved configuration file. Save and verify that all components acknowledge the accepted revision.", Target: "config"), state.State == "error", ct);
         }
-        await InspectConfigurationAsync(services, ct);
+        var disks = services.GetService<IFreeSpaceService>() is { } storage
+            ? await storage.GetFreeSpaceStatsAsync(ct)
+            : [];
+        await InspectConfigurationAsync(services, disks, ct);
         if (services.GetService<IConnectivityService>() is { LastChecked: not null } network)
             await Observe(new("network.internet", "system", "Internet connectivity is unavailable", $"Last connectivity check={network.LastChecked:O}; connected={network.IsConnected}. {network.FailureReason ?? "Client reachability and configured HTTP/TCP probes did not establish connectivity; no further probe detail was supplied."}", "Check the host network, DNS and configured connectivity hosts."), !network.IsConnected, ct);
         if (services.GetService<ITorrentClientRegistry>() is { } clients)
@@ -69,9 +72,8 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
                 var issue = new OperationalIssueReport("worker.lifecycle", "system", "Worker is not making healthy progress", $"Worker={id}; PID={state.ProcessId}; alive={state.IsAlive}; status={state.Status}; last exit={state.LastExitCode}; last failure={state.LastFailure ?? "none recorded"}; restarts={state.RestartCount}; started={state.StartTime:O}; heartbeat={state.LastHeartbeat:O}; config revision={state.ConfigRevision}. Torrent loop={state.Torrent?.Phase ?? "unavailable"}, last success={state.Torrent?.LastSuccess:O}; search loop={state.Search?.Phase ?? "unavailable"}, last success={state.Search?.LastSuccess:O}.", "Check worker logs and connection settings; restart after correcting the cause.", ArrInstance: id, Target: "processes");
                 if (!state.IsAlive) await issues.ReportAsync(issue, ct); else if (healthy) await issues.ResolveAsync(issue, ct);
             }
-        if (services.GetService<IFreeSpaceService>() is { } storage)
-            foreach (var disk in await storage.GetFreeSpaceStatsAsync(ct))
-                await Observe(new("storage.reserve", "system", "Download storage needs attention", $"Client={disk.ClientInstanceId}; path={disk.Path}; free={disk.FreeBytes} bytes; reserve={disk.ThresholdBytes} bytes; total={disk.TotalBytes} bytes; below threshold={disk.BelowThreshold}; inspection error={disk.Error ?? "none"}. Downloads may remain paused until the reserve is restored.", "Restore access to the monitored directory or free space above its configured reserve.", ClientInstance: disk.ClientInstanceId, SubjectType: "storage", SubjectId: disk.Path, Severity: "warning", Target: "config"), disk.Error != null || disk.BelowThreshold, ct);
+        foreach (var disk in disks)
+            await Observe(new("storage.reserve", "system", "Download storage needs attention", $"Client={disk.ClientInstanceId}; path={disk.Path}; free={disk.FreeBytes} bytes; reserve={disk.ThresholdBytes} bytes; total={disk.TotalBytes} bytes; below threshold={disk.BelowThreshold}; inspection error={disk.Error ?? "none"}. Downloads may remain paused until the reserve is restored.", "Restore access to the monitored directory or free space above its configured reserve.", ClientInstance: disk.ClientInstanceId, SubjectType: "storage", SubjectId: disk.Path, Severity: "warning", Target: "config"), disk.Error != null || disk.BelowThreshold, ct);
         if (services.GetService<TorrentAutomationService>() is { } automation)
         {
             var state = automation.GetStatus();
@@ -145,7 +147,7 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
         }
     }
 
-    private async Task InspectConfigurationAsync(IServiceProvider services, CancellationToken ct)
+    private async Task InspectConfigurationAsync(IServiceProvider services, IReadOnlyList<FreeSpaceStats> disks, CancellationToken ct)
     {
         var current = new List<OperationalIssueReport>();
         var validation = ConfigValidationHelper.ValidateAll(config);
@@ -163,11 +165,8 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
                 current.Add(new("config.client", "system", "Torrent client configuration is incomplete",
                     "An enabled torrent client requires a Type, Host and port between 1 and 65535.",
                     "Open Config and complete this client's connection settings, or disable/remove an unused client.", ClientInstance: id, Target: "config"));
-            if (client.Migration?.Notices is { Count: > 0 } notices)
-                current.Add(new("config.migration", "system", "Migrated configuration needs review",
-                    DiagnosticText.Safe(string.Join("; ", notices)),
-                    "Open Config and review this client's migrated DownloadPath, FreeSpace and Maintenance settings. Verify ownership and local mounts before enabling protection. After reviewing and correcting the settings, clear the corresponding Migration.Notices entries in config.toml.",
-                    ClientInstance: id, Severity: "warning", Target: "config"));
+            if (MigrationIssue(id, client, paths, disks) is { } migrationIssue)
+                current.Add(migrationIssue);
             if (client.Maintenance?.PathMappings is not { } mappings) continue;
             var errors = new List<string>();
             if (recycling && mappings.Count == 0 && !string.IsNullOrWhiteSpace(client.Host) && client.Host != "CHANGE_ME")
@@ -193,6 +192,43 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
                 await issues.ResolveAsync(old, ct);
         foreach (var issue in current) await issues.ReportAsync(issue, ct);
         _configurationIssues = current;
+    }
+
+    private static OperationalIssueReport? MigrationIssue(string id, TorrentClientInstanceConfig client,
+        IPathMappingService? paths, IReadOnlyList<FreeSpaceStats> disks)
+    {
+        var notices = client.Migration?.Notices ?? [];
+        var impact = new List<string>();
+        var actions = new List<string>();
+        var freeSpaceNotices = notices.Where(StorageConfigMigration.IsFreeSpaceNotice).ToArray();
+        if (freeSpaceNotices.Length > 0 && (StorageConfigMigration.Validate(client) != null ||
+            !disks.Any(d => d.ClientInstanceId.Equals(id, StringComparison.OrdinalIgnoreCase) && d.Error == null
+                && client.FreeSpace.Any(m => m.Enabled && m.Path == d.Path))))
+        {
+            impact.AddRange(freeSpaceNotices);
+            actions.Add("In Config, enable a free-space monitor with a readable local path, or disable all monitors and choose Keep free-space protection off.");
+        }
+        if (notices.Contains(StorageConfigMigration.DownloadPathNotice))
+        {
+            var localPath = client.Maintenance.PathMappings.Count == 0
+                ? StorageConfigMigration.LocalDownloadPath(client)
+                : client.DownloadPath is { Length: > 0 } downloadPath
+                    ? paths?.MapToLocal(downloadPath, client.Maintenance.PathMappings)
+                    : null;
+            if (localPath == null || paths == null || paths.ValidateLocalPath(localPath, localPath) != null)
+            {
+                impact.Add(StorageConfigMigration.DownloadPathNotice);
+                actions.Add("In Config, set DownloadPath and verify its local mount and any required path mapping.");
+            }
+        }
+        if (client.Migration?.EnvironmentDownloadPathFailed == true)
+        {
+            impact.Add(StorageConfigMigration.EnvironmentDownloadPathNotice);
+            actions.Add("Correct or remove the legacy COMPLETED_DOWNLOAD_FOLDER environment override and restart Torrentarr.");
+        }
+        return impact.Count == 0 ? null : new("config.migration", "system", "Migrated configuration needs review",
+            DiagnosticText.Safe(string.Join(". ", impact)), string.Join(" ", actions),
+            ClientInstance: id, Severity: "warning", Target: "config");
     }
 
     private Task Observe(OperationalIssueReport issue, bool failed, CancellationToken ct)

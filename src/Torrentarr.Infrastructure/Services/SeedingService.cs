@@ -974,7 +974,8 @@ public class SeedingService : ISeedingService
                 }
 
                 var imported = await _dbContext.TorrentLibrary
-                    .AnyAsync(t => t.Hash == torrent.Hash && t.QbitInstance == instanceName && t.Imported, cancellationToken);
+                    .AnyAsync(t => t.Hash == torrent.Hash && t.QbitInstance == instanceName && t.Imported
+                        && t.AutoDeletePendingAddedOn == null, cancellationToken);
 
                 var current = (await client.GetTorrentsAsync(cancellationToken: cancellationToken))
                     .FirstOrDefault(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase));
@@ -996,7 +997,7 @@ public class SeedingService : ISeedingService
                 }
                 else
                 {
-                    var reason = !imported ? "not imported yet" : current == null ? "torrent absent from fresh inventory"
+                    var reason = !imported ? "import or post-import cleanup is pending" : current == null ? "torrent absent from fresh inventory"
                         : !sameCandidate ? "torrent metadata changed since evaluation" : "final protection clearance denied";
                     _logger.LogInformation("H&R: Keeping torrent [{Name}] - {Reason} | Hash[{Hash}]", torrent.Name, reason, torrent.Hash);
                     result.TorrentsProtected++;
@@ -1088,17 +1089,18 @@ public class SeedingService : ISeedingService
     {
         var client = GetClient(torrent);
         if (client == null || !client.Capabilities.PerTorrentLimits || _config.Revision != _config.LatestRevision) return;
-        if (!HasConfiguredProtection(torrent)) return;
-        var protection = GetProtectionDecisions(torrent, trackers, observe: true);
         var key = MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "native-limits");
         var state = MaintenancePersistence.Read<ProtectionObservation>(_dbContext, key);
-        if (state.AddedOn != 0 && state.AddedOn != torrent.AddedOn) state = new();
+        if (state.AddedOn != torrent.AddedOn) state = new();
+        var configured = HasConfiguredProtection(torrent);
+        if (!configured && !state.PreviousRatioLimit.HasValue) return;
+        var blocked = configured && GetProtectionDecisions(torrent, trackers, observe: true).Any(d => d.State != "eligible");
         var unlimited = torrent.RatioLimit == -1 && torrent.SeedingTimeLimit == -1
             && (torrent.InactiveSeedingTimeLimit == null || torrent.InactiveSeedingTimeLimit == -1);
         async Task<bool> Set(double ratio, long time, long? inactive) => inactive.HasValue
             ? await client.SetShareLimitsAsync(torrent.Hash, ratio, time, inactive.Value, ct)
             : await client.SetShareLimitsAsync(torrent.Hash, ratio, time, ct);
-        if (protection.Any(d => d.State != "eligible") && !unlimited)
+        if (blocked && !unlimited)
         {
             state.AddedOn = torrent.AddedOn;
             state.PreviousRatioLimit = torrent.RatioLimit;
@@ -1114,7 +1116,7 @@ public class SeedingService : ISeedingService
                 if (torrent.InactiveSeedingTimeLimit.HasValue) torrent.InactiveSeedingTimeLimit = -1;
             }
         }
-        else if (protection.All(d => d.State == "eligible") && state.PreviousRatioLimit.HasValue)
+        else if (!blocked && state.PreviousRatioLimit.HasValue)
         {
             // Restore only values still owned by Torrentarr, preserving later user changes.
             if (!unlimited || await Set(state.PreviousRatioLimit.Value, state.PreviousTimeLimit ?? -1, state.PreviousInactiveTimeLimit))

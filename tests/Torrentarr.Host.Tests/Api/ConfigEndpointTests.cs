@@ -46,7 +46,67 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         _factory = factory;
     }
 
+    [Theory]
+    [InlineData("/web/config", "TorrentClient.storage-migration-fixture")]
+    [InlineData("/api/config", "qBit-storage-migration-fixture")]
+    public async Task KeepFreeSpaceProtectionOff_RequiresValidExplicitSave(string endpoint, string section)
+    {
+        using var client = _factory.CreateClientWithApiToken();
+        await AssertStorageMigrationSave(client, _factory.Services.GetRequiredService<ConfigurationLoader>(), endpoint, section);
+    }
 
+    internal static async Task AssertStorageMigrationSave(HttpClient client, ConfigurationLoader loader, string endpoint, string section)
+    {
+        const string pendingMonitor = "no unambiguous local monitor path; free-space protection remains disabled until configured";
+        var id = section.Split('.').Last();
+        var field = $"{section}.FreeSpace";
+        var seed = await client.PostAsJsonAsync(endpoint, new
+        {
+            changes = new Dictionary<string, object>
+            {
+                [$"{section}.Host"] = "fixture",
+                [$"{section}.Disabled"] = true,
+                [$"{section}.Migration.Notices"] = new[] { pendingMonitor, StorageConfigMigration.DownloadPathNotice }
+            }
+        });
+        seed.EnsureSuccessStatusCode();
+        try
+        {
+            var unrelated = await client.PostAsJsonAsync(endpoint, new
+            {
+                changes = new Dictionary<string, object> { [$"{section}.TorrentScanIntervalSeconds"] = 60 }
+            });
+            unrelated.EnsureSuccessStatusCode();
+            loader.Load(false).GetTorrentClient(id)!.Migration.Notices.Should().Contain(pendingMonitor);
+
+            var before = File.ReadAllText(loader.ConfigPath);
+            var invalid = await client.PostAsJsonAsync(endpoint, new
+            {
+                changes = new Dictionary<string, object> { [field] = new[] { new { Path = "relative", Enabled = false, Limit = "10G" } } },
+                keepFreeSpaceProtectionOff = field
+            });
+            invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            File.ReadAllText(loader.ConfigPath).Should().Be(before);
+
+            var saved = await client.PostAsJsonAsync(endpoint, new
+            {
+                changes = new Dictionary<string, object> { [field] = Array.Empty<object>() },
+                keepFreeSpaceProtectionOff = field
+            });
+            saved.EnsureSuccessStatusCode();
+            var updated = loader.Load(false).GetTorrentClient(id)!;
+            updated.FreeSpace.Should().BeEmpty();
+            updated.Migration.Notices.Should().Equal(StorageConfigMigration.DownloadPathNotice);
+        }
+        finally
+        {
+            var cleanup = await client.PostAsJsonAsync(endpoint, new
+            {
+                changes = new Dictionary<string, object?> { [section] = null }
+            });
+            cleanup.EnsureSuccessStatusCode();
+        }
+    }
 
     [Theory]
     [InlineData("/web/config", 10)]

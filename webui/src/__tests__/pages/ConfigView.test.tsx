@@ -120,6 +120,46 @@ async function openSection(name: string): Promise<void> {
   await userEvent.click(button);
 }
 
+it("saves the explicit choice to keep protection off for an unchanged monitor list", async () => {
+  const config = {
+    ...configQbitOnly,
+    qBit: {
+      ...configQbitOnly.qBit,
+      FreeSpace: [],
+      Migration: {
+        Notices: [
+          "no unambiguous local monitor path; free-space protection remains disabled until configured",
+        ],
+      },
+    },
+  };
+  const save = vi.fn();
+  server.use(
+    http.get("/web/config", () => HttpResponse.json(config)),
+    http.post("/web/config", async ({ request }) => {
+      save(await request.json());
+      config.qBit.Migration.Notices = [];
+      return HttpResponse.json(okUpdateResponse);
+    }),
+  );
+  renderConfig();
+  await openSection("qBit");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Keep free-space protection off" }),
+  );
+  await waitFor(() =>
+    expect(save).toHaveBeenCalledWith({
+      changes: { "qBit.FreeSpace": [] },
+      keepFreeSpaceProtectionOff: "qBit.FreeSpace",
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Keep free-space protection off" }),
+    ).not.toBeInTheDocument(),
+  );
+});
+
 it("requires confirmation before changing the draft to disable authentication", async () => {
   server.use(
     http.get("/web/config", () =>

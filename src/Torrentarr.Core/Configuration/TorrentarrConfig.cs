@@ -133,6 +133,9 @@ public class QBitConfig : TorrentClientInstanceConfig
 public class MigrationNoticeDocument
 {
     public List<string> Notices { get; set; } = [];
+
+    [TomlIgnore]
+    public bool EnvironmentDownloadPathFailed { get; set; }
 }
 
 public class StorageConfig

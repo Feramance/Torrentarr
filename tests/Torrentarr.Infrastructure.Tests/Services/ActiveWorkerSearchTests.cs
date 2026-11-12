@@ -493,6 +493,43 @@ public class ActiveWorkerSearchTests
         slow.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
         Mock.Get(harness.Provider.GetRequiredService<ITorrentProcessor>()).Verify(p => p.ProcessTorrentsAsync("movies",
             It.Is<IReadOnlySet<string>>(ids => ids.SetEquals(new[] { "fast" })), It.IsAny<CancellationToken>()), Times.Once);
+
+        var socket = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        socket.Start();
+        var port = ((System.Net.IPEndPoint)socket.LocalEndpoint).Port;
+        socket.Stop();
+        using var listener = new System.Net.HttpListener();
+        instance.URI = $"http://127.0.0.1:{port}";
+        listener.Prefixes.Add(instance.URI + "/");
+        listener.Start();
+        using var testDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var queuePoll = worker.RefreshQueueDepthAsync(testDeadline.Token);
+        var request = await listener.GetContextAsync().WaitAsync(testDeadline.Token);
+        request.Request.Url!.AbsolutePath.Should().Be("/api/v3/queue");
+        request.Request.QueryString["pageSize"].Should().Be("1");
+        await worker.ProcessTorrentsAsync(testDeadline.Token, new HashSet<string> { "fast" })
+            .WaitAsync(TimeSpan.FromSeconds(3));
+        queuePoll.IsCompleted.Should().BeFalse();
+        request.Response.ContentType = "application/json";
+        request.Response.Close(System.Text.Encoding.UTF8.GetBytes("""{"totalRecords": 17}"""), true);
+        await queuePoll.WaitAsync(testDeadline.Token);
+        harness.Metrics.Snapshot("Radarr", false).QueueCount.Should().Be(17);
+
+        var timedOutPoll = worker.RefreshQueueDepthAsync(testDeadline.Token);
+        var held = await listener.GetContextAsync().WaitAsync(testDeadline.Token);
+        harness.Metrics.Snapshot("Radarr", false).QueueCount.Should().Be(17);
+        await timedOutPoll.WaitAsync(TimeSpan.FromSeconds(12));
+        held.Response.Abort();
+        harness.Metrics.Snapshot("Radarr", false).QueueCount.Should().BeNull();
+
+        var oldRevisionPoll = worker.RefreshQueueDepthAsync(testDeadline.Token);
+        var oldRevisionRequest = await listener.GetContextAsync().WaitAsync(testDeadline.Token);
+        config.Apply(config, 1);
+        oldRevisionRequest.Response.ContentType = "application/json";
+        oldRevisionRequest.Response.Close(System.Text.Encoding.UTF8.GetBytes("""{"totalRecords": 99}"""), true);
+        await oldRevisionPoll.WaitAsync(testDeadline.Token);
+        harness.Metrics.Snapshot("Radarr", false).QueueCount.Should().BeNull();
+
         var clock = new TestClock(); worker.Clock = clock;
         instance.RssSyncTimer = 1;
         typeof(ArrWorkerService).GetField("_lastRssSync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!

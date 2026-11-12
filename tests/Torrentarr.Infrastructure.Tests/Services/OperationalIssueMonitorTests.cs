@@ -26,7 +26,10 @@ public sealed class OperationalIssueMonitorTests
         config.TorrentClients["recycling"] = new()
         {
             Host = "localhost",
-            Migration = new() { Notices = ["Legacy monitor ownership is ambiguous; review FreeSpace."] },
+            Migration = new()
+            {
+                Notices = ["legacy monitor ownership is ambiguous; the inherited path is disabled for review", StorageConfigMigration.DownloadPathNotice]
+            },
             Maintenance = new()
             {
                 RecycleBin = new() { Enabled = true },
@@ -34,7 +37,12 @@ public sealed class OperationalIssueMonitorTests
             }
         };
         config.QBitInstances["qBit-other"] = new() { Host = "localhost" };
+        var disks = new List<FreeSpaceStats>();
+        var storage = new Mock<IFreeSpaceService>();
+        storage.Setup(s => s.GetFreeSpaceStatsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(disks);
         await using var services = new ServiceCollection().AddSingleton(db).AddSingleton(config)
+            .AddSingleton(storage.Object)
             .AddSingleton<IPathMappingService, PathMappingService>().BuildServiceProvider();
         using var reporter = new OperationalIssueReporter(services.GetRequiredService<IServiceScopeFactory>(), NullLogger<OperationalIssueReporter>.Instance, config);
         using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter, config, NullLogger<OperationalIssueMonitor>.Instance);
@@ -44,14 +52,57 @@ public sealed class OperationalIssueMonitorTests
         active.Should().HaveCount(2).And.OnlyContain(i => i.Target == "config" && i.Occurrences == 2);
         active.Single(i => i.Code == "config.storage").ClientInstance.Should().Be("qBit-other");
         active.Single(i => i.Code == "config.storage").Remediation.Should().Contain("Maintenance.PathMappings");
-        active.Single(i => i.Code == "config.migration").Remediation.Should().Contain("Migration.Notices");
-        config.TorrentClients["recycling"].Migration.Notices.Clear();
+        var migration = active.Single(i => i.Code == "config.migration");
+        migration.Remediation.Should().Contain("Keep free-space protection off").And.Contain("DownloadPath");
+        var client = config.TorrentClients["recycling"];
+        client.FreeSpace.Add(new() { Enabled = true, Path = root.Path });
+        disks.Add(new() { ClientInstanceId = "recycling", Path = root.Path, Error = "Unreadable" });
+        await monitor.InspectAsync(default);
+        (await db.OperationalIssues.AsNoTracking().SingleAsync(i => i.Code == "config.migration"))
+            .Remediation.Should().Contain("Keep free-space protection off");
+        disks[0].Error = null;
+        await monitor.InspectAsync(default);
+        migration = await db.OperationalIssues.AsNoTracking().SingleAsync(i => i.Code == "config.migration");
+        migration.ResolvedAt.Should().BeNull();
+        migration.Remediation.Should().Contain("DownloadPath").And.NotContain("Keep free-space protection off");
+        client.DownloadPath = "/downloads";
         if (removeClient) config.QBitInstances.Clear();
         else config.QBitInstances["qBit-other"].Maintenance.PathMappings.Add(new() { ClientPath = root.Path, LocalPath = root.Path });
         using var restarted = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter, config, NullLogger<OperationalIssueMonitor>.Instance);
         await restarted.InspectAsync(default);
         var history = await db.OperationalIssues.AsNoTracking().ToListAsync();
-        history.Should().HaveCount(2).And.OnlyContain(i => i.ResolvedAt != null);
+        history.Should().HaveCount(3).And.OnlyContain(i => i.ResolvedAt != null);
+        client.Migration.Notices.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task InformationalMigrationWarning_ResolvesAfterRestartAndKeepsHistory()
+    {
+        using var db = new Torrentarr.Infrastructure.Database.TorrentarrDbContext(new DbContextOptionsBuilder<Torrentarr.Infrastructure.Database.TorrentarrDbContext>()
+            .UseSqlite("Data Source=:memory:").Options);
+        await db.Database.OpenConnectionAsync();
+        await db.Database.EnsureCreatedAsync();
+        var config = new TorrentarrConfig();
+        var notices = new List<string>
+        {
+            "Maintenance was replaced by Storage cleanup. Previous schedules are manual until daily cleanup is explicitly enabled; custom storage and recovery limits were retained.",
+            "Category rules, automatic-management enforcement, labels, paused repair, hardlink audit, and recovery-driven removal were retired. Existing client categories, tags and files were left untouched. Recovery is restricted to configured managed categories.",
+            "Manual/session recovery remains disabled. Review Torrent automation before enabling regular recovery."
+        };
+        config.QBitInstances["qBit-General"] = new() { Host = "localhost", Migration = new() { Notices = notices } };
+        await using var services = new ServiceCollection().AddSingleton(db).AddSingleton(config).BuildServiceProvider();
+        var scopes = services.GetRequiredService<IServiceScopeFactory>();
+        using var reporter = new OperationalIssueReporter(scopes, NullLogger<OperationalIssueReporter>.Instance, config);
+        await reporter.ReportAsync(new("config.migration", "system", "Migrated configuration needs review", string.Join(". ", notices),
+            "Review migrated settings", ClientInstance: "qBit-General", Severity: "warning", Target: "config"), default);
+        using var restarted = new OperationalIssueMonitor(scopes, reporter, config, NullLogger<OperationalIssueMonitor>.Instance);
+        await restarted.InspectAsync(default);
+        var resolved = await db.OperationalIssues.AsNoTracking().SingleAsync();
+        resolved.ResolvedAt.Should().NotBeNull();
+        await restarted.InspectAsync(default);
+        var history = await db.OperationalIssues.AsNoTracking().SingleAsync();
+        history.Should().BeEquivalentTo(resolved);
+        config.QBitInstances["qBit-General"].Migration.Notices.Should().HaveCount(3);
     }
 
     [Fact]

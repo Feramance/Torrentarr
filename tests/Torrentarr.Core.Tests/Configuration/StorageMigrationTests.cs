@@ -205,6 +205,45 @@ public sealed class StorageMigrationTests : IDisposable
     [Theory]
     [InlineData("qBit")]
     [InlineData("TorrentClient.named")]
+    public void FailedEnvironmentPathOverride_IsReevaluatedAndNeverSavedAsAnActiveFailure(string section)
+    {
+        const string key = "TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER";
+        var previous = Environment.GetEnvironmentVariable(key);
+        var root = Path.Combine(Path.GetTempPath(), "mapped").Replace('\\', '/');
+        try
+        {
+            Environment.SetEnvironmentVariable(key, root + "-outside");
+            var config = Load($"""
+                [Settings]
+                [{section}]
+                Host = "localhost"
+                DownloadPath = "/remote/working"
+                [{section}.Migration]
+                Notices = ["{StorageConfigMigration.EnvironmentDownloadPathNotice}"]
+                [[{section}.Maintenance.PathMappings]]
+                ClientPath = "/remote"
+                LocalPath = '{root}'
+                """);
+            config.GetAllTorrentClients().Values.Single().Migration.EnvironmentDownloadPathFailed.Should().BeTrue();
+            var loader = new ConfigurationLoader(_file);
+            loader.SaveConfig(config);
+            File.ReadAllText(_file).Should().NotContain("EnvironmentDownloadPathFailed");
+
+            Environment.SetEnvironmentVariable(key, root + "/corrected");
+            var client = loader.Load().GetAllTorrentClients().Values.Single();
+            client.DownloadPath.Should().Be("/remote/corrected");
+            client.Migration.EnvironmentDownloadPathFailed.Should().BeFalse();
+            client.Migration.Notices.Should().Contain(StorageConfigMigration.EnvironmentDownloadPathNotice);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(key, previous);
+        }
+    }
+
+    [Theory]
+    [InlineData("qBit")]
+    [InlineData("TorrentClient.named")]
     public void SaveAndLoadPreservesMonitorsAndMappings(string section)
     {
         var path = Path.GetTempPath();

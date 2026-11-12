@@ -27,6 +27,17 @@ namespace Torrentarr.Host.Tests.Api;
 [Collection("HostWebCatalog")]
 public class StandaloneRadarrEndpointTests
 {
+    [Theory]
+    [InlineData("TorrentClient.storage-migration-fixture")]
+    [InlineData("qBit-storage-migration-fixture")]
+    public async Task StandaloneKeepFreeSpaceProtectionOff_RequiresValidExplicitSave(string section)
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        await ConfigEndpointTests.AssertStorageMigrationSave(client,
+            factory.Services.GetRequiredService<ConfigurationLoader>(), "/web/config", section);
+    }
+
     [Fact]
     public async Task StandalonePasswordSetup_RejectsUrlAndMalformedHeaderAndAcceptsBearer()
     {

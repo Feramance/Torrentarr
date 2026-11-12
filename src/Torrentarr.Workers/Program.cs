@@ -381,8 +381,60 @@ class ArrWorkerService : BackgroundService
             _logger.LogError(ex, "Worker initialization failed; continuing into the processing loop");
         }
 
-        try { await Task.WhenAll(RunTorrentLoopAsync(stoppingToken), RunSearchLoopAsync(stoppingToken)); }
+        try { await Task.WhenAll(RunTorrentLoopAsync(stoppingToken), RunSearchLoopAsync(stoppingToken), RunQueueDepthLoopAsync(stoppingToken)); }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
+    }
+
+    private async Task RunQueueDepthLoopAsync(CancellationToken ct)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1), Clock);
+        do { await RefreshQueueDepthAsync(ct); }
+        while (await timer.WaitForNextTickAsync(ct));
+    }
+
+    internal async Task RefreshQueueDepthAsync(CancellationToken ct)
+    {
+        using var configuration = _config.BeginOperation();
+        using var identity = _context.BeginOperation();
+        var revision = _config.Revision;
+        var settings = _instanceConfig;
+        if (!settings.Managed || revision != _config.LatestRevision
+            || string.IsNullOrWhiteSpace(settings.URI) || settings.URI == "CHANGE_ME")
+        {
+            _runtimeMetrics.RecordQueueDepth(null, revision);
+            return;
+        }
+
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10), Clock);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
+        try
+        {
+            int? count = settings.Type.ToLowerInvariant() switch
+            {
+                "radarr" => await ReadAsync(new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(settings.URI, settings.APIKey, settings.SkipTLSVerify),
+                    async client => (await client.GetQueueAsync(pageSize: 1, ct: timeout.Token)).TotalRecords),
+                "sonarr" => await ReadAsync(new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(settings.URI, settings.APIKey, settings.SkipTLSVerify),
+                    async client => (await client.GetQueueAsync(pageSize: 1, ct: timeout.Token)).TotalRecords),
+                "lidarr" => await ReadAsync(new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(settings.URI, settings.APIKey, settings.SkipTLSVerify),
+                    async client => (await client.GetQueueAsync(pageSize: 1, ct: timeout.Token)).TotalRecords),
+                "readarr" => await ReadAsync(new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(settings.URI, settings.APIKey, settings.SkipTLSVerify),
+                    async client => (await client.GetQueueAsync(pageSize: 1, ct: timeout.Token)).TotalRecords),
+                _ => null
+            };
+            timeout.Token.ThrowIfCancellationRequested();
+            _runtimeMetrics.RecordQueueDepth(revision == _config.LatestRevision ? count : null, revision);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception ex)
+        {
+            _runtimeMetrics.RecordQueueDepth(null, revision);
+            _logger.LogDebug(ex, "Unable to read Arr queue depth for {Instance}", _context.InstanceName);
+        }
+
+        static async Task<int> ReadAsync<T>(T client, Func<T, Task<int>> read) where T : IDisposable
+        {
+            using (client) return await read(client);
+        }
     }
 
     private async Task RunTorrentLoopAsync(CancellationToken cancellationToken)
@@ -740,27 +792,6 @@ class ArrWorkerService : BackgroundService
             _logger.LogDebug(ex, "Unable to update process metrics for {Instance}", _context.InstanceName);
         }
 
-        try
-        {
-            _runtimeMetrics.QueueCount = _instanceConfig.Type.ToLowerInvariant() switch
-            {
-                "radarr" => (await new Torrentarr.Infrastructure.ApiClients.Arr.RadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).GetQueueAsync(ct: cancellationToken)).TotalRecords,
-                "sonarr" => (await new Torrentarr.Infrastructure.ApiClients.Arr.SonarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).GetQueueAsync(ct: cancellationToken)).TotalRecords,
-                "lidarr" => (await new Torrentarr.Infrastructure.ApiClients.Arr.LidarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).GetQueueAsync(ct: cancellationToken)).TotalRecords,
-                "readarr" => (await new Torrentarr.Infrastructure.ApiClients.Arr.ReadarrClient(_instanceConfig.URI, _instanceConfig.APIKey, _instanceConfig.SkipTLSVerify).GetQueueAsync(ct: cancellationToken)).TotalRecords,
-                _ => null
-            };
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _runtimeMetrics.QueueCount = null;
-            _logger.LogDebug(ex, "Unable to read Arr queue depth for {Instance}", _context.InstanceName);
-        }
-
         if (!_instanceConfig.SearchOnly)
         {
             var pathTracker = scope.ServiceProvider.GetRequiredService<IImportPathTracker>();
@@ -1080,28 +1111,39 @@ sealed class WorkerRuntimeMetrics
     private WorkerLoopProgress _search = new("Initializing", DateTimeOffset.UtcNow);
     public WorkerLoopProgress Torrent { get => Volatile.Read(ref _torrent); set => Volatile.Write(ref _torrent, value); }
     public WorkerLoopProgress Search { get => Volatile.Read(ref _search); set => Volatile.Write(ref _search, value); }
-    public WorkerHeartbeat Snapshot(string instance, bool restartRequested) => new()
+    private sealed record QueueDepthObservation(long Revision, int Count);
+    private QueueDepthObservation? _queueDepth;
+
+    public void RecordQueueDepth(int? count, long revision) =>
+        Volatile.Write(ref _queueDepth, count is { } value ? new QueueDepthObservation(revision, value) : null);
+
+    public WorkerHeartbeat Snapshot(string instance, bool restartRequested)
     {
-        PendingIssues = PendingIssues(),
-        Instance = instance,
-        Pid = Environment.ProcessId,
-        Heartbeat = DateTimeOffset.UtcNow,
-        RestartRequested = restartRequested,
-        ConfigRevision = Math.Min(Interlocked.Read(ref TorrentRevision), Interlocked.Read(ref SearchRevision)),
-        SearchesTriggered = SearchesTriggered,
-        ItemsSearched = ItemsSearched,
-        DownloadingCount = DownloadingCount,
-        SeedingCount = SeedingCount,
-        ObservedAt = ObservedAt,
-        ObservationError = ObservationError,
-        SearchSummary = SearchSummary,
-        SearchTimestamp = SearchTimestamp,
-        QueueCount = QueueCount,
-        CategoryCount = CategoryCount,
-        MetricType = MetricType,
-        Torrent = Torrent,
-        Search = Search
-    };
+        var revision = Math.Min(Interlocked.Read(ref TorrentRevision), Interlocked.Read(ref SearchRevision));
+        var queueDepth = Volatile.Read(ref _queueDepth);
+        return new()
+        {
+            PendingIssues = PendingIssues(),
+            Instance = instance,
+            Pid = Environment.ProcessId,
+            Heartbeat = DateTimeOffset.UtcNow,
+            RestartRequested = restartRequested,
+            ConfigRevision = revision,
+            SearchesTriggered = SearchesTriggered,
+            ItemsSearched = ItemsSearched,
+            DownloadingCount = DownloadingCount,
+            SeedingCount = SeedingCount,
+            ObservedAt = ObservedAt,
+            ObservationError = ObservationError,
+            SearchSummary = SearchSummary,
+            SearchTimestamp = SearchTimestamp,
+            QueueCount = queueDepth?.Revision == revision ? queueDepth.Count : null,
+            CategoryCount = CategoryCount,
+            MetricType = MetricType,
+            Torrent = Torrent,
+            Search = Search
+        };
+    }
 
     public void RecordSearch(SearchResult? result)
     {
@@ -1121,7 +1163,6 @@ sealed class WorkerRuntimeMetrics
     public string? ObservationError { get; set; }
     public string? SearchSummary { get; set; }
     public string? SearchTimestamp { get; set; }
-    public int? QueueCount { get; set; }
     public int? CategoryCount { get; set; }
     public string? MetricType { get; set; }
 }

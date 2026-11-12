@@ -22,7 +22,7 @@ public sealed class TransferHistoryCollector(
     IServiceScopeFactory scopes, TorrentarrConfig config, ITorrentClientRegistry registry,
     ILogger<TransferHistoryCollector> logger) : BackgroundService
 {
-    private readonly Dictionary<string, DateTimeOffset> _lastAttempt = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _lastAttempt = new(StringComparer.OrdinalIgnoreCase);
     private long _lastPruneMinute = long.MinValue;
     internal TimeProvider Clock { get; set; } = TimeProvider.System;
 
@@ -45,8 +45,10 @@ public sealed class TransferHistoryCollector(
         foreach (var (name, settings) in config.GetAllTorrentClients().ToArray())
         {
             if (settings.Disabled || registry.GetClient(name) is not { } client) continue;
-            if (_lastAttempt.TryGetValue(name, out var last) && now - last < TimeSpan.FromSeconds(Math.Max(1, settings.TorrentScanIntervalSeconds))) continue;
-            _lastAttempt[name] = now;
+            if (_lastAttempt.TryGetValue(name, out var last)
+                && (settings.TorrentScanIntervalSeconds >= 60
+                    ? last.ToUnixTimeSeconds() / 60 == minute
+                    : now - last < TimeSpan.FromSeconds(Math.Max(1, settings.TorrentScanIntervalSeconds)))) continue;
             due.Add((name, client));
         }
 
@@ -56,6 +58,9 @@ public sealed class TransferHistoryCollector(
             {
                 try
                 {
+                    var started = Clock.GetUtcNow();
+                    _lastAttempt[entry.Name] = started;
+                    var requestMinute = started.ToUnixTimeSeconds() / 60;
                     using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                     timeout.CancelAfter(TimeSpan.FromSeconds(10));
                     var transfer = await entry.Client.GetTransferInfoAsync(timeout.Token);
@@ -64,7 +69,7 @@ public sealed class TransferHistoryCollector(
                     samples.Enqueue(new TransferSample
                     {
                         ClientInstance = entry.Name,
-                        Minute = Clock.GetUtcNow().ToUnixTimeSeconds() / 60,
+                        Minute = requestMinute,
                         DownloadRate = transfer.DownloadSpeed,
                         UploadRate = transfer.UploadSpeed
                     });

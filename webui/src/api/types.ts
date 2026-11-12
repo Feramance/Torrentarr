@@ -514,6 +514,7 @@ export type ConfigDocument = Record<string, unknown>;
 export interface ConfigUpdatePayload {
   changes: Record<string, unknown>;
   renames?: Record<string, string>;
+  keepFreeSpaceProtectionOff?: string;
 }
 
 export interface UpdateState {

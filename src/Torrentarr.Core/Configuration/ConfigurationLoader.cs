@@ -136,8 +136,9 @@ public class ConfigurationLoader
             }
         }
 
-        if (storageEnvironment.Count > 0)
-            StorageConfigMigration.ApplyEnvironment(tomlTable, runtimeStorage, storageEnvironment.Keys);
+        var failedEnvironmentDownloadPathClient = storageEnvironment.Count > 0
+            ? StorageConfigMigration.ApplyEnvironment(tomlTable, runtimeStorage, storageEnvironment.Keys)
+            : null;
 
         foreach (var (name, value) in tomlTable)
         {
@@ -198,6 +199,8 @@ public class ConfigurationLoader
         ApplyEnvironmentOverrides(config);
         foreach (var (id, client) in config.GetAllTorrentClients())
         {
+            if (id == failedEnvironmentDownloadPathClient)
+                client.Migration.EnvironmentDownloadPathFailed = true;
             var error = TorrentScanInterval.Validate(client.TorrentScanIntervalSeconds) ?? StorageConfigMigration.Validate(client) ?? MaintenanceConfigValidation.Validate(client.Maintenance) ?? StorageConfigurationValidation.Validate(client);
             if (error != null) throw new InvalidDataException($"Torrent client '{id}': {error}");
         }

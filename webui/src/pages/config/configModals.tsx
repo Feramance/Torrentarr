@@ -544,7 +544,7 @@ export interface QbitInstanceModalProps {
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
   onRename: (oldName: string, newName: string) => void;
   onClose: () => void;
-  onSave: () => Promise<boolean>;
+  onSave: (keepProtectionOff?: boolean) => Promise<boolean>;
   onDelete?: () => void;
   overlapWarnings: string[];
   saveDisabled?: boolean;
@@ -571,8 +571,20 @@ export function QbitInstanceModal({
 }: QbitInstanceModalProps): JSX.Element {
   const { push } = useToast();
   const [savingModal, setSavingModal] = useState(false);
+  const monitors: unknown = get(state, "FreeSpace");
+  const migrationNotices: unknown = get(state, "Migration.Notices");
+  const canKeepProtectionOff =
+    Array.isArray(migrationNotices) &&
+    migrationNotices.some(
+      (notice) =>
+        notice ===
+          "legacy monitor ownership is ambiguous; the inherited path is disabled for review" ||
+        notice ===
+          "no unambiguous local monitor path; free-space protection remains disabled until configured",
+    ) &&
+    !(Array.isArray(monitors) && monitors.some((monitor) => monitor?.Enabled));
 
-  const handleDone = async () => {
+  const handleDone = async (keepProtectionOff = false) => {
     if (savingModal) return;
     if (validationErrors.length || saveDisabled) {
       const message =
@@ -585,7 +597,7 @@ export function QbitInstanceModal({
     }
     setSavingModal(true);
     try {
-      const saved = await onSave();
+      const saved = await onSave(keepProtectionOff);
       if (saved) {
         if (!inline) onClose();
       }
@@ -638,25 +650,41 @@ export function QbitInstanceModal({
                     ),
                 )
                 .map((group) => (
-                  <FieldGroup
-                    key={group.title}
-                    title={
-                      group.fields.length === 1 &&
-                      group.fields[0]?.type === "collection"
-                        ? null
-                        : group.title
-                    }
-                    fields={group.fields}
-                    state={state}
-                    basePath={[]}
-                    onChange={(path, def, value) =>
-                      onChange([keyName, ...path], def, value)
-                    }
-                    onRenameSection={onRename}
-                    sectionKey={fieldPathPrefix ?? keyName}
-                    defaultOpen={group.defaultOpen}
-                    validationErrors={validationErrors}
-                  />
+                  <React.Fragment key={group.title}>
+                    <FieldGroup
+                      title={
+                        group.fields.length === 1 &&
+                        group.fields[0]?.type === "collection"
+                          ? null
+                          : group.title
+                      }
+                      fields={group.fields}
+                      state={state}
+                      basePath={[]}
+                      onChange={(path, def, value) =>
+                        onChange([keyName, ...path], def, value)
+                      }
+                      onRenameSection={onRename}
+                      sectionKey={fieldPathPrefix ?? keyName}
+                      defaultOpen={group.defaultOpen}
+                      validationErrors={validationErrors}
+                    />
+                    {group.fields[0]?.path?.at(-1) === "FreeSpace" &&
+                      canKeepProtectionOff && (
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={
+                            savingModal ||
+                            saveDisabled ||
+                            validationErrors.length > 0
+                          }
+                          onClick={() => void handleDone(true)}
+                        >
+                          Keep free-space protection off
+                        </button>
+                      )}
+                  </React.Fragment>
                 ))}
               <FieldGroup
                 title="Trackers"

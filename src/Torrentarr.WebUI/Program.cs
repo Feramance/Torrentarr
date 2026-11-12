@@ -730,7 +730,7 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
         return Results.BadRequest(new { error = "Missing 'changes' field" });
 
     // Empty changes dict → nothing to do, report reloadType="none"
-    if (!changesToken.HasValues)
+    if (!changesToken.HasValues && body?["keepFreeSpaceProtectionOff"] == null)
         return Results.Ok(new { status = "ok", configReloaded = false, reloadType = "none", affectedInstances = Array.Empty<string>() });
 
     var changes = changesToken.Properties()
@@ -820,6 +820,11 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
 
         var liveValidation = reloader.Validate(updatedConfig);
         if (!liveValidation.Ok) return Results.BadRequest(new { error = liveValidation.Error });
+        if (body?["keepFreeSpaceProtectionOff"] is { } keepOff &&
+            StorageConfigMigration.KeepFreeSpaceProtectionOff(updatedConfig,
+                keepOff.Type == Newtonsoft.Json.Linq.JTokenType.String ? keepOff.ToString() : "",
+                changes.Where(p => p.Value is Newtonsoft.Json.Linq.JArray).Select(p => p.Key)) is { } migrationError)
+            return Results.BadRequest(new { error = migrationError });
         var renames = body?["renames"] as Newtonsoft.Json.Linq.JObject;
         var applied = false;
         await InstanceRenamePersistence.SaveAsync(config, updatedConfig, renames,

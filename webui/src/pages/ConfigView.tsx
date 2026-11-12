@@ -906,7 +906,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   ]);
 
   const saveSection = useCallback(
-    async (sectionKey: string): Promise<boolean> => {
+    async (sectionKey: string, keepProtectionOff = false): Promise<boolean> => {
       if (!formState) return false;
       setSavingSection(sectionKey);
       try {
@@ -928,6 +928,10 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           sectionKey,
           pendingRenames,
         );
+        const freeSpaceField = `${sectionKey}.FreeSpace`;
+        if (keepProtectionOff)
+          changes[freeSpaceField] =
+            get(formState, [sectionKey, "FreeSpace"]) ?? [];
         if (Object.keys(changes).length === 0) {
           push(`No changes detected for ${sectionKey}`, "info");
           return false;
@@ -950,6 +954,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         } = await updateConfig({
           changes,
           ...(Object.keys(renames).length ? { renames } : {}),
+          ...(keepProtectionOff
+            ? { keepFreeSpaceProtectionOff: freeSpaceField }
+            : {}),
         });
         recordRestartRequirements(restartRequirements);
         if (warning) push(warning, "warning");
@@ -998,7 +1005,11 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     ],
   );
 
-  const saveClient = async (name: string, remove = false): Promise<boolean> => {
+  const saveClient = async (
+    name: string,
+    remove = false,
+    keepProtectionOff = false,
+  ): Promise<boolean> => {
     if (!formState || clientSaving) return false;
     setClientSaving(true);
     const path = ["TorrentClient", name];
@@ -1037,8 +1048,15 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         if (!host || !Number.isInteger(port) || port < 1 || port > 65535)
           throw new Error("Enter a host and a port between 1 and 65535.");
       }
+      const freeSpaceField = `TorrentClient.${name}.FreeSpace`;
+      if (keepProtectionOff) changes[freeSpaceField] = value.FreeSpace ?? [];
       const result = Object.keys(changes).length
-        ? await updateConfig({ changes })
+        ? await updateConfig({
+            changes,
+            ...(keepProtectionOff
+              ? { keepFreeSpaceProtectionOff: freeSpaceField }
+              : {}),
+          })
         : null;
       recordRestartRequirements(result?.restartRequirements);
       const saved = await getConfig();
@@ -1565,7 +1583,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                       onChange={handleFieldChange}
                       onRename={handleRenameQbitSection}
                       onClose={() => setActiveQbitKey(null)}
-                      onSave={() => saveSection(activeQbitKey)}
+                      onSave={(keepProtectionOff) =>
+                        saveSection(activeQbitKey, keepProtectionOff)
+                      }
                       onDelete={() => requestDeleteQbitInstance(activeQbitKey)}
                       overlapWarnings={categoryOverlapWarnings}
                       saveDisabled={qbitSaveGate.saveDisabled}
@@ -1602,7 +1622,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                       onRename={() => {}}
                       overlapWarnings={categoryOverlapWarnings}
                       onClose={() => setActiveClient(null)}
-                      onSave={() => saveClient(activeClient)}
+                      onSave={(keepProtectionOff) =>
+                        saveClient(activeClient, false, keepProtectionOff)
+                      }
                       onDelete={() => {
                         setDeleteClient(activeClient);
                         setActiveClient(null);
