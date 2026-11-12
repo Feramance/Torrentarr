@@ -136,8 +136,10 @@ public class ArrImportService : IArrImportService
             var since = DateTimeOffset.FromUnixTimeSeconds(evidence.SubmittedAt);
             var history = await ArrActivityCollector.ReadAsync(arr,
                 $"history/since?date={Uri.EscapeDataString(since.ToString("O"))}&eventType={eventType}", cancellationToken);
+            var imported = history.Any(item => ArrActivityCollector.PositiveImport(item, evidence))
+                && await IsImportQueueClearAsync(arr, type, hash, cancellationToken);
             await ObserveAsync("history", category, hash, true, cancellationToken);
-            return history.Any(item => ArrActivityCollector.PositiveImport(item, evidence));
+            return imported;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (Exception ex)
@@ -145,6 +147,28 @@ public class ArrImportService : IArrImportService
             await ObserveAsync("history", category, hash, false, cancellationToken, DiagnosticText.Error(ex));
             _logger.LogWarning("Could not verify Arr import history for {Category} and {Hash}", category, hash);
             return false;
+        }
+    }
+
+    private static async Task<bool> IsImportQueueClearAsync(ArrInstanceConfig arr, string type, string hash, CancellationToken ct)
+    {
+        bool Matches(string? downloadId) => string.Equals(downloadId, hash, StringComparison.OrdinalIgnoreCase);
+        switch (type)
+        {
+            case "radarr":
+                using (var client = new RadarrClient(arr.URI, arr.APIKey, arr.SkipTLSVerify))
+                    return !(await client.GetAllQueueAsync(ct)).Any(q => Matches(q.DownloadId));
+            case "sonarr":
+                using (var client = new SonarrClient(arr.URI, arr.APIKey, arr.SkipTLSVerify))
+                    return !(await client.GetAllQueueAsync(ct)).Any(q => Matches(q.DownloadId));
+            case "lidarr":
+                using (var client = new LidarrClient(arr.URI, arr.APIKey, arr.SkipTLSVerify))
+                    return !(await client.GetAllQueueAsync(ct)).Any(q => Matches(q.DownloadId));
+            case "readarr":
+                using (var client = new ReadarrClient(arr.URI, arr.APIKey, arr.SkipTLSVerify))
+                    return !(await client.GetAllQueueAsync(ct)).Any(q => Matches(q.DownloadId));
+            default:
+                return false;
         }
     }
 

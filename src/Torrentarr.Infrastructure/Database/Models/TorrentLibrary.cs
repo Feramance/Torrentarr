@@ -36,6 +36,9 @@ public class TorrentLibrary
     [Column("imported")]
     public bool Imported { get; set; }
 
+    [Column("importsubmittedat")]
+    public long? ImportSubmittedAt { get; set; }
+
     [Column("autodeletependingaddedon")]
     public long? AutoDeletePendingAddedOn { get; set; }
 

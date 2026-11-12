@@ -102,6 +102,18 @@ beforeEach(() => {
   });
 });
 describe("torrent overview parity", () => {
+  it("refreshes transfer history when live updates are disabled", async () => {
+    view();
+    await waitFor(() => expect(api.getTransferHistory).toHaveBeenCalled());
+    const refresh = await screen.findByRole("button", { name: "Refresh" });
+    await waitFor(() => expect(refresh).toBeEnabled());
+    vi.mocked(api.getTransferHistory).mockClear();
+    fireEvent.click(refresh);
+    await waitFor(() =>
+      expect(api.getTransferHistory).toHaveBeenCalledTimes(1),
+    );
+  });
+
   it("loads the only configured instance instead of the aggregate view", async () => {
     view();
     await waitFor(() =>

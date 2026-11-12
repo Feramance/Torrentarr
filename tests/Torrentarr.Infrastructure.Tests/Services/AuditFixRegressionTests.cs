@@ -193,6 +193,9 @@ public sealed class AuditFixRegressionTests
         (await service.IsImportedAsync("TARGET", "movies", submitted)).Should().BeFalse();
         stub.ImportHistoryDate = submitted.AddSeconds(1);
         (await service.IsImportedAsync("OTHER", "movies", submitted)).Should().BeFalse();
+        stub.QueuedDownloadId = "target";
+        (await service.IsImportedAsync("TARGET", "movies", submitted)).Should().BeFalse();
+        stub.QueuedDownloadId = "OTHER";
         (await service.IsImportedAsync("TARGET", "movies", submitted)).Should().BeTrue();
     }
 
@@ -295,6 +298,7 @@ public sealed class AuditFixRegressionTests
         public bool ChangeOnSecondRead;
         private int _profileReads;
         public DateTimeOffset? ImportHistoryDate;
+        public string? QueuedDownloadId;
         public ArrStub(string type)
         {
             var socket = new TcpListener(IPAddress.Loopback, 0); socket.Start(); var port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop();
@@ -314,6 +318,13 @@ public sealed class AuditFixRegressionTests
                         body = ImportHistoryDate is { } date
                             ? JsonSerializer.Serialize(new[] { new { id = 1, downloadId = "TARGET", eventType = "downloadFolderImported", date } })
                             : "[]";
+                    if (path.EndsWith("/queue"))
+                    {
+                        var records = QueuedDownloadId is { } downloadId
+                            ? new[] { new { id = 1, downloadId, trackedDownloadState = "importPending" } }
+                            : [];
+                        body = JsonSerializer.Serialize(new { page = 1, pageSize = 1000, totalRecords = records.Length, records });
+                    }
                     if (context.Request.HttpMethod == "PUT")
                     {
                         Puts++;

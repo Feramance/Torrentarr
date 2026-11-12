@@ -1135,7 +1135,18 @@ public class SeedingService : ISeedingService
 
         var trackerConfigs = GetTrackerList(torrent);
         IReadOnlyList<TorrentTracker> trackerEvidence = [];
-        if (trackerConfigs.Count > 0)
+        if (!torrent.IsPrivate.HasValue)
+        {
+            try
+            {
+                torrent.IsPrivate = (await client.GetTorrentPropertiesAsync(torrent.Hash, cancellationToken))?.IsPrivate;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Error getting privacy evidence for torrent {Hash}", torrent.Hash);
+            }
+        }
+        if (trackerConfigs.Count > 0 || HasConfiguredProtection(torrent))
         {
             try
             {

@@ -370,7 +370,7 @@ public class TorrentProcessor : ITorrentProcessor
 
         if (_importService != null)
         {
-            await EnsureTorrentInDatabaseAsync(torrent, owner, cancellationToken);
+            libraryEntry = await EnsureTorrentInDatabaseAsync(torrent, owner, cancellationToken);
 
             var contentPath = torrent.ContentPath;
             if (!string.IsNullOrEmpty(contentPath))
@@ -400,6 +400,8 @@ public class TorrentProcessor : ITorrentProcessor
 
             if (result.Success)
             {
+                libraryEntry.ImportSubmittedAt ??= submittedAt.ToUnixTimeSeconds();
+                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
                 _logger.LogInformation("Successfully triggered import for torrent {Hash}: {Message}",
                     hash, result.Message);
 
@@ -637,18 +639,24 @@ public class TorrentProcessor : ITorrentProcessor
             return;
         }
 
-        var scanAccepted = _pathTracker?.IsHashAlreadyScanned(torrent.ClientInstanceId, torrent.Hash) == true;
-        if (scanAccepted || libraryEntry.AutoDeletePendingAddedOn.HasValue)
+        var lastSubmittedAt = _pathTracker?.GetScanStartedAt(torrent.ClientInstanceId, torrent.Hash);
+        var submittedAt = libraryEntry.ImportSubmittedAt is { } firstSubmission
+            ? DateTimeOffset.FromUnixTimeSeconds(firstSubmission)
+            : lastSubmittedAt;
+        var pendingImport = !libraryEntry.Imported && submittedAt.HasValue;
+        if (pendingImport || libraryEntry.AutoDeletePendingAddedOn.HasValue)
         {
             var ownerConfig = _config.ArrInstances.GetValueOrDefault(libraryEntry.ArrInstance);
             var cleanupComplete = await CompleteExcludedFileCleanupAsync(client, torrent, ownerConfig, ct);
             if (libraryEntry.AutoDeletePendingAddedOn.HasValue
                 && (await TryCompleteImportAutoDeleteAsync(client, torrent, libraryEntry, cleanupComplete, ct)
                     || libraryEntry.AutoDeletePendingAddedOn.HasValue)) return;
-            if (scanAccepted)
+            if (pendingImport && submittedAt is { } confirmationStart)
             {
-                await TryFinalizeImportedTorrentAsync(torrent, ct, cleanupComplete);
-                return;
+                if (await TryFinalizeImportedTorrentAsync(torrent, libraryEntry, confirmationStart, cleanupComplete, ct)
+                    || DateTimeOffset.UtcNow - (lastSubmittedAt ?? confirmationStart) < TimeSpan.FromMinutes(15))
+                    return;
+                _pathTracker?.InvalidateTorrent(torrent.ClientInstanceId, torrent.Hash);
             }
         }
 
@@ -658,7 +666,8 @@ public class TorrentProcessor : ITorrentProcessor
             && IsCompleteState(state)
             && !string.IsNullOrEmpty(torrent.ContentPath)
             && torrent.CompletionOn < timeNow - 60;
-        if (completedForImport && !_cache.IsFileFiltered(torrent.ClientInstanceId, torrent.Hash)
+        if (pendingImport && !completedForImport) return;
+        if (completedForImport && !pendingImport && !_cache.IsFileFiltered(torrent.ClientInstanceId, torrent.Hash)
             && !_cache.IsAllowlistRetryCoolingDown(torrent.ClientInstanceId, torrent.Hash, AllowlistRetryCooldown))
         {
             var filterResult = await ApplyFileFilterAsync(torrent, arrCfg!, client, completed: true, ct);
@@ -672,7 +681,7 @@ public class TorrentProcessor : ITorrentProcessor
         // ================================================================================
 
         // Branch 1: Custom format unmet → delete (qBitrr _process_single_torrent_delete_cfunmet)
-        if (!recoveryBlocksRemoval && _importService != null
+        if (!pendingImport && !recoveryBlocksRemoval && _importService != null
             && arrCfg?.Search.CustomFormatUnmetSearch == true
             && !HasTag(torrent, IgnoredTag)
             && !HasTag(torrent, FreeSpacePausedTag)
@@ -690,8 +699,7 @@ public class TorrentProcessor : ITorrentProcessor
             }
         }
         // Import allowed completed content before routine seeding cleanup; H&R only authorizes deletion.
-        else if (completedForImport
-            && (await FindTorrentLibraryEntryAsync(torrent.Hash, torrent.ClientInstanceId, ct))?.Imported != true)
+        else if (completedForImport && !libraryEntry.Imported)
         {
             stats.Completed++;
             if (await IsReadyForImportAsync(torrent.Hash, torrent.QBitInstanceName, ct))
@@ -1415,42 +1423,16 @@ public class TorrentProcessor : ITorrentProcessor
         return SeedingLimitMerge.Merge(category, arrCfg?.Torrent.SeedingMode, null).RemoveTorrent;
     }
 
-    /// <summary>
-    /// Check if a torrent is marked as imported in the database.
-    /// </summary>
-    private async Task<bool> IsImportedInDatabaseAsync(string hash, string? qbitInstance, CancellationToken ct)
+    private async Task<bool> TryFinalizeImportedTorrentAsync(TorrentInfo torrent, TorrentLibrary entry,
+        DateTimeOffset submittedAt, bool cleanupComplete, CancellationToken ct)
     {
-        var entry = await FindTorrentLibraryEntryAsync(hash, qbitInstance, ct, asNoTracking: true);
-        return entry?.Imported == true;
-    }
-
-    private async Task<bool> TryFinalizeImportedTorrentAsync(TorrentInfo torrent, CancellationToken ct, bool cleanupComplete)
-    {
-        if (await IsImportedInDatabaseAsync(torrent.Hash, torrent.QBitInstanceName, ct))
-            return true;
-
-        var submittedAt = _pathTracker?.GetScanStartedAt(torrent.QBitInstanceName, torrent.Hash);
         var owner = ResolveArrOwner(torrent);
-        if (submittedAt == null || owner == null || _importService == null)
+        if (owner == null || _importService == null
+            || !await _importService.IsImportedAsync(torrent.Hash, owner, submittedAt, ct))
             return false;
-
-        if (!await _importService.IsImportedAsync(torrent.Hash, owner, submittedAt.Value, ct))
-        {
-            if (DateTimeOffset.UtcNow - submittedAt.Value >= TimeSpan.FromMinutes(15))
-                _pathTracker?.InvalidateTorrent(torrent.QBitInstanceName, torrent.Hash);
-            return false;
-        }
-
-        var entry = await FindTorrentLibraryEntryAsync(torrent.Hash, torrent.QBitInstanceName, ct);
-        if (entry == null)
-        {
-            _logger.LogWarning(
-                "Arr reported torrent {Hash} imported, but no TorrentLibrary row exists for qBit instance {Instance}",
-                torrent.Hash, torrent.QBitInstanceName);
-            return false;
-        }
 
         entry.Imported = true;
+        entry.ImportSubmittedAt = null;
         var ownerConfig = _config.ArrInstances.GetValueOrDefault(entry.ArrInstance);
         if (ownerConfig?.Torrent.AutoDelete == true)
             entry.AutoDeletePendingAddedOn = torrent.AddedOn;
@@ -1540,14 +1522,9 @@ public class TorrentProcessor : ITorrentProcessor
     private async Task<TorrentLibrary?> FindTorrentLibraryEntryAsync(
         string hash,
         string? qbitInstance,
-        CancellationToken ct,
-        bool asNoTracking = false)
+        CancellationToken ct)
     {
-        var query = asNoTracking
-            ? _dbContext.TorrentLibrary.AsNoTracking()
-            : _dbContext.TorrentLibrary;
-
-        query = query.Where(t => t.Hash == hash);
+        var query = _dbContext.TorrentLibrary.Where(t => t.Hash == hash);
         if (!string.IsNullOrEmpty(qbitInstance))
             query = query.Where(t => t.QbitInstance == qbitInstance);
 
@@ -1724,9 +1701,11 @@ public class TorrentProcessor : ITorrentProcessor
             _dbContext.TorrentLibrary.Add(entry);
         }
         else if (!CategoryPathHelper.CategoryEquals(entry.Category, owner) || entry.ArrInstance.Length > 0 && entry.ArrInstance != arr
-            || entry.AutoDeletePendingAddedOn is { } addedOn && addedOn != torrent.AddedOn)
+            || entry.AutoDeletePendingAddedOn is { } addedOn && addedOn != torrent.AddedOn
+            || entry.ImportSubmittedAt is { } submittedAt && submittedAt < torrent.AddedOn)
         {
-            entry.Category = owner; entry.ArrInstance = arr; entry.Imported = false; entry.AutoDeletePendingAddedOn = null;
+            entry.Category = owner; entry.ArrInstance = arr; entry.Imported = false;
+            entry.ImportSubmittedAt = null; entry.AutoDeletePendingAddedOn = null;
             _cache.InvalidateTorrent(torrent.ClientInstanceId, torrent.Hash);
             _pathTracker?.InvalidateTorrent(torrent.ClientInstanceId, torrent.Hash);
         }

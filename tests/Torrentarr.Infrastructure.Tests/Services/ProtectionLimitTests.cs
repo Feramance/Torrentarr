@@ -230,4 +230,39 @@ public sealed class ProtectionLimitTests
         client.Verify(c => c.GetTorrentTrackersAsync("hash", It.IsAny<CancellationToken>()), Times.Once);
         client.Verify(c => c.SetShareLimitsAsync("hash", -1, -1, -1, It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ApplySeedingLimits_KeepsNativeLimitsAfterVerifyingPublicTorrent(bool categoryProtection)
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["client"] = new()
+        {
+            CategorySeeding = { HitAndRunMode = categoryProtection ? "and" : "disabled", MinSeedRatio = 1 }
+        };
+        var (service, client, db) = Create(config);
+        await using var context = db;
+        var torrent = new TorrentInfo
+        {
+            ClientInstanceId = "client",
+            Hash = "hash",
+            AddedOn = 1,
+            Progress = 1,
+            Ratio = 2,
+            RatioLimit = 1,
+            SeedingTimeLimit = 60
+        };
+        client.Setup(c => c.GetTorrentPropertiesAsync("hash", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TorrentPropertiesRecord { IsPrivate = false });
+        client.Setup(c => c.GetTorrentTrackersAsync("hash", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
+
+        await service.ApplySeedingLimitsAsync(torrent);
+
+        torrent.IsPrivate.Should().BeFalse();
+        client.Verify(c => c.GetTorrentTrackersAsync("hash", It.IsAny<CancellationToken>()), categoryProtection ? Times.Once() : Times.Never());
+        client.Verify(c => c.SetShareLimitsAsync("hash", -1, -1, It.IsAny<CancellationToken>()), Times.Never);
+        torrent.RatioLimit.Should().Be(1);
+    }
 }

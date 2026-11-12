@@ -44,6 +44,7 @@ public static class ManualSqliteMigrations
         db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_arr_samples_Minute ON torrentarr_arr_samples (Minute)");
         MigrateArrActivityOperations(db);
         AddColumnIfMissing(db, "torrentlibrary", "autodeletependingaddedon", "INTEGER");
+        AddColumnIfMissing(db, "torrentlibrary", "importsubmittedat", "INTEGER");
         CreateTableIfMissing(db, "torrentarr_transfer_samples", "CREATE TABLE IF NOT EXISTS torrentarr_transfer_samples (ClientInstance TEXT NOT NULL, Minute INTEGER NOT NULL, DownloadRate INTEGER NOT NULL, UploadRate INTEGER NOT NULL, PRIMARY KEY (ClientInstance, Minute));");
         db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_transfer_samples_Minute ON torrentarr_transfer_samples (Minute)");
         CreateTableIfMissing(db, "torrentarr_maintenance_state", "CREATE TABLE IF NOT EXISTS torrentarr_maintenance_state (Key TEXT NOT NULL PRIMARY KEY, Data TEXT NOT NULL DEFAULT '{}');");
