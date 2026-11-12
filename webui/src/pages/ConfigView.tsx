@@ -1,3 +1,4 @@
+import type { ConfigDestination } from "../utils/navigateTab";
 import { ConfigFieldSearch } from "./config/ConfigFieldSearch";
 import React, {
   useCallback,
@@ -82,6 +83,7 @@ import {
 interface ConfigViewProps {
   active?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  destination?: ConfigDestination;
 }
 
 type PendingSectionDelete = {
@@ -97,7 +99,7 @@ const INTEGRATION_TYPES = [
 ] as const;
 
 export function ConfigView(props?: ConfigViewProps): JSX.Element {
-  const { active = true, onDirtyChange } = props ?? {};
+  const { active = true, onDirtyChange, destination } = props ?? {};
   const { push } = useToast();
   const [application, setApplication] = useState<
     import("../api/types").ConfigurationApplicationStatus | null
@@ -393,6 +395,11 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const [activeArrKey, setActiveArrKey] = useState<string | null>(null);
   const [activeQbitKey, setActiveQbitKey] = useState<string | null>(null);
   const [isSettingsOpen, setSettingsOpen] = useState(true);
+  const destinationFocus = useRef<{
+    fieldPath: string;
+    monitorPath?: string;
+  } | null>(null);
+  const handledDestination = useRef<ConfigDestination | undefined>(undefined);
   const editorRef = useRef<HTMLDivElement>(null);
   const [editorRequest, setEditorRequest] = useState(0);
   useEffect(() => {
@@ -400,9 +407,37 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     if (!editorRequest || !editor) return;
     const headerHeight =
       document.querySelector(".appbar")?.getBoundingClientRect().height ?? 0;
-    editor.style.scrollMarginTop = `${headerHeight + 12}px`;
-    editor.focus({ preventScroll: true });
-    editor.scrollIntoView?.({
+    const requested = destinationFocus.current;
+    destinationFocus.current = null;
+    const field = requested
+      ? [...editor.querySelectorAll<HTMLElement>("[data-field-path]")].find(
+          (element) => element.dataset.fieldPath === requested.fieldPath,
+        )
+      : undefined;
+    const row =
+      requested?.monitorPath && field
+        ? [...field.querySelectorAll<HTMLElement>("[data-monitor-path]")].find(
+            (element) => element.dataset.monitorPath === requested.monitorPath,
+          )
+        : undefined;
+    const target = row || field || editor;
+    for (
+      let element: HTMLElement | null = target;
+      element && element !== editor;
+      element = element.parentElement
+    ) {
+      if (element instanceof HTMLDetailsElement) element.open = true;
+    }
+    const focus = target.querySelector<HTMLElement>(
+      target instanceof HTMLDetailsElement
+        ? ":scope > summary"
+        : "input:not([type=hidden]), select, textarea",
+    );
+    target.style.scrollMarginTop = `${headerHeight + 12}px`;
+    (target === editor ? editor : focus ?? editor).focus({
+      preventScroll: true,
+    });
+    target.scrollIntoView?.({
       block: "start",
       behavior: "instant",
     });
@@ -1135,6 +1170,59 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     if (activeClient || activeQbitKey) setConfigTab("clients");
     else if (activeArrKey) setConfigTab("libraries");
   }, [activeClient, activeQbitKey, activeArrKey]);
+  useEffect(() => {
+    if (
+      !active ||
+      !formState ||
+      !destination ||
+      handledDestination.current === destination
+    )
+      return;
+    handledDestination.current = destination;
+    const clientName = (
+      pendingRenames.get(destination.client ?? "") ?? destination.client
+    )?.toLowerCase();
+    const matchingClients = torrentClients.filter(
+      ({ name }) => name.toLowerCase() === clientName,
+    );
+    const client =
+      matchingClients.find(({ legacy }) => !legacy) ?? matchingClients[0];
+    const arrName = (
+      pendingRenames.get(destination.arr ?? "") ?? destination.arr
+    )?.toLowerCase();
+    const arr = arrSections.find(([name]) => name.toLowerCase() === arrName);
+    chooseEditor(() => {
+      const section =
+        client && !client.legacy
+          ? `TorrentClient.${client.name}`
+          : client?.name ?? arr?.[0] ?? "Settings";
+      if (client) {
+        setConfigTab("clients");
+        if (client.legacy) setActiveQbitKey(client.name);
+        else setActiveClient(client.name);
+      } else if (arr) {
+        setConfigTab("libraries");
+        setActiveArrKey(arr[0]);
+      } else {
+        setConfigTab("settings");
+        setSettingsOpen(true);
+      }
+      if (destination.field)
+        destinationFocus.current = {
+          fieldPath: `${section}.${destination.field}`,
+          monitorPath: destination.monitorPath,
+        };
+      setEditorRequest((request) => request + 1);
+    });
+  }, [
+    active,
+    formState,
+    destination,
+    torrentClients,
+    arrSections,
+    pendingRenames,
+  ]);
+
   const openConfigTab = (tab: typeof configTab) => {
     setConfigTab(tab);
     chooseEditor(() => {

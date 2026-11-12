@@ -24,6 +24,7 @@ public class TorrentProcessor : ITorrentProcessor
     private static readonly TimeSpan AllowlistRetryCooldown = TimeSpan.FromMinutes(15);
 
     private readonly ILogger<TorrentProcessor> _logger;
+    private readonly TimeProvider _clock;
     private readonly ITorrentClientRegistry _qbitManager;
     private readonly TorrentarrDbContext _dbContext;
     private readonly TorrentarrConfig _config;
@@ -55,7 +56,8 @@ public class TorrentProcessor : ITorrentProcessor
         IImportPathTracker? pathTracker = null,
         IMediaValidationService? mediaValidation = null,
         StalledUploadTracker? stalledUploads = null,
-        ISafeDeletionService? safeDeletion = null, IOperationalIssueReporter? issues = null)
+        ISafeDeletionService? safeDeletion = null, IOperationalIssueReporter? issues = null,
+        TimeProvider? clock = null)
     {
         _logger = logger;
         _qbitManager = qbitManager;
@@ -63,6 +65,7 @@ public class TorrentProcessor : ITorrentProcessor
         _config = config;
         _cache = cache;
         _restartCoordinator = restartCoordinator;
+        _clock = clock ?? TimeProvider.System;
         _importService = importService;
         _seedingService = seedingService;
         _pathTracker = pathTracker;
@@ -248,7 +251,7 @@ public class TorrentProcessor : ITorrentProcessor
             {
                 var client = _qbitManager.GetClient(instance);
                 if (client == null) continue;
-                var observedAt = DateTime.UtcNow;
+                var observedAt = _clock.GetUtcNow().UtcDateTime;
                 // Absence from a category is not proof of removal: the torrent may have moved to another owner.
                 var hashes = (await client.GetTorrentsAsync(cancellationToken: ct)).Select(t => t.Hash).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 foreach (var entry in missing[instance].Where(t => !hashes.Contains(t.Hash)))

@@ -120,6 +120,36 @@ public sealed class StorageMigrationTests : IDisposable
         File.ReadAllText(_file + ".bak").Should().Be(original);
     }
 
+    [Fact]
+    public void UnmappableEnvironmentOverrideIsLiveAndClearsWhenCorrected()
+    {
+        const string key = "TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER";
+        var prior = Environment.GetEnvironmentVariable(key);
+        var root = Path.GetTempPath().Replace('\\', '/').TrimEnd('/');
+        try
+        {
+            Environment.SetEnvironmentVariable(key, root + "-unmapped");
+            var config = Load($"""
+                [Settings]
+                ConfigVersion = "{ConfigurationLoader.ExpectedConfigVersion}"
+                [qBit]
+                Host = "localhost"
+                FreeSpace = []
+                [[qBit.Maintenance.PathMappings]]
+                ClientPath = "/remote"
+                LocalPath = '{root}'
+                """);
+            config.QBitInstances["qBit"].Migration.EnvironmentDownloadPathFailed.Should().BeTrue();
+            config.QBitInstances["qBit"].Migration.Notices.Should().Contain(StorageConfigMigration.DownloadPathNotice);
+            File.ReadAllText(_file).Should().NotContain("EnvironmentDownloadPathFailed").And.NotContain("Migration.Notices");
+            Environment.SetEnvironmentVariable(key, root + "/completed");
+            var corrected = new ConfigurationLoader(_file).Load().QBitInstances["qBit"];
+            corrected.DownloadPath.Should().Be("/remote/completed");
+            corrected.Migration.EnvironmentDownloadPathFailed.Should().BeFalse();
+        }
+        finally { Environment.SetEnvironmentVariable(key, prior); }
+    }
+
     [Theory]
     [InlineData("qBit")]
     [InlineData("TorrentClient.named")]

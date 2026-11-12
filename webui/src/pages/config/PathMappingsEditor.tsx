@@ -68,6 +68,7 @@ export function PathMappingsEditor({
             <div
               key={index}
               className={`collection-row ${isMapping || kind === "CategoryMappings" ? "collection-row--mapping" : isMonitor ? "collection-row--monitor" : "collection-row--rules"}`}
+              data-monitor-path={isMonitor ? String(row.Path ?? "") : undefined}
               role="group"
               aria-label={`${itemLabel[0]!.toUpperCase() + itemLabel.slice(1)} ${index + 1}`}
             >

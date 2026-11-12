@@ -57,6 +57,7 @@ export function clientGroups(fields: FieldDefinition[]): ConfigFieldGroup[] {
     ],
     ["Download location", ["DownloadPath"]],
     ["Free-space monitors", ["FreeSpace"]],
+    ["Path mappings", ["Maintenance.PathMappings", "Storage.PathMappings"]],
     ["Seeding and Hit & Run", ["CategorySeeding.*"]],
     ["Manage", ["Maintenance.*", "Storage.*", "Recovery.*"]],
   ]);

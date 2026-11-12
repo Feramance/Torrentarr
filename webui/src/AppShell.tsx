@@ -211,6 +211,8 @@ function AppShell({
   });
   const [manageDirty, setManageDirty] = useState(false);
   const [manageKey, setManageKey] = useState(0);
+  const [configDestination, setConfigDestination] =
+    useState<NavigateTabDetail["configDestination"]>();
   const [manageClientId, setManageClientId] = useState<string>();
   const [configDirty, setConfigDirty] = useState(false);
   const [configKey, setConfigKey] = useState(0);
@@ -486,6 +488,10 @@ function AppShell({
           instance: detail.issueInstance ?? "",
           category: detail.issueCategory ?? "automation",
         });
+      if (tab === "config")
+        setConfigDestination(
+          detail.configDestination && { ...detail.configDestination },
+        );
       if (detail.manageClientId) setManageClientId(detail.manageClientId);
       switchTab(tab as Tab, detail.preserveConfigDraft);
       if (tab === "qbittorrent" && (detail.qbitCategory || detail.qbitInstance))
@@ -1402,6 +1408,7 @@ function AppShell({
                   active={activeTab === "config"}
                   key={`config-${configKey}`}
                   onDirtyChange={setConfigDirty}
+                  destination={configDestination}
                 />
               </div>
             ) : null}

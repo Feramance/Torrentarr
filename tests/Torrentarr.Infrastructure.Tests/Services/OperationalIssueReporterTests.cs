@@ -72,13 +72,23 @@ public sealed class OperationalIssueReporterTests
                 var record = await scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>().OperationalIssues.SingleAsync();
                 record.Occurrences.Should().Be(2); record.ResolvedAt.Should().BeNull();
             }
+            DateTime originalStart;
+            using (var scope = services.CreateScope())
+                originalStart = (await scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>()
+                    .OperationalIssues.SingleAsync()).FirstObserved;
+            using (var restartedWhileOpen = Reporter())
+                await restartedWhileOpen.ReportAsync(report);
+            using (var scope = services.CreateScope())
+                (await scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>()
+                    .OperationalIssues.SingleAsync()).FirstObserved.Should().Be(originalStart);
             await two.ResolveAsync(report);
             using (var scope = services.CreateScope()) (await scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>().OperationalIssues.SingleAsync()).ResolvedAt.Should().NotBeNull();
             using var restarted = Reporter(); await restarted.ReportAsync(report);
             using (var scope = services.CreateScope())
             {
                 var record = await scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>().OperationalIssues.SingleAsync();
-                record.Occurrences.Should().Be(3); record.ResolvedAt.Should().BeNull();
+                record.Occurrences.Should().Be(4); record.ResolvedAt.Should().BeNull();
+                record.FirstObserved.Should().BeAfter(originalStart);
             }
         }
         finally { File.Delete(path); }
@@ -140,14 +150,17 @@ public sealed class OperationalIssueReporterTests
         var issue = new OperationalIssueReport("profile.prepare", "automation", "Search skipped", "Original profile preserved", "Check Arr", SubjectId: "42");
         try
         {
-            await reporter.ReportAsync(issue); await reporter.ResolveAsync(issue);
-            reporter.Pending.Should().ContainSingle(p => p.Resolved && p.FirstObserved.HasValue);
+            await reporter.ReportAsync(issue);
+            var originalStart = reporter.Pending.Single().FirstObserved;
+            await reporter.ReportAsync(issue);
+            await reporter.ResolveAsync(issue);
+            reporter.Pending.Should().ContainSingle(p => p.Resolved && p.FirstObserved == originalStart);
             using (var scope = services.CreateScope()) await scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>().Database.EnsureCreatedAsync();
             await reporter.FlushAsync(default);
             using (var scope = services.CreateScope())
             {
                 var record = await scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>().OperationalIssues.SingleAsync();
-                record.Title.Should().Be("Search skipped"); record.ResolvedAt.Should().NotBeNull(); record.FirstObserved.Should().BeOnOrBefore(record.ResolvedAt!.Value);
+                record.Title.Should().Be("Search skipped"); record.ResolvedAt.Should().NotBeNull(); record.FirstObserved.Should().Be(originalStart!.Value);
             }
             reporter.Pending.Should().BeEmpty();
         }

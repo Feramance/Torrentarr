@@ -7,7 +7,11 @@ import type {
   OperationalIssueGroup,
 } from "../api/types";
 import { PersistentDetails } from "../components/PersistentDetails";
-import { requestNavigateTab, type NavigableTab } from "../utils/navigateTab";
+import {
+  requestNavigateTab,
+  type ConfigDestination,
+  type NavigableTab,
+} from "../utils/navigateTab";
 
 function IssueDetails({ group }: { group: OperationalIssueGroup }) {
   const [items, setItems] = useState<OperationalIssue[]>(group.examples);
@@ -60,6 +64,63 @@ function IssueDetails({ group }: { group: OperationalIssueGroup }) {
   useEffect(() => {
     if (loaded) void load(page);
   }, [loaded, page, load, group]);
+  const configAction = (issue: OperationalIssue, exactSubject: boolean) => {
+    const destination: ConfigDestination = {
+      client: issue.clientInstance || undefined,
+      arr: issue.arrInstance || undefined,
+    };
+    let label = "Open Config";
+    switch (issue.code) {
+      case "storage.reserve":
+        destination.field = "FreeSpace";
+        destination.monitorPath = exactSubject ? issue.subjectId : undefined;
+        label = destination.monitorPath
+          ? "Edit free-space monitor"
+          : "Open free-space monitors";
+        break;
+      case "config.storage":
+        destination.field = "Maintenance.PathMappings";
+        label = "Edit path mappings";
+        break;
+      case "config.migration":
+        destination.field = "DownloadPath";
+        label = "Check download location";
+        break;
+      case "client.connection":
+      case "config.client":
+        destination.field = "Host";
+        label = "Check client connection settings";
+        break;
+      case "import.ownership":
+        destination.field = "ManagedCategories";
+        label = "Check managed categories";
+        break;
+      case "profile.prepare":
+      case "profile.restore":
+        destination.field = "EntrySearch.QualityProfileMappings";
+        label = "Check quality profile mappings";
+        break;
+      case "media.validation-unavailable":
+        destination.field = "FFprobeAutoUpdate";
+        label = "Check FFprobe settings";
+        break;
+    }
+    return (
+      <button
+        type="button"
+        className="btn small"
+        onClick={() =>
+          requestNavigateTab({
+            tab: "config",
+            configDestination: destination,
+            preserveConfigDraft: true,
+          })
+        }
+      >
+        {label}
+      </button>
+    );
+  };
   const target = (
     [
       "config",
@@ -87,18 +148,25 @@ function IssueDetails({ group }: { group: OperationalIssueGroup }) {
         First observed {new Date(group.firstObserved).toLocaleString()} ·{" "}
         {group.occurrences} observations
       </p>
-      <button
-        type="button"
-        className="btn small"
-        onClick={() =>
-          requestNavigateTab({
-            tab: target,
-            manageClientId: group.clientInstance || undefined,
-          })
-        }
-      >
-        Open {target === "maintenance" ? "Manage" : target}
-      </button>
+      {target === "config" ? (
+        configAction(
+          group.affected === 1 ? group.examples[0] ?? group : group,
+          group.affected === 1,
+        )
+      ) : (
+        <button
+          type="button"
+          className="btn small"
+          onClick={() =>
+            requestNavigateTab({
+              tab: target,
+              manageClientId: group.clientInstance || undefined,
+            })
+          }
+        >
+          Open {target === "maintenance" ? "Manage" : target}
+        </button>
+      )}
       {error && <p role="alert">{error}</p>}
       <ul>
         {items.map((item) => (
@@ -119,6 +187,10 @@ function IssueDetails({ group }: { group: OperationalIssueGroup }) {
             <p>
               <strong>How to fix:</strong> {item.remediation}
             </p>
+            {target === "config" &&
+              group.affected > 1 &&
+              item.code === "storage.reserve" &&
+              configAction(item, true)}
           </li>
         ))}
       </ul>

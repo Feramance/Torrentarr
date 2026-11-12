@@ -948,7 +948,9 @@ it("uses the shared client dialog and saves only the selected torrent client", a
   expect(
     screen.getByRole("textbox", { name: "Client Type", exact: true }),
   ).toHaveValue("transmission");
-  expect(screen.queryByText("Path mappings")).not.toBeInTheDocument();
+  expect(
+    screen.getByText("Path mappings", { selector: "summary" }),
+  ).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Open Manage" })).toBeEnabled();
   const host = screen.getByRole("textbox", { name: "Host", exact: true });
   await user.clear(host);
@@ -1725,3 +1727,59 @@ it("focuses and scrolls after the requested editor mounts, without jumping on or
     header.remove();
   }
 }, 15_000);
+
+it("focuses the affected free-space monitor and preserves edits on fallback", async () => {
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configQbitOnly,
+        qBit: {
+          ...configQbitOnly.qBit,
+          FreeSpace: [
+            { Path: "/first", Limit: "10G", Enabled: true },
+            { Path: "/second", Limit: "20G", Enabled: true },
+          ],
+        },
+      }),
+    ),
+  );
+  const { rerender } = renderConfig();
+  await openSection("qBit");
+  fireEvent.change(screen.getByRole("textbox", { name: "Host", exact: true }), {
+    target: { value: "draft-host" },
+  });
+
+  rerender(
+    <ConfigView
+      destination={{
+        client: "qBit",
+        field: "FreeSpace",
+        monitorPath: "/second",
+      }}
+    />,
+  );
+  const second = await screen.findByRole("group", {
+    name: "Free-space monitor 2",
+  });
+  await waitFor(() =>
+    expect(second.contains(document.activeElement)).toBe(true),
+  );
+
+  rerender(
+    <ConfigView
+      destination={{
+        client: "qBit",
+        field: "FreeSpace",
+        monitorPath: "/removed",
+      }}
+    />,
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByText("Free-space monitors", { selector: "summary" }),
+    ).toHaveFocus(),
+  );
+  expect(
+    screen.getByRole("textbox", { name: "Host", exact: true }),
+  ).toHaveValue("draft-host");
+});

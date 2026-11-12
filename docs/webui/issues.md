@@ -7,7 +7,7 @@ The **Issues** view groups problems by cause and instance. Its badge counts acti
 
 Expand a group to see its impact, corrective action, affected subjects, and links to existing settings or logs. Filter by instance, severity, status, or text. Errors appear before warnings. The view refreshes every five seconds while visible; its navigation count refreshes every 15 seconds.
 
-Issues close after a successful observation of the same operation. Repeated failures update the existing issue. Resolved issues remain available for 30 days; unresolved issues do not expire. Removing an instance retires its issues with an explicit configuration-removal reason. Renames preserve issue ownership and history.
+An issue appears in Active after it has stayed open for 30 seconds. Recovery clears it on the next refresh. Repeated reports of the same failure keep the original grace period, and a recurrence starts a new one. Resolved issues remain available for 30 days. Removing or disabling an instance closes its issues. Renames preserve issue ownership and history. Config actions open the affected instance and setting when Torrentarr can identify them. Missing artwork uses the normal placeholder.
 
 A search whose temporary profile cannot be safely prepared is skipped and retried later. Torrentarr records the original profile before changing Arr and preserves that record after uncertain requests. A profile changed manually to an unrelated value is not overwritten: check the original and temporary profiles and reconcile the conflict in Arr. Previously lost original profiles cannot be reconstructed automatically.
 

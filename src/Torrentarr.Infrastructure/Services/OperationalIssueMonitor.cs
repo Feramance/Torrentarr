@@ -74,6 +74,19 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
             }
         foreach (var disk in disks)
             await Observe(new("storage.reserve", "system", "Download storage needs attention", $"Client={disk.ClientInstanceId}; path={disk.Path}; free={disk.FreeBytes} bytes; reserve={disk.ThresholdBytes} bytes; total={disk.TotalBytes} bytes; below threshold={disk.BelowThreshold}; inspection error={disk.Error ?? "none"}. Downloads may remain paused until the reserve is restored.", "Restore access to the monitored directory or free space above its configured reserve.", ClientInstance: disk.ClientInstanceId, SubjectType: "storage", SubjectId: disk.Path, Severity: "warning", Target: "config"), disk.Error != null || disk.BelowThreshold, ct);
+        if (services.GetService<TorrentarrDbContext>() is { } storageDb)
+        {
+            var activeReserves = await storageDb.OperationalIssues.AsNoTracking()
+                .Where(i => i.Code == "storage.reserve" && i.ResolvedAt == null).ToListAsync(ct);
+            foreach (var old in activeReserves)
+            {
+                if (disks.Any(d => d.ClientInstanceId == old.ClientInstance && d.Path == old.SubjectId)) continue;
+                var client = config.GetTorrentClient(old.ClientInstance);
+                if (client is { Disabled: false } && client.FreeSpace.Any(m => m.Enabled && m.Path == old.SubjectId)) continue;
+                await issues.ResolveAsync(new(old.Code, old.Category, old.Title, old.Impact, old.Remediation,
+                    old.ArrInstance, old.ClientInstance, old.SubjectType, old.SubjectId, old.Severity, old.Target), ct);
+            }
+        }
         if (services.GetService<TorrentAutomationService>() is { } automation)
         {
             var state = automation.GetStatus();
