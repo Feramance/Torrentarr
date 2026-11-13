@@ -643,6 +643,9 @@ public class TorrentProcessor : ITorrentProcessor
         var submittedAt = libraryEntry.ImportSubmittedAt is { } firstSubmission
             ? DateTimeOffset.FromUnixTimeSeconds(firstSubmission)
             : lastSubmittedAt;
+        var addedAt = torrent.AddedOn is > 0 and <= 253402300799
+            ? DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn)
+            : (DateTimeOffset?)null;
         var pendingImport = !libraryEntry.Imported && submittedAt.HasValue;
         if (pendingImport || libraryEntry.AutoDeletePendingAddedOn.HasValue)
         {
@@ -653,7 +656,7 @@ public class TorrentProcessor : ITorrentProcessor
                     || libraryEntry.AutoDeletePendingAddedOn.HasValue)) return;
             if (pendingImport && submittedAt is { } confirmationStart)
             {
-                if (await TryFinalizeImportedTorrentAsync(torrent, libraryEntry, confirmationStart, cleanupComplete, ct)
+                if (await TryFinalizeImportedTorrentAsync(torrent, libraryEntry, addedAt ?? confirmationStart, cleanupComplete, ct)
                     || DateTimeOffset.UtcNow - (lastSubmittedAt ?? confirmationStart) < TimeSpan.FromMinutes(15))
                     return;
                 _pathTracker?.InvalidateTorrent(torrent.ClientInstanceId, torrent.Hash);
@@ -667,6 +670,10 @@ public class TorrentProcessor : ITorrentProcessor
             && !string.IsNullOrEmpty(torrent.ContentPath)
             && torrent.CompletionOn < timeNow - 60;
         if (pendingImport && !completedForImport) return;
+        if (completedForImport && !pendingImport && !libraryEntry.Imported && addedAt is { } importHistoryStart
+            && await TryFinalizeImportedTorrentAsync(torrent, libraryEntry, importHistoryStart,
+                _cache.IsFileFiltered(torrent.ClientInstanceId, torrent.Hash), ct))
+            return;
         if (completedForImport && !pendingImport && !_cache.IsFileFiltered(torrent.ClientInstanceId, torrent.Hash)
             && !_cache.IsAllowlistRetryCoolingDown(torrent.ClientInstanceId, torrent.Hash, AllowlistRetryCooldown))
         {
@@ -1424,11 +1431,11 @@ public class TorrentProcessor : ITorrentProcessor
     }
 
     private async Task<bool> TryFinalizeImportedTorrentAsync(TorrentInfo torrent, TorrentLibrary entry,
-        DateTimeOffset submittedAt, bool cleanupComplete, CancellationToken ct)
+        DateTimeOffset historySince, bool cleanupComplete, CancellationToken ct)
     {
         var owner = ResolveArrOwner(torrent);
         if (owner == null || _importService == null
-            || !await _importService.IsImportedAsync(torrent.Hash, owner, submittedAt, ct))
+            || !await _importService.IsImportedAsync(torrent.Hash, owner, historySince, ct))
             return false;
 
         entry.Imported = true;

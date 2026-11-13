@@ -116,7 +116,7 @@ public class ArrImportService : IArrImportService
         }
     }
 
-    public async Task<bool> IsImportedAsync(string hash, string category, DateTimeOffset submittedAt,
+    public async Task<bool> IsImportedAsync(string hash, string category, DateTimeOffset historySince,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -130,7 +130,7 @@ public class ArrImportService : IArrImportService
             {
                 Type = type,
                 DownloadId = hash,
-                SubmittedAt = submittedAt.ToUnixTimeSeconds()
+                SubmittedAt = historySince.ToUnixTimeSeconds()
             };
             var eventType = type is "lidarr" or "readarr" ? 8 : 3;
             var since = DateTimeOffset.FromUnixTimeSeconds(evidence.SubmittedAt);

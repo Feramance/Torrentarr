@@ -196,7 +196,8 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
         if (services.GetService<TorrentarrDbContext>() is { } db)
         {
             var persisted = await db.OperationalIssues.AsNoTracking().Where(i => i.ResolvedAt == null
-                && (i.Code == "config.validation" || i.Code == "config.migration" || i.Code == "config.storage" || i.Code == "config.client")).ToListAsync(ct);
+                && (i.Code == "config.validation" || i.Code == "config.migration" || i.Code == "config.migration-action-required"
+                    || i.Code == "config.storage" || i.Code == "config.client")).ToListAsync(ct);
             previous = previous.Concat(persisted.Select(i => new OperationalIssueReport(i.Code, i.Category, i.Title,
                 i.Impact, i.Remediation, i.ArrInstance, i.ClientInstance, i.SubjectType, i.SubjectId, i.Severity, i.Target)));
         }
@@ -239,7 +240,7 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
             impact.Add(StorageConfigMigration.EnvironmentDownloadPathNotice);
             actions.Add("Correct or remove the legacy COMPLETED_DOWNLOAD_FOLDER environment override and restart Torrentarr.");
         }
-        return impact.Count == 0 ? null : new("config.migration", "system", "Migrated configuration needs review",
+        return impact.Count == 0 ? null : new("config.migration-action-required", "system", "Migrated configuration needs review",
             DiagnosticText.Safe(string.Join(". ", impact)), string.Join(" ", actions),
             ClientInstance: id, Severity: "warning", Target: "config");
     }

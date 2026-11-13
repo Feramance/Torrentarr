@@ -176,7 +176,7 @@ public sealed class AuditFixRegressionTests
     }
 
     [Fact]
-    public async Task ImportConfirmationRequiresMatchingHistoryAfterSubmission()
+    public async Task ImportConfirmationRequiresMatchingHistoryForCurrentTorrentAndClearQueue()
     {
         using var stub = new ArrStub("radarr");
         var config = new TorrentarrConfig();
@@ -185,12 +185,14 @@ public sealed class AuditFixRegressionTests
         var service = new ArrImportService(NullLogger<ArrImportService>.Instance, config, Moq.Mock.Of<Torrentarr.Core.Interfaces.ITorrentClientRegistry>(), db);
         config.ArrInstances["Arr"].Category = "movies";
         var submitted = DateTimeOffset.UtcNow;
+        var added = submitted.AddHours(-1);
         var accepted = await service.TriggerImportAsync("TARGET", "/downloads/item", "movies");
         accepted.Success.Should().BeTrue();
         accepted.CommandId.Should().Be(42);
         (await service.IsImportedAsync("TARGET", "movies", submitted)).Should().BeFalse();
         stub.ImportHistoryDate = submitted.AddMinutes(-1);
         (await service.IsImportedAsync("TARGET", "movies", submitted)).Should().BeFalse();
+        (await service.IsImportedAsync("TARGET", "movies", added)).Should().BeTrue();
         stub.ImportHistoryDate = submitted.AddSeconds(1);
         (await service.IsImportedAsync("OTHER", "movies", submitted)).Should().BeFalse();
         stub.QueuedDownloadId = "target";

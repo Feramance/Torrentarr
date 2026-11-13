@@ -52,17 +52,17 @@ public sealed class OperationalIssueMonitorTests
         active.Should().HaveCount(2).And.OnlyContain(i => i.Target == "config" && i.Occurrences == 2);
         active.Single(i => i.Code == "config.storage").ClientInstance.Should().Be("qBit-other");
         active.Single(i => i.Code == "config.storage").Remediation.Should().Contain("Maintenance.PathMappings");
-        var migration = active.Single(i => i.Code == "config.migration");
+        var migration = active.Single(i => i.Code == "config.migration-action-required");
         migration.Remediation.Should().Contain("Keep free-space protection off").And.Contain("DownloadPath");
         var client = config.TorrentClients["recycling"];
         client.FreeSpace.Add(new() { Enabled = true, Path = root.Path });
         disks.Add(new() { ClientInstanceId = "recycling", Path = root.Path, Error = "Unreadable" });
         await monitor.InspectAsync(default);
-        (await db.OperationalIssues.AsNoTracking().SingleAsync(i => i.Code == "config.migration"))
+        (await db.OperationalIssues.AsNoTracking().SingleAsync(i => i.Code == "config.migration-action-required"))
             .Remediation.Should().Contain("Keep free-space protection off");
         disks[0].Error = null;
         await monitor.InspectAsync(default);
-        migration = await db.OperationalIssues.AsNoTracking().SingleAsync(i => i.Code == "config.migration");
+        migration = await db.OperationalIssues.AsNoTracking().SingleAsync(i => i.Code == "config.migration-action-required");
         migration.ResolvedAt.Should().BeNull();
         migration.Remediation.Should().Contain("DownloadPath").And.NotContain("Keep free-space protection off");
         client.DownloadPath = "/downloads";

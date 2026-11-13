@@ -279,12 +279,35 @@ public sealed class OperationalIssueEndpointTests
     }
 
     [Fact]
+    public async Task ActionableMigrationIssuesAreVisibleWhileRetiredNoticesAreHidden()
+    {
+        using var factory = new IssueFactory();
+        using var client = factory.CreateClientWithApiToken();
+        var reporter = factory.Services.GetRequiredService<IOperationalIssueReporter>();
+        var issue = new OperationalIssueReport("config.migration-action-required", "system", "Migrated configuration needs review",
+            "Free-space protection is disabled.", "Configure a readable monitor path.", ClientInstance: "qBit", Target: "config");
+        await reporter.ReportAsync(issue);
+        await reporter.ReportAsync(issue with { Code = "config.migration" });
+        factory.Clock.Advance();
+
+        var response = await client.GetFromJsonAsync<JsonElement>("/web/issues");
+        response.GetProperty("total").GetInt32().Should().Be(1);
+        var group = response.GetProperty("items")[0];
+        group.GetProperty("code").GetString().Should().Be(issue.Code);
+        var details = await client.GetFromJsonAsync<JsonElement>("/web/issues/" + group.GetProperty("id").GetInt64());
+        details.GetProperty("total").GetInt32().Should().Be(1);
+        var summary = await client.GetFromJsonAsync<JsonElement>("/web/issues/summary");
+        summary.GetProperty("activeGroups").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
     public async Task DatabaseOutageReturnsUnavailableAndPendingReports_NotHealthyEmptyHistory()
     {
         using var factory = new IssueFactory(); using var client = factory.CreateClientWithApiToken();
         using (var scope = factory.Services.CreateScope())
             await Microsoft.EntityFrameworkCore.RelationalDatabaseFacadeExtensions.ExecuteSqlRawAsync(scope.ServiceProvider.GetRequiredService<Torrentarr.Infrastructure.Database.TorrentarrDbContext>().Database, "DROP TABLE torrentarr_operational_issues");
-        await factory.Services.GetRequiredService<IOperationalIssueReporter>().ReportAsync(new("database.test", "system", "Database unavailable", "Search held back", "Check database"));
+        await factory.Services.GetRequiredService<IOperationalIssueReporter>().ReportAsync(new("config.migration-action-required",
+            "system", "Migrated configuration needs review", "Free-space protection is disabled.", "Configure a readable monitor path."));
         var early = await client.GetFromJsonAsync<JsonElement>("/web/issues");
         early.GetProperty("pending").GetArrayLength().Should().Be(0);
         factory.Clock.Advance();
