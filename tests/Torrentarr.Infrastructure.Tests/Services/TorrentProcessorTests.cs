@@ -759,6 +759,15 @@ public sealed class TorrentProcessorTests : IDisposable
         var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, manager, _db, config, cache,
             new DatabaseRestartCoordinator(), imports.Object, seeding.Object, tracker, safeDeletion: deletion.Object);
 
+        torrent.State = "checkingUP";
+        await processor.ProcessTorrentAsync(torrent.Hash);
+        (await processor.IsReadyForImportAsync(torrent.Hash, "qBit")).Should().BeFalse();
+        await processor.ImportTorrentAsync(torrent.Hash, "qBit");
+        imports.Verify(i => i.TriggerImportAsync(torrent.Hash, path, torrent.Category, It.IsAny<CancellationToken>()), Times.Never);
+        imports.Verify(i => i.IsImportedAsync(torrent.Hash, torrent.Category, historyStart, It.IsAny<CancellationToken>()), Times.Never);
+        deletion.Verify(s => s.RemoveTorrentAsync("qBit", torrent.Hash, true, It.IsAny<CancellationToken>()), Times.Never);
+
+        torrent.State = "uploading";
         await processor.ProcessTorrentAsync(torrent.Hash);
         _db.ChangeTracker.Clear();
         var saved = await _db.TorrentLibrary.SingleAsync();

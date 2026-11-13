@@ -317,7 +317,7 @@ public class TorrentProcessor : ITorrentProcessor
             return false;
         }
 
-        var isComplete = torrent.Progress >= 1.0;
+        var isComplete = torrent.Progress >= 1.0 && !IsCheckingState(ParseTorrentState(torrent.State));
         var isSeeding = TorrentPolicyHelper.IsQueueSeedingForSort(torrent.State);
 
         // §2.2: Grace period: completion_on=0 means qBit hasn't set it yet; wait until 60s after completion
@@ -354,6 +354,8 @@ public class TorrentProcessor : ITorrentProcessor
             _logger.LogWarning("Torrent {Hash} not found in qBittorrent", hash);
             return;
         }
+
+        if (IsCheckingState(ParseTorrentState(torrent.State))) return;
 
         if (_issues != null) await _issues.ResolveAsync(OwnershipIssue(torrent), cancellationToken);
         var owner = ResolveArrOwner(torrent);
@@ -626,6 +628,8 @@ public class TorrentProcessor : ITorrentProcessor
 
         // Update statistics based on state
         UpdateStats(state, stats);
+
+        if (IsCheckingState(state)) return;
 
         var client = _qbitManager.GetClient(torrent.QBitInstanceName);
         if (client == null)
@@ -1373,17 +1377,17 @@ public class TorrentProcessor : ITorrentProcessor
         return false;
     }
 
+    private static bool IsCheckingState(TorrentState state) =>
+        state is TorrentState.CheckingUploading or TorrentState.CheckingDownloading or TorrentState.CheckingResumeData;
+
     /// <summary>
     /// Check for ignored states (qBitrr: is_ignored_state — arss.py:918-928).
     /// These states are skipped entirely during torrent processing.
     /// </summary>
     private static bool IsIgnoredState(TorrentState state)
     {
-        return state is TorrentState.ForcedDownloading
+        return IsCheckingState(state) || state is TorrentState.ForcedDownloading
             or TorrentState.ForcedUploading
-            or TorrentState.CheckingUploading
-            or TorrentState.CheckingDownloading
-            or TorrentState.CheckingResumeData
             or TorrentState.Allocating
             or TorrentState.Moving
             or TorrentState.QueuedDownloading;
