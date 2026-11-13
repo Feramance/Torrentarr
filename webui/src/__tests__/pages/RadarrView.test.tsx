@@ -22,6 +22,7 @@ import { ArrCatalogView } from "../../pages/ArrCatalogView";
 import { ToastProvider } from "../../context/ToastContext";
 import { WebUIProvider } from "../../context/WebUIContext";
 import { SearchProvider } from "../../context/SearchContext";
+import { STATISTICS_UPDATED } from "../../hooks/useStatisticsUpdates";
 
 vi.mock("../../utils/sharedIntersectionObserver", () => ({
   observePosterVisibility: () => () => {},
@@ -222,16 +223,21 @@ describe("Radarr catalog – centralized instance selection", () => {
 
 it("paginates, searches, filters missing movies, and opens details in the active catalog", async () => {
   const requests: URL[] = [];
+  let releaseSearch!: () => void;
+  const searchResponse = new Promise<void>((resolve) => {
+    releaseSearch = resolve;
+  });
   server.use(
     http.get("/web/meta", minimalMeta),
     http.get("/web/config", () => HttpResponse.json(minimalConfig)),
     http.post("/web/config", () => HttpResponse.json({})),
     http.get("/web/arr", () => HttpResponse.json(radarrArrList)),
-    http.get("/web/radarr/Radarr%20HD/movies", ({ request }) => {
+    http.get("/web/radarr/Radarr%20HD/movies", async ({ request }) => {
       const url = new URL(request.url);
       requests.push(url);
       const page = Number(url.searchParams.get("page"));
       const query = url.searchParams.get("q");
+      if (query === "Wanted") await searchResponse;
       const all = Array.from({ length: 51 }, (_, i) => ({
         id: i + 1,
         title: i === 0 ? "First page" : i === 50 ? "Second page" : `Movie ${i}`,
@@ -294,6 +300,14 @@ it("paginates, searches, filters missing movies, and opens details in the active
   fireEvent.change(screen.getByLabelText("Search"), {
     target: { value: "Wanted" },
   });
+  try {
+    await waitFor(() =>
+      expect(requests.at(-1)?.searchParams.get("q")).toBe("Wanted"),
+    );
+    fireEvent(window, new Event(STATISTICS_UPDATED));
+  } finally {
+    releaseSearch();
+  }
   await screen.findByText("Wanted");
   expect(requests.at(-1)?.searchParams.get("page")).toBe("0");
   expect(requests.at(-1)?.searchParams.get("q")).toBe("Wanted");

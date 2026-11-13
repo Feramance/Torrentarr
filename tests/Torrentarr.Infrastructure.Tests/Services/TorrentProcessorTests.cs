@@ -779,8 +779,10 @@ public sealed class TorrentProcessorTests : IDisposable
             importedBeforeScan ? Times.Never() : Times.Once());
     }
 
-    [Fact]
-    public async Task ConfirmedImportAutoDelete_RetriesAfterRestartWithoutResubmittingImport()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ConfirmedImportAutoDelete_RetriesAfterRestartWithoutResubmittingImport(bool protectionIncreased)
     {
         const string instance = "qBit";
         const string category = "radarr-hd";
@@ -804,11 +806,15 @@ public sealed class TorrentProcessorTests : IDisposable
             .ReturnsAsync([new() { Name = "movie.mkv", Priority = 1 }]);
         client.SetupSequence(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>()))
             .ReturnsAsync(false).ReturnsAsync(true);
+        client.Setup(c => c.ResumeTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
         var registry = new Mock<ITorrentClientRegistry>();
         registry.Setup(r => r.GetClient(instance)).Returns(client.Object);
         var seeding = new Mock<ISeedingService>();
+        var protectedByTracker = false;
         seeding.Setup(s => s.EvaluateRemovalAsync(It.IsAny<TorrentInfo>(), TorrentRemovalIntent.SeedingLimit, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new RemovalDecision([]));
+            .ReturnsAsync(() => new RemovalDecision(protectedByTracker
+                ? [new("hnr.protected", "Seeding requirement increased", "Keep seeding")]
+                : []));
         var import = new Mock<IArrImportService>();
         import.Setup(s => s.IsImportedAsync(torrent.Hash, category, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
         var paths = new ImportPathTracker();
@@ -824,6 +830,23 @@ public sealed class TorrentProcessorTests : IDisposable
         var saved = await _db.TorrentLibrary.SingleAsync();
         saved.Imported.Should().BeTrue();
         saved.AutoDeletePendingAddedOn.Should().Be(torrent.AddedOn);
+
+        if (protectionIncreased)
+        {
+            var pauseKey = MaintenancePersistence.Key(instance, torrent.Hash, "routine-pause");
+            MaintenancePersistence.Write(_db, pauseKey, new PauseOwnership { Owned = true, AddedOn = torrent.AddedOn });
+            torrent.State = "stoppedUP";
+            protectedByTracker = true;
+
+            await Process(Processor(new ImportPathTracker()));
+
+            client.Verify(c => c.ResumeTorrentsAsync(It.Is<List<string>>(hashes => hashes.Contains(torrent.Hash)),
+                It.IsAny<CancellationToken>()), Times.Once);
+            MaintenancePersistence.Read<PauseOwnership>(_db, pauseKey).Owned.Should().BeFalse();
+            saved.AutoDeletePendingAddedOn.Should().Be(torrent.AddedOn);
+            protectedByTracker = false;
+            torrent.State = "uploading";
+        }
 
         await Process(Processor(new ImportPathTracker()));
         _db.ChangeTracker.Clear();

@@ -125,6 +125,9 @@ esac
                         "src/Torrentarr.Core/Configuration/ConfigurationLoader.cs", "config.example.toml"]
         schema = re.search(r'ExpectedConfigVersion = "([^"]+)"',
                            (ROOT / schema_files[1]).read_text()).group(1)
+        self.assertIn("ConfigVersion { get; set; } = ConfigurationLoader.ExpectedConfigVersion;",
+                      (ROOT / schema_files[0]).read_text())
+        self.assertIn(f'ConfigVersion = "{schema}"', (ROOT / schema_files[2]).read_text())
         files = [section.split(":", 2)[2] for section in config.sections()
                  if section.startswith("bumpversion:file:")]
         for release_type, version in expected.items():
@@ -154,7 +157,6 @@ esac
                 # Config schema versions advance with migrations, independently of package releases.
                 for filename in schema_files:
                     self.assertEqual((destination / filename).read_text(), (ROOT / filename).read_text())
-                    self.assertIn(f'"{schema}"', (destination / filename).read_text())
 
     def test_changelog_works_before_draft_tag_exists(self):
         with tempfile.TemporaryDirectory() as directory:

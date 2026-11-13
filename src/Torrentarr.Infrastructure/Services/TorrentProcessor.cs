@@ -104,6 +104,12 @@ public class TorrentProcessor : ITorrentProcessor
         return allowed;
     }
 
+    private async Task ResumeOwnedPauseAsync(ITorrentClient client, TorrentInfo torrent, CancellationToken ct)
+    {
+        if (CanResumeAutomatically(torrent) && LogActionResult(torrent, "resume", await client.ResumeTorrentsAsync([torrent.Hash], ct)))
+            MaintenancePersistence.Write(_dbContext, MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "routine-pause"), new PauseOwnership());
+    }
+
     private bool LogActionResult(TorrentInfo torrent, string action, bool accepted)
     {
         _logger.LogInformation("Torrent action {Action} for [{Name}] ({Hash}) on {Client}: accepted={Accepted}", action, torrent.Name, torrent.Hash, torrent.ClientInstanceId, accepted);
@@ -651,9 +657,17 @@ public class TorrentProcessor : ITorrentProcessor
         {
             var ownerConfig = _config.ArrInstances.GetValueOrDefault(libraryEntry.ArrInstance);
             var cleanupComplete = await CompleteExcludedFileCleanupAsync(client, torrent, ownerConfig, ct);
-            if (libraryEntry.AutoDeletePendingAddedOn.HasValue
-                && (await TryCompleteImportAutoDeleteAsync(client, torrent, libraryEntry, cleanupComplete, ct)
-                    || libraryEntry.AutoDeletePendingAddedOn.HasValue)) return;
+            if (libraryEntry.AutoDeletePendingAddedOn.HasValue)
+            {
+                if (await TryCompleteImportAutoDeleteAsync(client, torrent, libraryEntry, cleanupComplete, ct))
+                    return;
+                if (libraryEntry.AutoDeletePendingAddedOn.HasValue)
+                {
+                    if (torrent.IsStopped && leaveAlone && !HasTag(torrent, FreeSpacePausedTag))
+                        await ResumeOwnedPauseAsync(client, torrent, ct);
+                    return;
+                }
+            }
             if (pendingImport && submittedAt is { } confirmationStart)
             {
                 if (await TryFinalizeImportedTorrentAsync(torrent, libraryEntry, addedAt ?? confirmationStart, cleanupComplete, ct)
@@ -760,8 +774,7 @@ public class TorrentProcessor : ITorrentProcessor
         {
             _logger.LogInformation("Resuming stopped torrent (leave_alone): [{Name}] | State[{State}] | Hash[{Hash}]",
                 torrent.Name, torrent.State, torrent.Hash);
-            if (CanResumeAutomatically(torrent) && LogActionResult(torrent, "resume", await client.ResumeTorrentsAsync(new List<string> { torrent.Hash }, ct)))
-                MaintenancePersistence.Write(_dbContext, MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "routine-pause"), new PauseOwnership());
+            await ResumeOwnedPauseAsync(client, torrent, ct);
         }
         // Branch 8: Stalled DL / MetaDL + not stalled_ignore → stalled processing (qBitrr line 6134-6140)
         else if (state is TorrentState.MetadataDownloading or TorrentState.ForcedMetaDL
