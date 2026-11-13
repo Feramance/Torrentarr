@@ -87,9 +87,9 @@ Legacy global storage keys are migration inputs rather than current controls. Se
 [configuration migration](../configuration/config-file.md#client-download-paths-and-free-space-monitors)
 and [editor workflows](config-editor.md).
 
-## Manage and torrent automation endpoints
+## Maintenance and torrent automation endpoints
 
-The existing `/web/maintenance/*` and `/api/maintenance/*` paths remain supported; Manage is the interface name.
+The Maintenance sidebar group uses the existing `/web/maintenance/*` and `/api/maintenance/*` paths.
 
 | Method and path suffix | Purpose |
 | --- | --- |
@@ -105,4 +105,4 @@ The existing `/web/maintenance/*` and `/api/maintenance/*` paths remain supporte
 
 Preview supports saved configuration or draft overrides; draft plans cannot execute. Apply rejects expired, consumed, stale, or unauthorized plans. Configure automatic execution through `Maintenance.Operations.<operation>.ExecutionMode` and its UTC schedule. Manual permits reviewed one-time application. Automatic persists across restarts and requires no restart to activate. Legacy `armed` and `armedOperations` status fields remain false/empty for compatibility. These operations retain their original identifiers.
 
-All configuration controls use the existing config API. A Manage save sends only changed maintenance paths and reports validation, reload, and application status through that API.
+All configuration controls use the existing config API. A maintenance settings save sends only changed maintenance paths and reports validation, reload, and application status through that API.

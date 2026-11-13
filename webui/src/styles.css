@@ -1655,7 +1655,6 @@ svg[height] {
   display: grid;
   gap: 8px;
   grid-template-columns: minmax(0, 1fr);
-  max-width: 1440px;
   align-items: start;
 }
 
@@ -2139,6 +2138,13 @@ svg[height] {
   border-radius: 4px;
   padding: 8px 12px;
   background: var(--surface);
+}
+.config-section__heading,
+.tracker-card .card-header > h4 {
+  margin: 0;
+  color: var(--on-surface);
+  font-size: 14px;
+  font-weight: 600;
 }
 .config-section > summary {
   cursor: pointer;
@@ -2957,7 +2963,8 @@ details > summary:focus-visible {
   padding: 6px 10px;
 }
 
-[data-density="compact"] .config-section > summary {
+[data-density="compact"]
+  :is(.config-section > summary, .config-section__heading) {
   font-size: 13px;
 }
 
@@ -5024,12 +5031,6 @@ section.maintenance-workspace {
 .maintenance-action-list .maintenance-action-blocker {
   color: var(--warning);
 }
-.maintenance-workspace details {
-  margin: 0.75rem 0;
-}
-.maintenance-workspace summary {
-  cursor: pointer;
-}
 @media (max-width: 720px) {
   .maintenance-action-list li {
     padding: 0.75rem;
@@ -5206,7 +5207,7 @@ section.maintenance-workspace {
   border-radius: 0 0 4px 4px;
 }
 
-.manage-tool > summary {
+.manage-tool-heading {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem 1rem;
@@ -5215,8 +5216,11 @@ section.maintenance-workspace {
 .manage-tool-status {
   margin-left: auto;
 }
-.manage-group {
-  margin-top: 1.5rem;
+.manage-group,
+.maintenance-shared {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
 }
 @media (max-width: 600px) {
   .manage-tool-status {
@@ -5227,13 +5231,7 @@ section.maintenance-workspace {
 .manage-tool-purpose {
   flex-basis: 100%;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-weight: 400;
-}
-.manage-tool[open] .manage-tool-purpose {
-  white-space: normal;
 }
 
 .maintenance-workspace .manage-toolbar {
@@ -5497,14 +5495,14 @@ pre,
   flex-shrink: 0;
   transform: none;
 }
-.console-shell .nav button.active {
+.console-shell .nav button:is(.active, [aria-current="page"]) {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
   box-shadow: inset 2px 0 0 var(--accent);
   font-weight: 600;
 }
-.console-shell .nav button:hover:not(.active) {
+.console-shell .nav button:hover:not(.active, [aria-current="page"]) {
   background: color-mix(in srgb, var(--accent) 7%, transparent);
   color: var(--on-surface);
   border-color: transparent;
@@ -6032,50 +6030,36 @@ pre,
   overflow: clip;
 }
 
-.config-workspace__layout {
+.config-workspace__layout,
+.maintenance-workspace > .card-body {
   display: grid;
-  gap: 14px;
-  padding: 14px;
+  min-width: 0;
+  gap: 16px;
 }
 
-.config-tabs {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 8px;
+.console-shell[data-density="compact"]
+  :is(.config-workspace__layout, .maintenance-workspace > .card-body) {
+  gap: 10px;
 }
 
-.config-tabs button {
-  font: inherit;
-  padding: 6px 10px;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
+.maintenance-workspace > .card-body > p,
+.config-arr-overview {
+  margin: 0;
 }
 
-.config-tabs button:hover {
-  color: var(--on-surface);
+.maintenance-shared,
+.maintenance-history {
+  min-width: 0;
 }
 
-.config-tabs button.active {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
-.config-tabs button:focus-visible {
-  outline: 2px solid var(--teal);
-  outline-offset: 2px;
+.maintenance-workspace .manage-toolbar {
+  align-items: end;
 }
 
 .config-arr-overview {
   max-width: 1440px;
   display: grid;
   gap: 22px;
-  margin-bottom: 20px;
 }
 .config-arr-toolbar {
   display: flex;
@@ -6257,7 +6241,6 @@ pre,
   }
 }
 .config-workspace__editor {
-  max-width: 1440px;
   min-width: 0;
 }
 
@@ -6317,10 +6300,6 @@ pre,
   border-top: 1px solid var(--border);
 }
 
-.config-inline-editor .modal-header > button {
-  display: none;
-}
-
 .config-inline-editor .config-modal .config-modal__client-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -6364,6 +6343,18 @@ pre,
   margin: 3px 0 6px 17px;
   padding-left: 9px;
   border-left: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+.nav-instances[hidden] {
+  display: none;
+}
+
+.settings-nav-chevron {
+  margin-inline-start: auto;
+}
+
+.console-shell[data-nav="collapsed"] .console-sidebar .settings-nav-chevron {
+  display: none;
 }
 
 .nav-instances button {

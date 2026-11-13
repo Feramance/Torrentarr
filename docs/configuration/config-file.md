@@ -224,7 +224,7 @@ Clients missing `TorrentScanIntervalSeconds` inherit the nearest allowed interva
 
 #### Migration to 6.20.2
 
-Maintenance remains the canonical per-client configuration and all ten tools remain supported. Configure them in **Manage**. Existing maintenance values, scopes, limits, outcomes, and schedules are preserved. Interim Storage and Recovery values fill only missing maintenance settings. Explicit daily cleanup becomes equivalent per-operation scheduling, without enabling unrelated tools. Schema 6.20.2 changes session execution modes to Manual while preserving their schedules. See [Manage configuration](maintenance.md).
+Maintenance remains the canonical per-client configuration and all ten tools remain supported. Configure them under **Maintenance**. Existing maintenance values, scopes, limits, outcomes, and schedules are preserved. Interim Storage and Recovery values fill only missing maintenance settings. Explicit daily cleanup becomes equivalent per-operation scheduling, without enabling unrelated tools. Schema 6.20.2 changes session execution modes to Manual while preserving their schedules. See [Maintenance configuration](maintenance.md).
 
 #### Migration to 6.19.0
 

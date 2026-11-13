@@ -1,8 +1,7 @@
 # Configuration editor
 
-The Config view edits the running Host's TOML through its configuration API.
-Use the Settings, Web Settings, Authentication, Torrent Clients, and Integrations
-tabs. Integrations has separate Radarr, Sonarr, Lidarr, and Readarr sections,
+The **Settings** sidebar group edits the running Host's TOML through its configuration API.
+Open **General**, **Interface & Access**, **Authentication**, **Torrent Clients**, or **Integrations**. This navigation change requires no upgrade steps for existing config files or databases. Integrations has separate Radarr, Sonarr, Lidarr, and Readarr sections,
 including empty types. Torrent Clients groups legacy and canonical entries by
 configured type, with qBittorrent first. Each torrent-client section shows its
 instance count and an **Add Instance** button that uses that type's defaults.
@@ -11,16 +10,15 @@ opens an integration-type picker and creates the chosen type's next instance.
 
 Instance rows show address, category scope, enabled state, and unsaved changes;
 client rows also show scan intervals, while integration rows show search/processing
-mode. Both instance tabs start with their overview; select a row or add an instance
-to open its inline editor. Returning to the tab hides the editor while retaining
+mode. Both instance sections start with their overview; select a row or add an instance
+to open its inline editor. Returning to the section hides the editor while retaining
 its draft. Field search appears only while an editor is open. Editors and Save
 controls use the page scroll, without a nested modal scroll area.
 
 Use **Find a setting in this section** to search field names and descriptions.
-Matching groups open automatically. Dirty section markers and the Unsaved changes
+Search filters the visible field groups. Instance row markers and the Unsaved changes
 badge identify local drafts. Switching sections preserves those drafts; saving
-publishes only the selected section. Leaving Config retains its existing
-unsaved-change confirmation.
+publishes only the selected section. Leaving Settings and Maintenance prompts before discarding unsaved configuration or maintenance edits.
 
 The editors preserve password redaction, validation, connection testing, tooltips,
 and specialized collection editors. Destructive changes still require confirmation.
@@ -35,10 +33,10 @@ save never triggers a restart.
 
 | Editor | Ordered sections |
 | --- | --- |
-| Torrent client | General; Connection; Torrent scope; Download location; Free-space monitors; Seeding and Hit & Run; Trackers; Manage shortcut |
+| Torrent client | General; Connection; Torrent scope; Download location; Free-space monitors; Seeding and Hit & Run; Trackers; Shared Settings shortcut |
 | Arr instance | General; Connection; Categories and torrent clients; Entry search; Quality profiles; Request integrations; Torrent handling; Seeding; Trackers |
-| Global Settings | Logging; Processing and categories; Connectivity; Updates and ffprobe; Worker recovery |
-| Web Settings | Listener and URL settings; Proxy and exposure; API access; Appearance and live display |
+| General | Logging; Processing and categories; Connectivity; Updates and ffprobe; Worker recovery |
+| Interface & Access | Listener and URL settings; Proxy and exposure; API access; Appearance and live display |
 | Authentication | Access controls; Local login; OIDC |
 
 Host, Port, Username, Password and Skip TLS Verify are consecutive in a client
@@ -81,10 +79,10 @@ Old global CompletedDownloadFolder, FreeSpaceFolder, FreeSpace and AutoPauseResu
 are migration inputs. They are no longer current global controls. Review disabled
 monitors after ambiguous multi-client migration. See [storage migration](../configuration/config-file.md#client-download-paths-and-free-space-monitors).
 
-## Manage tools
+## Maintenance tools
 
-Maintenance forms are available only in **Manage**. The torrent-client editor shows a compact summary and an **Open Manage** shortcut selecting that saved client. Save a new or renamed client before using it. The shortcut preserves other unsaved client edits.
+Open **Maintenance** from the sidebar. The torrent-client editor shows a compact summary and an **Open Shared Settings** shortcut selecting that saved client. Save a new or renamed client before using it. The shortcut preserves other unsaved client edits.
 
-Manage groups all ten tools under Recovery, Organization, and Storage. Expand one card for its settings and actions, with Advanced initially collapsed. Shared scope, mappings, recycling, and safeguards appear once in Shared settings. Save and Discard affect only the selected client's maintenance settings.
+The ten tools are grouped under **Recovery**, **Organization**, and **Storage**. Tool settings and actions are visible on each category page. Preview results stay with the category that created them. **Shared Settings** holds scope, mappings, recycling, and safeguards. **Recent Runs** shows run history. Save and Discard affect only the selected client's maintenance settings.
 
-See [Manage configuration](../configuration/maintenance.md) and [workflow](../features/torrent-maintenance.md).
+See [Maintenance configuration](../configuration/maintenance.md) and [workflow](../features/torrent-maintenance.md).

@@ -255,13 +255,6 @@ export function focusFirstValidationError(errors: ValidationError[]): void {
   const el = document.querySelector<HTMLElement>(
     `[data-field-path="${CSS.escape(path)}"]`,
   );
-  for (
-    let group = el?.closest("details");
-    group;
-    group = group.parentElement?.closest("details")
-  ) {
-    group.open = true;
-  }
   el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
   const focusable = el?.querySelector<HTMLElement>(
     "input, select, textarea, button",

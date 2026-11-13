@@ -227,7 +227,7 @@ nav:
     - configuration/arr/lidarr.md
     - configuration/arr/readarr.md
   - Torrent Settings: configuration/torrents.md
-  - Manage Configuration: configuration/maintenance.md
+  - Maintenance Configuration: configuration/maintenance.md
   - Search & Requests:
     - configuration/search/index.md
     - configuration/search/overseerr.md
@@ -251,9 +251,9 @@ nav:
   - Disk Space Management: features/disk-space.md
   - Auto Updates: features/auto-updates.md
   - Process Management: features/process-management.md
-  - Manage: features/torrent-maintenance.md
-  - Manage Examples: features/maintenance-examples.md
-  - Manage Controls: configuration/maintenance-controls.md
+  - Torrent Maintenance: features/torrent-maintenance.md
+  - Maintenance Examples: features/maintenance-examples.md
+  - Maintenance Controls: configuration/maintenance-controls.md
 
 - Web UI:
   - webui/index.md

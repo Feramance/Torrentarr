@@ -8,7 +8,7 @@ Choose 1 hour, 24 hours (default), or 7 days. Graphs use completed 1-, 5-, or 30
 
 Monitored-category activity uses full inventories before the 500-row display cap and deduplicates overlapping categories. It is separate from whole-client transfer history and text search. Unavailable client inventories are excluded and partial coverage is labeled.
 
-Library bars report available and missing **monitored** movies, episodes, albums, or books from the full selected catalog, independently of page and text filters. Monitoring is a separate count. Manage summarizes operation outcomes in the latest 20 displayed runs.
+Library bars report available and missing **monitored** movies, episodes, albums, or books from the full selected catalog, independently of page and text filters. Monitoring is a separate count. **Maintenance → Recent Runs** summarizes operation outcomes in the latest 20 displayed runs.
 
 The `/web/statistics/transfers` and `/web/statistics/catalog` endpoints follow the configured WebUI authentication policy; their parameters and payloads are documented in OpenAPI. The history table is a Torrentarr extension and does not change qBitrr-compatible tables or TOML configuration.
 

@@ -1,3 +1,4 @@
+import { configSections, type ConfigSection } from "../config/settingsSections";
 import type { ConfigDestination } from "../utils/navigateTab";
 import { ConfigFieldSearch } from "./config/ConfigFieldSearch";
 import React, {
@@ -81,6 +82,8 @@ import {
 } from "./config/configSaveResult";
 
 interface ConfigViewProps {
+  section?: ConfigSection;
+  onSectionChange?: (section: ConfigSection) => void;
   active?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   destination?: ConfigDestination;
@@ -99,7 +102,13 @@ const INTEGRATION_TYPES = [
 ] as const;
 
 export function ConfigView(props?: ConfigViewProps): JSX.Element {
-  const { active = true, onDirtyChange, destination } = props ?? {};
+  const {
+    active = true,
+    section = "general",
+    onSectionChange,
+    onDirtyChange,
+    destination,
+  } = props ?? {};
   const { push } = useToast();
   const [application, setApplication] = useState<
     import("../api/types").ConfigurationApplicationStatus | null
@@ -394,7 +403,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const [clientSaving, setClientSaving] = useState(false);
   const [activeArrKey, setActiveArrKey] = useState<string | null>(null);
   const [activeQbitKey, setActiveQbitKey] = useState<string | null>(null);
-  const [isSettingsOpen, setSettingsOpen] = useState(true);
+  const isSettingsOpen = section === "general";
+  const isWebSettingsOpen = section === "interface";
+  const isAuthSettingsOpen = section === "auth";
   const destinationFocus = useRef<{
     fieldPath: string;
     monitorPath?: string;
@@ -421,18 +432,12 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           )
         : undefined;
     const target = row || field || editor;
-    for (
-      let element: HTMLElement | null = target;
-      element && element !== editor;
-      element = element.parentElement
-    ) {
-      if (element instanceof HTMLDetailsElement) element.open = true;
-    }
-    const focus = target.querySelector<HTMLElement>(
-      target instanceof HTMLDetailsElement
-        ? ":scope > summary"
-        : "input:not([type=hidden]), select, textarea",
-    );
+    const focus =
+      requested?.monitorPath && !row
+        ? field?.querySelector<HTMLElement>(".config-section__heading")
+        : target.querySelector<HTMLElement>(
+            "input:not([type=hidden]), select, textarea",
+          );
     target.style.scrollMarginTop = `${headerHeight + 12}px`;
     (target === editor ? editor : focus ?? editor).focus({
       preventScroll: true,
@@ -443,12 +448,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     });
   }, [editorRequest]);
   const [fieldSearch, setFieldSearch] = useState("");
-  const [configTab, setConfigTab] = useState<
-    "settings" | "web" | "auth" | "clients" | "libraries"
-  >("settings");
   const [integrationPickerOpen, setIntegrationPickerOpen] = useState(false);
-  const [isWebSettingsOpen, setWebSettingsOpen] = useState(false);
-  const [isAuthSettingsOpen, setAuthSettingsOpen] = useState(false);
   const [isSetPasswordOpen, setSetPasswordOpen] = useState(false);
   const [isDirty, setDirty] = useState(false);
   const [serverValidationErrors, setServerValidationErrors] = useState<
@@ -1160,16 +1160,15 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     setActiveArrKey(null);
     setActiveQbitKey(null);
     setActiveClient(null);
-    setSettingsOpen(false);
-    setWebSettingsOpen(false);
-    setAuthSettingsOpen(false);
     setFieldSearch("");
     open();
   };
   useEffect(() => {
-    if (activeClient || activeQbitKey) setConfigTab("clients");
-    else if (activeArrKey) setConfigTab("libraries");
-  }, [activeClient, activeQbitKey, activeArrKey]);
+    setActiveArrKey(null);
+    setActiveQbitKey(null);
+    setActiveClient(null);
+    setFieldSearch("");
+  }, [section]);
   useEffect(() => {
     if (
       !active ||
@@ -1178,7 +1177,6 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       handledDestination.current === destination
     )
       return;
-    handledDestination.current = destination;
     const clientName = (
       pendingRenames.get(destination.client ?? "") ?? destination.client
     )?.toLowerCase();
@@ -1191,21 +1189,22 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       pendingRenames.get(destination.arr ?? "") ?? destination.arr
     )?.toLowerCase();
     const arr = arrSections.find(([name]) => name.toLowerCase() === arrName);
+    const targetSection = client ? "clients" : arr ? "integrations" : "general";
+    if (section !== targetSection && onSectionChange) {
+      onSectionChange(targetSection);
+      return;
+    }
+    handledDestination.current = destination;
     chooseEditor(() => {
       const section =
         client && !client.legacy
           ? `TorrentClient.${client.name}`
           : client?.name ?? arr?.[0] ?? "Settings";
       if (client) {
-        setConfigTab("clients");
         if (client.legacy) setActiveQbitKey(client.name);
         else setActiveClient(client.name);
       } else if (arr) {
-        setConfigTab("libraries");
         setActiveArrKey(arr[0]);
-      } else {
-        setConfigTab("settings");
-        setSettingsOpen(true);
       }
       if (destination.field)
         destinationFocus.current = {
@@ -1221,16 +1220,10 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     torrentClients,
     arrSections,
     pendingRenames,
+    section,
+    onSectionChange,
   ]);
 
-  const openConfigTab = (tab: typeof configTab) => {
-    setConfigTab(tab);
-    chooseEditor(() => {
-      if (tab === "settings") setSettingsOpen(true);
-      else if (tab === "web") setWebSettingsOpen(true);
-      else if (tab === "auth") setAuthSettingsOpen(true);
-    });
-  };
   const sectionDirty = (key: string) =>
     !equal(formState?.[key], originalConfig?.[key]);
 
@@ -1253,7 +1246,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
 
   if (loading || !formState) {
     return (
-      <section className="card" aria-label="Config">
+      <section className="card" aria-label="Settings editor">
         {applicationNotice}
         {pendingRestarts.length > 0 && (
           <p role="status" className="card-body">
@@ -1280,7 +1273,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
 
   return (
     <>
-      <section className="card config-workspace" aria-label="Config">
+      <section className="card config-workspace" aria-label="Settings editor">
         {isDirty && (
           <div className="card-header">
             <span className="badge">Unsaved changes</span>
@@ -1301,38 +1294,8 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
             </button>
           </p>
         )}
-        <div className="config-workspace__layout">
-          <nav className="config-tabs" aria-label="Configuration sections">
-            {(
-              [
-                ["settings", "Settings"],
-                ["web", "Web Settings"],
-                ["auth", "Authentication"],
-                ["clients", "Torrent Clients"],
-                ["libraries", "Integrations"],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                aria-current={configTab === key ? "page" : undefined}
-                className={configTab === key ? "active" : ""}
-                onClick={() => openConfigTab(key)}
-              >
-                {label}
-                {(
-                  key === "settings"
-                    ? sectionDirty("Settings")
-                    : key === "web" || key === "auth"
-                      ? sectionDirty("WebUI")
-                      : false
-                )
-                  ? " •"
-                  : ""}
-              </button>
-            ))}
-          </nav>
-          {configTab === "clients" && (
+        <div className="card-body config-workspace__layout">
+          {section === "clients" && (
             <section
               className="config-arr-overview"
               aria-label="Configured torrent clients"
@@ -1432,7 +1395,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
               ))}
             </section>
           )}
-          {configTab === "libraries" && (
+          {section === "integrations" && (
             <section
               className="config-arr-overview"
               aria-label="Configured integrations"
@@ -1580,12 +1543,12 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                   {active && isSettingsOpen ? (
                     <SimpleConfigModal
                       inline
-                      title="Settings"
+                      title={configSections.general}
+                      section="general"
                       fields={SETTINGS_FIELDS}
                       state={formState}
                       basePath={[]}
                       onChange={handleFieldChange}
-                      onClose={() => setSettingsOpen(false)}
                       onSave={() => saveSection("Settings")}
                       saveDisabled={settingsSaveGate.saveDisabled}
                       saveBlockedReason={settingsSaveGate.saveBlockedReason}
@@ -1595,12 +1558,12 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                   {active && isWebSettingsOpen ? (
                     <SimpleConfigModal
                       inline
-                      title="Web Settings"
+                      title={configSections.interface}
+                      section="interface"
                       fields={WEB_SETTINGS_FIELDS}
                       state={formState}
                       basePath={[]}
                       onChange={handleFieldChange}
-                      onClose={() => setWebSettingsOpen(false)}
                       onSave={() => saveSection("WebUI")}
                       showLiveSettings={true}
                       saveDisabled={webSaveGate.saveDisabled}
@@ -1611,12 +1574,12 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                   {active && isAuthSettingsOpen ? (
                     <SimpleConfigModal
                       inline
-                      title="Authentication"
+                      title={configSections.auth}
+                      section="auth"
                       fields={AUTH_SETTINGS_FIELDS}
                       state={formState}
                       basePath={[]}
                       onChange={handleFieldChange}
-                      onClose={() => setAuthSettingsOpen(false)}
                       onSave={() => saveSection("WebUI")}
                       onSetPassword={() => setSetPasswordOpen(true)}
                       saveDisabled={webSaveGate.saveDisabled}

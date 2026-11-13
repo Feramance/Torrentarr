@@ -79,7 +79,6 @@ export interface FieldGroupProps {
   basePath: string[];
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
   onRenameSection?: (oldName: string, newName: string) => void;
-  defaultOpen?: boolean;
   qualityProfiles?: Array<{ id: number; name: string }>;
   sectionKey?: string;
   qbitTrackers?: boolean;
@@ -334,7 +333,6 @@ export function FieldGroup({
   basePath,
   onChange,
   onRenameSection,
-  defaultOpen = false,
   qualityProfiles = [],
   sectionKey,
   qbitTrackers = false,
@@ -348,24 +346,6 @@ export function FieldGroup({
   );
   const sectionName = sectionKey ?? basePath[0] ?? "";
   const errorOpts = { sectionKey, basePath };
-  const groupHasErrors = fields.some((field) => {
-    const pathSegments = field.path ?? [];
-    if (!pathSegments.length) {
-      return false;
-    }
-    const dataPath = fieldErrorDataPath(pathSegments, errorOpts);
-    return validationErrors.some(({ path }) => {
-      const errorPath = path.join(".");
-      return errorPath === dataPath || errorPath.startsWith(`${dataPath}.`);
-    });
-  });
-
-  const details = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    if ((defaultOpen || groupHasErrors || search) && details.current) {
-      details.current.open = true;
-    }
-  }, [defaultOpen, groupHasErrors, search]);
 
   if (title === "Quality Profile Mappings") {
     const mappings = (getValue(state as ConfigDocument, [
@@ -420,8 +400,8 @@ export function FieldGroup({
     };
 
     return (
-      <details className="config-section" ref={details}>
-        <summary>{title}</summary>
+      <section className="config-section">
+        <h3 className="config-section__heading">{title}</h3>
         <div className="config-section__body">
           <div className="field-description" style={{ marginBottom: "1rem" }}>
             Map main quality profile names to temporary profile names. Items
@@ -518,7 +498,7 @@ export function FieldGroup({
             </>
           )}
         </div>
-      </details>
+      </section>
     );
   }
 
@@ -544,8 +524,8 @@ export function FieldGroup({
       );
     };
     return (
-      <details className="config-section" ref={details}>
-        <summary>{title}</summary>
+      <section className="config-section">
+        <h3 className="config-section__heading">{title}</h3>
         <div className="config-section__body">
           {qbitTrackers && (
             <div className="alert info" style={{ marginBottom: "12px" }}>
@@ -578,7 +558,7 @@ export function FieldGroup({
             </button>
           </div>
         </div>
-      </details>
+      </section>
     );
   }
 
@@ -954,8 +934,8 @@ export function FieldGroup({
     return <></>;
   if (title) {
     return (
-      <details className="config-section" ref={details}>
-        <summary>{title}</summary>
+      <section className="config-section">
+        <h3 className="config-section__heading">{title}</h3>
         <div className="config-section__body field-grid">
           {description && (
             <p className="field-description field--full-width">{description}</p>
@@ -963,7 +943,7 @@ export function FieldGroup({
           {renderedFields}
           {children}
         </div>
-      </details>
+      </section>
     );
   }
 
@@ -993,13 +973,18 @@ export function TrackerCard({
     [basePath, onChange],
   );
   return (
-    <details className="card tracker-card" open>
-      <summary className="card-header">
-        <span>{trackerName}</span>
-        <button className="btn danger ghost" type="button" onClick={onDelete}>
+    <section className="card tracker-card">
+      <header className="card-header">
+        <h4>{trackerName}</h4>
+        <button
+          className="btn danger ghost"
+          type="button"
+          aria-label={`Remove ${trackerName}`}
+          onClick={onDelete}
+        >
           <IconImage src={DeleteIcon} />
         </button>
-      </summary>
+      </header>
       <div className="card-body">
         <FieldGroup
           title={null}
@@ -1009,7 +994,7 @@ export function TrackerCard({
           onChange={wrappedOnChange}
         />
       </div>
-    </details>
+    </section>
   );
 }
 

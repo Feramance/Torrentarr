@@ -1,3 +1,4 @@
+import type { MaintenanceSection } from "../config/settingsSections";
 import { BreakdownBar } from "../components/Statistics";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import equal from "fast-deep-equal";
@@ -34,6 +35,7 @@ import { FieldGroup } from "./config/configFieldComponents";
 import { configureConfigFields, getClientFields } from "./config/configFields";
 import {
   buildSectionChanges,
+  focusFirstValidationError,
   getValue,
   parseFieldValue,
   setValue,
@@ -56,11 +58,15 @@ const time = (value?: string | null) =>
 
 export function MaintenanceView({
   active = true,
-  requestedClientId,
+  section = "Shared Settings",
+  onSectionChange,
+  requestedClient,
   onDirtyChange,
 }: {
   active?: boolean;
-  requestedClientId?: string;
+  section?: MaintenanceSection;
+  onSectionChange?: (section: MaintenanceSection) => void;
+  requestedClient?: { id: string };
   onDirtyChange?: (dirty: boolean) => void;
 }): JSX.Element {
   const [clients, setClients] = useState<TorrentClientInfo[]>([]);
@@ -72,9 +78,9 @@ export function MaintenanceView({
   const [status, setStatus] = useState<MaintenanceStatus>();
   const [history, setHistory] = useState<MaintenanceRunSummary[]>([]);
   const [plan, setPlan] = useState<MaintenancePlan>();
-  const [expanded, setExpanded] = useState<MaintenanceOperation>();
-  const [sharedOpen, setSharedOpen] = useState(false);
+  const [previewSection, setPreviewSection] = useState<MaintenanceSection>();
   const [errors, setErrors] = useState<ValidationError[]>([]);
+  const validationFocus = useRef<ValidationError | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [application, setApplication] =
@@ -82,10 +88,7 @@ export function MaintenanceView({
   const [notice, setNotice] = useState("");
   const [page, setPage] = useState(0);
   const [now, setNow] = useState(Date.now);
-  const resultsRef = useRef<HTMLDetailsElement>(null);
-  const historyRef = useRef<HTMLDetailsElement>(null);
-  const sharedRef = useRef<HTMLDetailsElement>(null);
-  const pendingClient = useRef(requestedClientId);
+  const pendingClient = useRef(requestedClient?.id);
   useEffect(() => {
     const receive = (event: Event) => {
       const next = (event as CustomEvent<ConfigurationApplicationStatus>)
@@ -116,7 +119,9 @@ export function MaintenanceView({
   function selectClient(id: string, source = config) {
     if (
       dirtyRef.current &&
-      !window.confirm("Discard unsaved Manage settings and switch clients?")
+      !window.confirm(
+        "Discard unsaved maintenance settings and switch clients?",
+      )
     )
       return;
     const path = Object.hasOwn(source, id) ? [id] : ["TorrentClient", id];
@@ -169,6 +174,7 @@ export function MaintenanceView({
             : ids.includes(clientId)
               ? clientId
               : ids[0] ?? "";
+        pendingClient.current = undefined;
         const path = Object.hasOwn(document, selected)
           ? [selected]
           : ["TorrentClient", selected];
@@ -184,12 +190,18 @@ export function MaintenanceView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, refresh]);
   useEffect(() => {
-    pendingClient.current = requestedClientId;
-    if (loaded && requestedClientId && requestedClientId !== clientId)
-      selectClient(requestedClientId);
+    pendingClient.current = requestedClient?.id;
+    if (
+      loaded &&
+      requestedClient &&
+      get(config, clientPath(requestedClient.id))
+    ) {
+      pendingClient.current = undefined;
+      if (requestedClient.id !== clientId) selectClient(requestedClient.id);
+    }
     // The requested identity changes only on explicit navigation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestedClientId]);
+  }, [requestedClient]);
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (dirtyRef.current) {
@@ -219,13 +231,22 @@ export function MaintenanceView({
       setBusy(false);
     }
   };
-  const revealErrors = (next: ValidationError[]) => {
-    setErrors(next);
-    const fieldPath = next[0]?.path.slice(clientPath(clientId).length) ?? [];
+  const revealErrors = (next: ValidationError[], target = next[0]) => {
+    setErrors([...next]);
+    const fieldPath = target?.path.slice(clientPath(clientId).length) ?? [];
     const operation = maintenanceToolForPath(fieldPath);
-    if (operation) setExpanded(operation);
-    else setSharedOpen(true);
+    const tool = maintenanceOperations.find(
+      (item) => item.operation === operation,
+    );
+    validationFocus.current = target;
+    onSectionChange?.(tool?.category ?? "Shared Settings");
   };
+  useEffect(() => {
+    if (active && validationFocus.current) {
+      focusFirstValidationError([validationFocus.current]);
+      validationFocus.current = undefined;
+    }
+  }, [active, section, errors]);
   const save = async () => {
     const path = clientPath(clientId);
     const validation: ValidationError[] = [];
@@ -291,11 +312,7 @@ export function MaintenanceView({
     setErrors([]);
     setNotice("");
   };
-  const renderFields = (
-    selected: FieldDefinition[],
-    title: string | null,
-    defaultOpen = true,
-  ) =>
+  const renderFields = (selected: FieldDefinition[], title: string | null) =>
     selected.length ? (
       <FieldGroup
         title={title}
@@ -304,7 +321,6 @@ export function MaintenanceView({
         basePath={[]}
         sectionKey={clientPath(clientId).join(".")}
         onChange={edit}
-        defaultOpen={defaultOpen}
         validationErrors={errors}
       />
     ) : null;
@@ -341,16 +357,12 @@ export function MaintenanceView({
     void act(async () => {
       setPlan(undefined);
       setPage(0);
+      setPreviewSection(section);
       setPlan(await previewMaintenance([clientId], [operation]));
-      if (resultsRef.current) resultsRef.current.open = true;
     });
   return (
-    <section aria-label="Manage" className="card maintenance-workspace">
+    <section aria-label="Maintenance" className="card maintenance-workspace">
       <div className="card-body">
-        <p className="hint">
-          Configure and run recovery, organization, and storage tools for each
-          torrent client.
-        </p>
         <div className="actions manage-toolbar">
           <div className="field">
             <label htmlFor="manage-client">Torrent client</label>
@@ -423,7 +435,7 @@ export function MaintenanceView({
                 {message}{" "}
                 <button
                   className="btn ghost"
-                  onClick={() => revealErrors([{ path, message }])}
+                  onClick={() => revealErrors(errors, { path, message })}
                 >
                   Review setting
                 </button>
@@ -433,19 +445,8 @@ export function MaintenanceView({
         )}
         {clientId && loaded && (
           <>
-            <details
-              ref={sharedRef}
-              open={sharedOpen}
-              onToggle={(event) => setSharedOpen(event.currentTarget.open)}
-              className="config-section"
-            >
-              <summary>
-                Shared settings ·{" "}
-                {getValue(draft, ["Maintenance", "Enabled"])
-                  ? "enabled"
-                  : "disabled"}
-              </summary>
-              <div className="config-section__body">
+            {section === "Shared Settings" && (
+              <div className="maintenance-shared">
                 <p>
                   Scope, paths, recycling, and safeguards shared by these tools.
                   Manual applies a reviewed preview once. Automatic runs on the
@@ -475,161 +476,154 @@ export function MaintenanceView({
                       ].includes(field.path?.[1] ?? ""),
                   ),
                   "Advanced",
-                  false,
                 )}
               </div>
-            </details>
-            {maintenanceCategories.map((category) => (
-              <div className="manage-group" key={category}>
-                <h3>{category}</h3>
-                {maintenanceOperations
-                  .filter((tool) => tool.category === category)
-                  .map((tool) => {
-                    const toolFields = fields.filter(
-                      (field) =>
-                        maintenanceToolForPath(field.path ?? []) ===
-                        tool.operation,
-                    );
-                    const policyPath = [
-                      "Maintenance",
-                      "Operations",
-                      tool.operation,
-                    ];
-                    const mode =
-                      getValue(draft, [...policyPath, "ExecutionMode"]) ??
-                      "manual";
-                    const schedule = String(
-                      getValue(draft, [...policyPath, "Schedule"]) ||
-                        getValue(draft, ["Maintenance", "Schedule"]) ||
-                        "Not configured",
-                    );
-                    const visibleFields = toolFields.filter(
-                      (field) =>
-                        field.path?.at(-1) !== "Schedule" ||
-                        mode === "automatic" ||
-                        errors.some((error) =>
-                          equal(error.path, [
-                            ...clientPath(clientId),
-                            ...(field.path ?? []),
-                          ]),
-                        ),
-                    );
-                    const essential = visibleFields.filter((field) => {
-                      const key = field.path?.slice(1).join(".") ?? "";
-                      return (
-                        tool.essential.includes(key) ||
-                        key === `Operations.${tool.operation}.Enabled` ||
-                        key === `Operations.${tool.operation}.ExecutionMode` ||
-                        key === `Operations.${tool.operation}.Schedule`
+            )}
+            {maintenanceCategories
+              .filter((category) => category === section)
+              .map((category) => (
+                <div className="manage-group" key={category}>
+                  {maintenanceOperations
+                    .filter((tool) => tool.category === category)
+                    .map((tool) => {
+                      const toolFields = fields.filter(
+                        (field) =>
+                          maintenanceToolForPath(field.path ?? []) ===
+                          tool.operation,
                       );
-                    });
-                    const advanced = visibleFields.filter(
-                      (field) => !essential.includes(field),
-                    );
-                    const operationStatus = status?.operations?.find(
-                      (item) =>
-                        item.clientInstanceId === clientId &&
-                        item.operation === tool.operation,
-                    );
-                    const latest = selectedHistory.find((run) =>
-                      run.operationResults?.some(
-                        (result) => result.operation === tool.operation,
-                      ),
-                    );
-                    return (
-                      <details
-                        className="config-section manage-tool"
-                        key={tool.operation}
-                        open={expanded === tool.operation}
-                        onToggle={(event) => {
-                          if (event.currentTarget.open)
-                            setExpanded(tool.operation);
-                          else
-                            setExpanded((current) =>
-                              current === tool.operation ? undefined : current,
-                            );
-                        }}
-                      >
-                        <summary>
-                          <strong>{tool.title}</strong>
-                          <span className="manage-tool-status hint">
-                            {operationStatus?.enabled ? "Enabled" : "Disabled"}{" "}
-                            ·{" "}
-                            {operationStatus?.executionMode === "automatic"
-                              ? "Automatic"
-                              : "Manual"}{" "}
-                            · {latest?.result ?? "Not run"}
-                            {dirty ? " · unsaved settings" : ""}
-                          </span>
-                          <span className="manage-tool-purpose hint">
-                            {tool.description}
-                          </span>
-                        </summary>
-                        <div className="config-section__body">
-                          {renderFields(essential, null)}
-                          {mode === "automatic" && (
-                            <p className="hint">
-                              Effective schedule (UTC): {schedule}. Save to
-                              activate future scheduled runs.
-                            </p>
-                          )}
-                          {renderFields(advanced, "Advanced", false)}
-                          <button
-                            type="button"
-                            className="btn ghost"
-                            onClick={() => {
-                              setSharedOpen(true);
-                              sharedRef.current?.scrollIntoView?.({
-                                block: "nearest",
-                              });
-                            }}
-                          >
-                            Shared settings
-                          </button>
-                          <p>Next run: {time(operationStatus?.nextRun)}</p>
-                          <div className="actions">
+                      const policyPath = [
+                        "Maintenance",
+                        "Operations",
+                        tool.operation,
+                      ];
+                      const mode =
+                        getValue(draft, [...policyPath, "ExecutionMode"]) ??
+                        "manual";
+                      const schedule = String(
+                        getValue(draft, [...policyPath, "Schedule"]) ||
+                          getValue(draft, ["Maintenance", "Schedule"]) ||
+                          "Not configured",
+                      );
+                      const visibleFields = toolFields.filter(
+                        (field) =>
+                          field.path?.at(-1) !== "Schedule" ||
+                          mode === "automatic" ||
+                          errors.some((error) =>
+                            equal(error.path, [
+                              ...clientPath(clientId),
+                              ...(field.path ?? []),
+                            ]),
+                          ),
+                      );
+                      const essential = visibleFields.filter((field) => {
+                        const key = field.path?.slice(1).join(".") ?? "";
+                        return (
+                          tool.essential.includes(key) ||
+                          key === `Operations.${tool.operation}.Enabled` ||
+                          key ===
+                            `Operations.${tool.operation}.ExecutionMode` ||
+                          key === `Operations.${tool.operation}.Schedule`
+                        );
+                      });
+                      const advanced = visibleFields.filter(
+                        (field) => !essential.includes(field),
+                      );
+                      const operationStatus = status?.operations?.find(
+                        (item) =>
+                          item.clientInstanceId === clientId &&
+                          item.operation === tool.operation,
+                      );
+                      const latest = selectedHistory.find((run) =>
+                        run.operationResults?.some(
+                          (result) => result.operation === tool.operation,
+                        ),
+                      );
+                      return (
+                        <section
+                          className="config-section manage-tool"
+                          key={tool.operation}
+                        >
+                          <header className="manage-tool-heading">
+                            <h2 className="config-section__heading">
+                              {tool.title}
+                            </h2>
+                            <span className="manage-tool-status hint">
+                              {operationStatus?.enabled
+                                ? "Enabled"
+                                : "Disabled"}{" "}
+                              ·{" "}
+                              {operationStatus?.executionMode === "automatic"
+                                ? "Automatic"
+                                : "Manual"}{" "}
+                              · {latest?.result ?? "Not run"}
+                              {dirty ? " · unsaved settings" : ""}
+                            </span>
+                            <span className="manage-tool-purpose hint">
+                              {tool.description}
+                            </span>
+                          </header>
+                          <div className="config-section__body">
+                            {renderFields(essential, null)}
+                            {mode === "automatic" && (
+                              <p className="hint">
+                                Effective schedule (UTC): {schedule}. Save to
+                                activate future scheduled runs.
+                              </p>
+                            )}
+                            {renderFields(advanced, "Advanced")}
                             <button
-                              className="btn"
-                              disabled={
-                                dirty ||
-                                busy ||
-                                running ||
-                                !operationStatus?.enabled
+                              type="button"
+                              className="btn ghost"
+                              onClick={() =>
+                                onSectionChange?.("Shared Settings")
                               }
-                              onClick={() => preview(tool.operation)}
                             >
-                              Check {tool.title.toLowerCase()}
+                              Shared settings
                             </button>
-                            {operationStatus?.authorized &&
-                              operationStatus.executionMode === "automatic" && (
-                                <button
-                                  className="btn"
-                                  disabled={dirty || busy || running}
-                                  onClick={() =>
-                                    void act(async () => {
-                                      const result = (await maintenanceCommand(
-                                        "run",
-                                        [clientId],
-                                        [tool.operation],
-                                      )) as MaintenanceRunSummary;
-                                      setNotice(
-                                        `${result.result}: ${result.applied} changes applied.`,
-                                      );
-                                      if (historyRef.current)
-                                        historyRef.current.open = true;
-                                    })
-                                  }
-                                >
-                                  Run now
-                                </button>
-                              )}
+                            <p>Next run: {time(operationStatus?.nextRun)}</p>
+                            <div className="actions">
+                              <button
+                                className="btn"
+                                disabled={
+                                  dirty ||
+                                  busy ||
+                                  running ||
+                                  !operationStatus?.enabled
+                                }
+                                onClick={() => preview(tool.operation)}
+                              >
+                                Check {tool.title.toLowerCase()}
+                              </button>
+                              {operationStatus?.authorized &&
+                                operationStatus.executionMode ===
+                                  "automatic" && (
+                                  <button
+                                    className="btn"
+                                    disabled={dirty || busy || running}
+                                    onClick={() =>
+                                      void act(async () => {
+                                        const result =
+                                          (await maintenanceCommand(
+                                            "run",
+                                            [clientId],
+                                            [tool.operation],
+                                          )) as MaintenanceRunSummary;
+                                        setNotice(
+                                          `${result.result}: ${result.applied} changes applied.`,
+                                        );
+                                      })
+                                    }
+                                  >
+                                    Run now
+                                  </button>
+                                )}
+                            </div>
                           </div>
-                        </div>
-                      </details>
-                    );
-                  })}
-              </div>
-            ))}
+                        </section>
+                      );
+                    })}
+                </div>
+              ))}
           </>
         )}
         {running && (
@@ -649,147 +643,151 @@ export function MaintenanceView({
             </button>
           </p>
         )}
-        <details ref={resultsRef} className="config-section">
-          <summary>
-            Preview results
-            {plan
-              ? ` · ${candidateActions.length} changes available`
-              : " · Not checked"}
-          </summary>
-          <div className="config-section__body">
-            {!plan ? (
-              <p>
-                Not checked. Opening this page does not scan or change files.
-              </p>
-            ) : (
-              <>
-                {expired && (
-                  <p role="status">
-                    Preview expired. Check again before applying.
-                  </p>
-                )}
-                {plan.criticalErrors.map((message) => (
-                  <p role="alert" key={message}>
-                    {message}
-                  </p>
-                ))}
+        {previewSection === section && (
+          <section className="config-section">
+            <h2 className="config-section__heading">
+              Preview results
+              {plan
+                ? ` · ${candidateActions.length} changes available`
+                : " · Not checked"}
+            </h2>
+            <div className="config-section__body">
+              {!plan ? (
                 <p>
-                  To recycle: {toRecycle.length} files (
-                  {bytes(toRecycle.reduce((sum, a) => sum + a.bytes, 0))}). To
-                  purge: {toPurge.length} entries (
-                  {bytes(toPurge.reduce((sum, a) => sum + a.bytes, 0))}).
-                  Permanently delete orphan files: {orphanDeletes.length} files
-                  ({bytes(orphanDeletes.reduce((sum, a) => sum + a.bytes, 0))}).{" "}
-                  Remove empty orphan folders: {emptyOrphanFolders.length}.{" "}
-                  Permanently delete through client: {toDelete.length} torrents
-                  (recycling disabled). Blocked candidate actions:{" "}
-                  {plan.blockedCount}. Blocked operations:{" "}
-                  {plan.operationResults?.filter((r) => r.state === "blocked")
-                    .length ?? 0}
-                  .
+                  Not checked. Opening this page does not scan or change files.
                 </p>
-                <ul>
-                  {plan.operationResults?.map((result) => (
-                    <li key={result.operation}>
-                      <strong>
-                        {result.operation === "OrphanScan"
-                          ? "Orphan files"
-                          : "Recycle retention"}
-                        :{" "}
-                      </strong>
-                      {result.state === "disabled"
-                        ? "Not checked — disabled"
-                        : result.state === "blocked"
-                          ? "Blocked"
-                          : result.state === "partial"
-                            ? "Partial"
-                            : result.actionable
-                              ? "Changes available"
-                              : "Nothing found"}
-                      {result.reason && ` — ${result.reason}`}
-                    </li>
+              ) : (
+                <>
+                  {expired && (
+                    <p role="status">
+                      Preview expired. Check again before applying.
+                    </p>
+                  )}
+                  {plan.criticalErrors.map((message) => (
+                    <p role="alert" key={message}>
+                      {message}
+                    </p>
                   ))}
-                </ul>
-                {plan.diagnostics?.map((d) => (
-                  <p key={`${d.clientInstanceId}-${d.code}`}>
-                    {d.message} {d.remediation}
-                    {d.examples?.map((example, index) => (
-                      <span className="cleanup-path" key={index}>
-                        {" "}
-                        Client path: {example.clientPath} · Local path:{" "}
-                        {example.localPath}
-                      </span>
-                    ))}
+                  <p>
+                    To recycle: {toRecycle.length} files (
+                    {bytes(toRecycle.reduce((sum, a) => sum + a.bytes, 0))}). To
+                    purge: {toPurge.length} entries (
+                    {bytes(toPurge.reduce((sum, a) => sum + a.bytes, 0))}).
+                    Permanently delete orphan files: {orphanDeletes.length}{" "}
+                    files (
+                    {bytes(orphanDeletes.reduce((sum, a) => sum + a.bytes, 0))}
+                    ). Remove empty orphan folders: {emptyOrphanFolders.length}.
+                    Permanently delete through client: {toDelete.length}{" "}
+                    torrents (recycling disabled). Blocked candidate actions:{" "}
+                    {plan.blockedCount}. Blocked operations:{" "}
+                    {plan.operationResults?.filter((r) => r.state === "blocked")
+                      .length ?? 0}
+                    .
                   </p>
-                ))}
-                {plan.actions.length > 0 && (
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Change</th>
-                          <th>Path</th>
-                          <th>Reason</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {plan.actions
-                          .slice(page * 25, (page + 1) * 25)
-                          .map((action) => (
-                            <tr key={action.id}>
-                              <td>{maintenanceActionTitle(action)}</td>
-                              <td className="cleanup-path">{action.path}</td>
-                              <td>{action.blockedReason ?? action.reason}</td>
-                            </tr>
-                          ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-                {plan.actions.length > 25 && (
-                  <div className="actions">
-                    <button
-                      className="btn"
-                      disabled={page === 0}
-                      onClick={() => setPage((p) => p - 1)}
-                    >
-                      Previous
-                    </button>
-                    <span>Page {page + 1}</span>
-                    <button
-                      className="btn"
-                      disabled={(page + 1) * 25 >= plan.actions.length}
-                      onClick={() => setPage((p) => p + 1)}
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-            <button
-              className="btn primary"
-              disabled={!ready || busy || running}
-              onClick={() =>
-                void act(async () => {
-                  const reviewed = plan!;
-                  setPlan(undefined);
-                  const result = await applyMaintenance(reviewed.planId, true);
-                  setNotice(
-                    `${result.result}: ${result.applied} changes applied. Recycled ${bytes(result.bytesMoved)}; reclaimed ${bytes(result.bytesReclaimed ?? 0)}.`,
-                  );
-                  if (historyRef.current) historyRef.current.open = true;
-                })
-              }
-            >
-              Apply reviewed changes
-              {candidateActions.length ? ` (${candidateActions.length})` : ""}
-            </button>
-          </div>
-        </details>
-        <details ref={historyRef} className="config-section">
-          <summary>Recent runs</summary>
-          <div className="config-section__body">
+                  <ul>
+                    {plan.operationResults?.map((result) => (
+                      <li key={result.operation}>
+                        <strong>
+                          {result.operation === "OrphanScan"
+                            ? "Orphan files"
+                            : "Recycle retention"}
+                          :{" "}
+                        </strong>
+                        {result.state === "disabled"
+                          ? "Not checked — disabled"
+                          : result.state === "blocked"
+                            ? "Blocked"
+                            : result.state === "partial"
+                              ? "Partial"
+                              : result.actionable
+                                ? "Changes available"
+                                : "Nothing found"}
+                        {result.reason && ` — ${result.reason}`}
+                      </li>
+                    ))}
+                  </ul>
+                  {plan.diagnostics?.map((d) => (
+                    <p key={`${d.clientInstanceId}-${d.code}`}>
+                      {d.message} {d.remediation}
+                      {d.examples?.map((example, index) => (
+                        <span className="cleanup-path" key={index}>
+                          {" "}
+                          Client path: {example.clientPath} · Local path:{" "}
+                          {example.localPath}
+                        </span>
+                      ))}
+                    </p>
+                  ))}
+                  {plan.actions.length > 0 && (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Change</th>
+                            <th>Path</th>
+                            <th>Reason</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {plan.actions
+                            .slice(page * 25, (page + 1) * 25)
+                            .map((action) => (
+                              <tr key={action.id}>
+                                <td>{maintenanceActionTitle(action)}</td>
+                                <td className="cleanup-path">{action.path}</td>
+                                <td>{action.blockedReason ?? action.reason}</td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  {plan.actions.length > 25 && (
+                    <div className="actions">
+                      <button
+                        className="btn"
+                        disabled={page === 0}
+                        onClick={() => setPage((p) => p - 1)}
+                      >
+                        Previous
+                      </button>
+                      <span>Page {page + 1}</span>
+                      <button
+                        className="btn"
+                        disabled={(page + 1) * 25 >= plan.actions.length}
+                        onClick={() => setPage((p) => p + 1)}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+              <button
+                className="btn primary"
+                disabled={!ready || busy || running}
+                onClick={() =>
+                  void act(async () => {
+                    const reviewed = plan!;
+                    setPlan(undefined);
+                    const result = await applyMaintenance(
+                      reviewed.planId,
+                      true,
+                    );
+                    setNotice(
+                      `${result.result}: ${result.applied} changes applied. Recycled ${bytes(result.bytesMoved)}; reclaimed ${bytes(result.bytesReclaimed ?? 0)}.`,
+                    );
+                  })
+                }
+              >
+                Apply reviewed changes
+                {candidateActions.length ? ` (${candidateActions.length})` : ""}
+              </button>
+            </div>
+          </section>
+        )}
+        {section === "Recent Runs" && (
+          <div className="maintenance-history">
             {selectedHistory.length > 0 && (
               <BreakdownBar
                 key={clientId}
@@ -861,11 +859,11 @@ export function MaintenanceView({
                         <td>{bytes(run.bytesReclaimed ?? 0)}</td>
                         <td>
                           {run.errors.length ? (
-                            <details>
-                              <summary>
+                            <div>
+                              <p>
                                 {run.failed} failed · {run.errors.length}{" "}
-                                error(s) — view details
-                              </summary>
+                                error(s)
+                              </p>
                               <ul
                                 style={{
                                   margin: "0.5rem 0",
@@ -884,7 +882,7 @@ export function MaintenanceView({
                                   </li>
                                 ))}
                               </ul>
-                            </details>
+                            </div>
                           ) : (
                             `${run.applied} applied, ${run.skipped} skipped, ${run.failed} failed`
                           )}
@@ -896,7 +894,7 @@ export function MaintenanceView({
               </div>
             )}
           </div>
-        </details>
+        )}
       </div>
     </section>
   );

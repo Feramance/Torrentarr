@@ -1,6 +1,8 @@
+import { requestNavigateTab } from "../../utils/navigateTab";
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
+  act,
   render,
   screen,
   fireEvent,
@@ -85,7 +87,7 @@ describe("configured navigation", () => {
       expect(
         screen.queryByRole("button", { name, exact: true }),
       ).not.toBeInTheDocument();
-    for (const name of ["Processes", "Logs", "Manage", "Config"])
+    for (const name of ["Processes", "Logs", "Settings"])
       expect(
         screen.getByRole("button", { name, exact: true }),
       ).toBeInTheDocument();
@@ -232,9 +234,16 @@ it("closes the navigation drawer after switching pages and on Escape", async () 
   fireEvent.click(screen.getByRole("button", { name: "Menu", exact: true }));
   const dialog = screen.getByRole("dialog", { name: "Navigation" });
   fireEvent.click(
-    within(dialog).getByRole("button", { name: "Config", exact: true }),
+    within(dialog).getByRole("button", { name: "Settings", exact: true }),
   );
+  expect(dialog).toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole("button", { name: "General" }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "General" })).toHaveFocus();
+  expect(screen.getByRole("button", { name: "General" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
   fireEvent.click(screen.getByRole("button", { name: "Menu", exact: true }));
   fireEvent(
     screen.getByRole("dialog", { name: "Navigation" }),
@@ -491,4 +500,71 @@ it("shows a collapsed section for a single configured instance", async () => {
   );
   expect(await screen.findByLabelText("catalog filter")).toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "Radarr-HD" })).toBeVisible();
+});
+
+it("reveals Settings from the icon rail and opens General from the number shortcut", async () => {
+  view();
+  fireEvent.click(screen.getByRole("button", { name: "Collapse navigation" }));
+  const settings = screen.getByRole("button", { name: "Settings" });
+  expect(settings).toHaveAttribute("aria-expanded", "false");
+  fireEvent.click(settings);
+  expect(
+    screen.getByRole("button", { name: "Collapse navigation" }),
+  ).toBeInTheDocument();
+  expect(settings).toHaveAttribute("aria-expanded", "true");
+  fireEvent.click(screen.getByRole("button", { name: "Interface & Access" }));
+  expect(
+    await screen.findByRole("heading", { name: "Interface & Access" }),
+  ).toBeInTheDocument();
+  fireEvent.keyDown(window, { key: "4" });
+  expect(
+    await screen.findByRole("heading", { name: "General" }),
+  ).toBeInTheDocument();
+});
+
+it("maps legacy navigation events to the corresponding Settings sections", async () => {
+  view();
+  act(() => requestNavigateTab({ tab: "config" }));
+  expect(
+    await screen.findByRole("heading", { name: "General" }),
+  ).toBeInTheDocument();
+  act(() => requestNavigateTab({ tab: "maintenance", manageClientId: "one" }));
+  expect(
+    await screen.findByRole("heading", { name: "Shared Settings" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Shared Settings" }),
+  ).toHaveAttribute("aria-current", "page");
+});
+
+it("opens Maintenance as a sibling of Settings from the mobile drawer and keyboard", async () => {
+  view();
+  fireEvent.click(screen.getByRole("button", { name: "Menu", exact: true }));
+  const drawer = within(screen.getByRole("dialog", { name: "Navigation" }));
+  const maintenance = drawer.getByRole("button", {
+    name: "Maintenance",
+    exact: true,
+  });
+  const settings = drawer.getByRole("button", {
+    name: "Settings",
+    exact: true,
+  });
+  expect(maintenance.closest(".nav-entry")?.parentElement).toBe(
+    settings.closest(".nav-entry")?.parentElement,
+  );
+  fireEvent.click(maintenance);
+  expect(settings).toHaveAttribute("aria-expanded", "false");
+  expect(maintenance).toHaveAttribute("aria-expanded", "true");
+  fireEvent.click(drawer.getByRole("button", { name: "Recent Runs" }));
+  expect(
+    await screen.findByRole("heading", { name: "Recent Runs" }),
+  ).toHaveFocus();
+  expect(screen.getByRole("button", { name: "Recent Runs" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  fireEvent.keyDown(window, { key: "5" });
+  expect(
+    await screen.findByRole("heading", { name: "Shared Settings" }),
+  ).toBeVisible();
 });

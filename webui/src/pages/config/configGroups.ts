@@ -1,9 +1,9 @@
+import type { SimpleConfigSection } from "../../config/settingsSections";
 import type { FieldDefinition } from "./configTypes";
 
 export interface ConfigFieldGroup {
   title: string;
   fields: FieldDefinition[];
-  defaultOpen?: boolean;
   description?: string;
 }
 
@@ -31,7 +31,6 @@ function groupFields(
     return {
       title,
       fields: selected,
-      defaultOpen: title === "General" || title === "Connection",
     };
   });
   if (remaining.size) {
@@ -41,7 +40,6 @@ function groupFields(
       groups.push({
         title: "General",
         fields: [...remaining],
-        defaultOpen: true,
       });
   }
   return groups.filter((group) => group.fields.length);
@@ -115,10 +113,10 @@ export function arrGeneralGroups(
 }
 
 export function simpleGroups(
-  title: string,
+  section: SimpleConfigSection,
   fields: FieldDefinition[],
 ): ConfigFieldGroup[] {
-  if (title === "Settings")
+  if (section === "general")
     return groupFields(fields, [
       ["Logging", ["Settings.ConsoleLevel", "Settings.Logging"]],
       [
@@ -153,7 +151,7 @@ export function simpleGroups(
         ],
       ],
     ]);
-  if (title === "Web Settings")
+  if (section === "interface")
     return groupFields(fields, [
       [
         "Listener and URL settings",

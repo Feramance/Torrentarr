@@ -1,3 +1,9 @@
+import {
+  configSections,
+  maintenanceSections,
+  type ConfigSection,
+  type MaintenanceSection,
+} from "./config/settingsSections";
 import { STATISTICS_UPDATED } from "./hooks/useStatisticsUpdates";
 import { useStatisticsStream } from "./hooks/useStatisticsStream";
 import React, {
@@ -191,7 +197,8 @@ function AppShell({
   const [activeTab, setActiveTab] = useState<Tab>("processes");
   const tabScroll = useRef<Partial<Record<Tab, number>>>({});
   useLayoutEffect(() => {
-    window.scrollTo(0, tabScroll.current[activeTab] ?? 0);
+    const settingsPage = activeTab === "config" || activeTab === "maintenance";
+    window.scrollTo(0, settingsPage ? 0 : tabScroll.current[activeTab] ?? 0);
   }, [activeTab]);
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<Tab>>(
     () => new Set<Tab>(["processes"]),
@@ -209,11 +216,18 @@ function AppShell({
     readarr: false,
     qbittorrent: false,
   });
+  const [configSection, setConfigSection] = useState<ConfigSection>("general");
+  const [maintenanceSection, setMaintenanceSection] =
+    useState<MaintenanceSection>("Shared Settings");
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const focusSettingsHeading = useRef(false);
   const [manageDirty, setManageDirty] = useState(false);
   const [manageKey, setManageKey] = useState(0);
   const [configDestination, setConfigDestination] =
     useState<NavigateTabDetail["configDestination"]>();
-  const [manageClientId, setManageClientId] = useState<string>();
+  const [manageClientRequest, setManageClientRequest] = useState<{
+    id: string;
+  }>();
   const [configDirty, setConfigDirty] = useState(false);
   const [configKey, setConfigKey] = useState(0);
   const { push } = useToast();
@@ -231,42 +245,35 @@ function AppShell({
   }, []);
 
   const switchTab = useCallback(
-    (tabId: Tab, preserveConfigDraft = false) => {
-      if (
-        activeTab === "maintenance" &&
-        tabId !== "maintenance" &&
-        manageDirty
-      ) {
-        if (
-          !window.confirm(
-            "You have unsaved Manage settings. Discard them and leave?",
-          )
-        )
+    (tabId: Tab) => {
+      const inSettings = activeTab === "config" || activeTab === "maintenance";
+      const opensSettings = tabId === "config" || tabId === "maintenance";
+      if (inSettings && !opensSettings && (configDirty || manageDirty)) {
+        if (!window.confirm("You have unsaved settings. Leave without saving?"))
           return;
-        setManageKey((key) => key + 1);
-        setManageDirty(false);
+        startTransition(() => {
+          if (configDirty) {
+            setConfigKey((key) => key + 1);
+            setConfigDirty(false);
+            setConfigDestination(undefined);
+          }
+          if (manageDirty) {
+            setManageKey((key) => key + 1);
+            setManageDirty(false);
+            setManageClientRequest(undefined);
+          }
+        });
       }
-      if (
-        activeTab === "config" &&
-        tabId !== "config" &&
-        configDirty &&
-        !preserveConfigDraft
-      ) {
-        const shouldLeave = window.confirm(
-          "You have unsaved configuration changes. Leave without saving?",
-        );
-        if (!shouldLeave) {
-          return;
-        }
-        // Remount Config so discarded drafts match previous leave-without-saving semantics.
-        setConfigKey((prev) => prev + 1);
-        setConfigDirty(false);
-      }
+      if (opensSettings && navigationOpen) focusSettingsHeading.current = true;
       if (railSelectionPending) {
         setRailSelectionPending(false);
-        setNavCollapsed(true);
+        setNavCollapsed(!opensSettings);
+      } else if (opensSettings) {
+        setNavCollapsed(false);
       }
-      setExpandedNav((current) => (current[tabId] ? current : {}));
+      setExpandedNav((current) =>
+        opensSettings ? { [tabId]: true } : current[tabId] ? current : {},
+      );
       setNavigationOpen(false);
       setDisplayTrigger(null);
       tabScroll.current[activeTab] = window.scrollY;
@@ -280,6 +287,7 @@ function AppShell({
       activeTab,
       configDirty,
       manageDirty,
+      navigationOpen,
       markTabVisited,
       railSelectionPending,
       setSearchValue,
@@ -316,6 +324,32 @@ function AppShell({
     const timer = window.setTimeout(run, 2000);
     return () => window.clearTimeout(timer);
   }, []);
+
+  const openConfigSection = (section: ConfigSection) => {
+    if (activeTab === "config" && section !== configSection)
+      window.scrollTo(0, 0);
+    setConfigSection(section);
+    setConfigDestination(undefined);
+    switchTab("config");
+  };
+  const openMaintenanceSection = (section: MaintenanceSection) => {
+    if (activeTab === "maintenance" && section !== maintenanceSection)
+      window.scrollTo(0, 0);
+    setMaintenanceSection(section);
+    switchTab("maintenance");
+  };
+
+  useEffect(() => {
+    if (
+      !navigationOpen &&
+      (activeTab === "config" || activeTab === "maintenance") &&
+      focusSettingsHeading.current
+    ) {
+      focusSettingsHeading.current = false;
+      if (!document.activeElement?.closest(".config-workspace__editor"))
+        headingRef.current?.focus({ preventScroll: true });
+    }
+  }, [activeTab, navigationOpen, configSection, maintenanceSection]);
 
   // Theme is now managed by WebUIContext and applied automatically
 
@@ -455,10 +489,16 @@ function AppShell({
           ...(configuredTabs.lidarr ? (["lidarr"] as Tab[]) : []),
           ...(configuredTabs.readarr ? (["readarr"] as Tab[]) : []),
           ...(configuredTabs.qbittorrent ? (["qbittorrent"] as Tab[]) : []),
-          "maintenance",
           "config",
+          "maintenance",
         ];
         if (tabIndex < tabIds.length) {
+          if (tabIds[tabIndex] === "config") {
+            setConfigSection("general");
+            setConfigDestination(undefined);
+          }
+          if (tabIds[tabIndex] === "maintenance")
+            setMaintenanceSection("Shared Settings");
           switchTab(tabIds[tabIndex]);
         }
         return;
@@ -488,12 +528,23 @@ function AppShell({
           instance: detail.issueInstance ?? "",
           category: detail.issueCategory ?? "automation",
         });
-      if (tab === "config")
-        setConfigDestination(
-          detail.configDestination && { ...detail.configDestination },
+      if (tab === "config") {
+        const destination = detail.configDestination;
+        setConfigSection(
+          destination?.client
+            ? "clients"
+            : destination?.arr
+              ? "integrations"
+              : "general",
         );
-      if (detail.manageClientId) setManageClientId(detail.manageClientId);
-      switchTab(tab as Tab, detail.preserveConfigDraft);
+        setConfigDestination(destination && { ...destination });
+      }
+      if (tab === "maintenance") {
+        setMaintenanceSection("Shared Settings");
+        if (detail.manageClientId)
+          setManageClientRequest({ id: detail.manageClientId });
+      }
+      switchTab(tab);
       if (tab === "qbittorrent" && (detail.qbitCategory || detail.qbitInstance))
         selectInstance("qbittorrent", detail.qbitInstance ?? "aggregate");
       if (detail.qbitCategory) {
@@ -781,12 +832,12 @@ function AppShell({
         icon: QbitIcon,
       });
     }
+    nextTabs.push({ id: "config", label: "Settings", icon: ConfigIcon });
     nextTabs.push({
       id: "maintenance",
-      label: "Manage",
+      label: "Maintenance",
       icon: ConfigIcon,
     });
-    nextTabs.push({ id: "config", label: "Config", icon: ConfigIcon });
     return nextTabs;
   }, [configuredTabs]);
   const visibleTabIds = useMemo(
@@ -983,13 +1034,85 @@ function AppShell({
           label: "Libraries & clients",
           ids: ["radarr", "sonarr", "lidarr", "readarr", "qbittorrent"],
         },
-        { label: "Administration", ids: ["maintenance", "config"] },
+        { label: "Administration", ids: ["config", "maintenance"] },
       ].map((group) => {
         const items = tabs.filter((tab) => group.ids.includes(tab.id));
         return items.length ? (
           <div className="nav-group" key={group.label}>
             <div className="nav-group__label">{group.label}</div>
             {items.map((tab) => {
+              if (tab.id === "config" || tab.id === "maintenance") {
+                const expanded = Boolean(expandedNav[tab.id]);
+                const children =
+                  tab.id === "config"
+                    ? (Object.keys(configSections) as ConfigSection[]).map(
+                        (section) => ({
+                          label: configSections[section],
+                          active: configSection === section,
+                          select: () => openConfigSection(section),
+                        }),
+                      )
+                    : maintenanceSections.map((section) => ({
+                        label: section,
+                        active: maintenanceSection === section,
+                        select: () => openMaintenanceSection(section),
+                      }));
+                return (
+                  <div className="nav-entry" key={tab.id}>
+                    <div className="nav-group__heading">
+                      <button
+                        type="button"
+                        className={activeTab === tab.id ? "active" : ""}
+                        title={tab.label}
+                        onMouseEnter={() => prefetchTab(tab.id)}
+                        onFocus={() => prefetchTab(tab.id)}
+                        aria-expanded={
+                          expanded && !(scope === "sidebar" && navCollapsed)
+                        }
+                        aria-controls={`${scope}-nav-${tab.id}`}
+                        onClick={() => {
+                          if (scope === "sidebar" && navCollapsed) {
+                            setNavCollapsed(false);
+                            setExpandedNav({ [tab.id]: true });
+                          } else {
+                            setExpandedNav(expanded ? {} : { [tab.id]: true });
+                          }
+                        }}
+                      >
+                        <IconImage
+                          src={ConfigIcon}
+                          className="nav-utility-icon"
+                        />
+                        <span className="nav-label">{tab.label}</span>
+                        <span
+                          className="settings-nav-chevron"
+                          aria-hidden="true"
+                        >
+                          {expanded ? "▾" : "▸"}
+                        </span>
+                      </button>
+                    </div>
+                    <div
+                      className="nav-instances"
+                      id={`${scope}-nav-${tab.id}`}
+                      hidden={!expanded}
+                    >
+                      {children.map(({ label, active, select }) => (
+                        <button
+                          type="button"
+                          key={label}
+                          aria-current={
+                            activeTab === tab.id && active ? "page" : undefined
+                          }
+                          onClick={select}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
               const instances = navInstances[tab.id];
               const hasChoices = Boolean(instances && instances.length > 0);
               return (
@@ -1169,11 +1292,15 @@ function AppShell({
   const selectedTabInstance = instanceSelections[activeTab];
   const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.label;
   const pageTitle =
-    selectedTabInstance && selectedTabInstance !== "aggregate"
-      ? selectedTabInstance
-      : activeTabLabel && (navInstances[activeTab]?.length ?? 0) > 1
-        ? `All ${activeTabLabel}`
-        : activeTabLabel;
+    activeTab === "config"
+      ? configSections[configSection]
+      : activeTab === "maintenance"
+        ? maintenanceSection
+        : selectedTabInstance && selectedTabInstance !== "aggregate"
+          ? selectedTabInstance
+          : activeTabLabel && (navInstances[activeTab]?.length ?? 0) > 1
+            ? `All ${activeTabLabel}`
+            : activeTabLabel;
   return (
     <div
       data-density={viewDensity}
@@ -1233,7 +1360,9 @@ function AppShell({
             >
               {burgerIcon}
             </button>
-            <h1>{pageTitle}</h1>
+            <h1 ref={headingRef} tabIndex={-1}>
+              {pageTitle}
+            </h1>
             <span className="appbar__version" title={versionTitle}>
               {displayVersion}
               {meta?.is_test_build ? " · Test Build" : null}
@@ -1398,7 +1527,13 @@ function AppShell({
                 <MaintenanceView
                   key={manageKey}
                   active={activeTab === "maintenance"}
-                  requestedClientId={manageClientId}
+                  section={maintenanceSection}
+                  onSectionChange={(section) => {
+                    setMaintenanceSection(section);
+                    window.scrollTo(0, 0);
+                    headingRef.current?.focus({ preventScroll: true });
+                  }}
+                  requestedClient={manageClientRequest}
                   onDirtyChange={setManageDirty}
                 />
               </div>
@@ -1409,6 +1544,8 @@ function AppShell({
                   active={activeTab === "config"}
                   key={`config-${configKey}`}
                   onDirtyChange={setConfigDirty}
+                  section={configSection}
+                  onSectionChange={setConfigSection}
                   destination={configDestination}
                 />
               </div>

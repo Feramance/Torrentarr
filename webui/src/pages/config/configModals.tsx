@@ -1,3 +1,4 @@
+import type { SimpleConfigSection } from "../../config/settingsSections";
 import { requestNavigateTab } from "../../utils/navigateTab";
 import { clientGroups, arrGeneralGroups, simpleGroups } from "./configGroups";
 import React, { useEffect, useMemo, useRef, useState, type JSX } from "react";
@@ -325,7 +326,6 @@ export function ArrInstanceModal({
                 }
                 onRenameSection={onRename}
                 sectionKey={keyName}
-                defaultOpen={group.defaultOpen}
                 validationErrors={validationErrors}
               >
                 {group.title === "Connection" && (
@@ -666,7 +666,6 @@ export function QbitInstanceModal({
                       }
                       onRenameSection={onRename}
                       sectionKey={fieldPathPrefix ?? keyName}
-                      defaultOpen={group.defaultOpen}
                       validationErrors={validationErrors}
                     />
                     {group.fields[0]?.path?.at(-1) === "FreeSpace" &&
@@ -697,15 +696,15 @@ export function QbitInstanceModal({
                 onChange={(path, def, value) =>
                   onChange([keyName, ...path], def, value)
                 }
-                defaultOpen={false}
                 qbitTrackers
                 sectionKey={fieldPathPrefix ?? keyName}
                 validationErrors={validationErrors}
               />
               <div className="config-section">
-                <h3>Manage</h3>
+                <h3>Maintenance</h3>
                 <p>
-                  Configure recovery, organization, and storage tools in Manage.
+                  Configure recovery, organization, and storage tools under
+                  Settings.
                 </p>
                 <p>
                   {(state as ConfigDocument)?.Maintenance &&
@@ -726,10 +725,13 @@ export function QbitInstanceModal({
                     })
                   }
                 >
-                  Open Manage
+                  Open Shared Settings
                 </button>
                 {!manageClientId && (
-                  <p>Save this client and its name before opening Manage.</p>
+                  <p>
+                    Save this client and its name before opening Shared
+                    Settings.
+                  </p>
                 )}
               </div>
             </div>
@@ -778,11 +780,12 @@ export function QbitInstanceModal({
 export interface SimpleConfigModalProps {
   inline?: boolean;
   title: string;
+  section: SimpleConfigSection;
   fields: FieldDefinition[];
   state: ConfigDocument | null;
   basePath: string[];
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
-  onClose: () => void;
+  onClose?: () => void;
   onSave?: () => Promise<boolean>;
   showLiveSettings?: boolean;
   onSetPassword?: () => void;
@@ -793,6 +796,7 @@ export interface SimpleConfigModalProps {
 
 export function SimpleConfigModal({
   title,
+  section,
   fields,
   state,
   basePath,
@@ -825,7 +829,7 @@ export function SimpleConfigModal({
     try {
       const saved = await onSave();
       if (saved) {
-        if (!inline) onClose();
+        if (!inline) onClose?.();
       }
     } finally {
       setSavingModal(false);
@@ -843,22 +847,20 @@ export function SimpleConfigModal({
           className="modal config-modal"
           role={inline ? "region" : "dialog"}
           aria-modal={inline ? undefined : true}
-          aria-labelledby={`${title.replace(/\s+/g, "-")}-modal-title`}
+          aria-label={title}
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="modal-header">
-            <h2 id={`${title.replace(/\s+/g, "-")}-modal-title`}>{title}</h2>
-            <button
-              className="btn ghost"
-              type="button"
-              onClick={safeClick(onClose)}
-            >
-              <IconImage src={CloseIcon} />
-              Close
-            </button>
-          </div>
+          {onClose && (
+            <div className="modal-header">
+              <h2 id={`${title.replace(/\s+/g, "-")}-modal-title`}>{title}</h2>
+              <button type="button" className="btn ghost" onClick={onClose}>
+                <IconImage src={CloseIcon} />
+                Close
+              </button>
+            </div>
+          )}
           <div className="modal-body">
-            {simpleGroups(title, fields).map((group) => (
+            {simpleGroups(section, fields).map((group) => (
               <FieldGroup
                 key={group.title}
                 title={group.title}
@@ -875,7 +877,6 @@ export function SimpleConfigModal({
                 state={state}
                 basePath={basePath}
                 onChange={onChange}
-                defaultOpen={group.defaultOpen}
                 validationErrors={validationErrors}
               >
                 {group.title === "Appearance and live display" && (
@@ -975,7 +976,7 @@ export function SimpleConfigModal({
                   <IconImage src={SaveIcon} />
                   {savingModal ? "Saving..." : "Save"}
                 </button>
-              ) : (
+              ) : onClose ? (
                 <button
                   className="btn primary"
                   type="button"
@@ -984,7 +985,7 @@ export function SimpleConfigModal({
                   <IconImage src={SaveIcon} />
                   Done
                 </button>
-              )}
+              ) : null}
             </div>
           </ConfigModalActions>
         </div>

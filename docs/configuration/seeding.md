@@ -11,7 +11,7 @@ Completed torrents must satisfy the effective ratio/time removal policy, includi
 configured AND/OR combination and any legacy minimum seeding requirements. Incomplete
 torrents must pass minimum age and stalled grace: `StalledDelay = -1` holds them indefinitely,
 `0` adds no stalled grace, and positive values require that many idle minutes.
-Custom-format failures, failed categories, missing files, Arr errors, and Manage actions
+Custom-format failures, failed categories, missing files, Arr errors, and maintenance actions
 cannot bypass these checks. HnR always retains its own veto. Changed torrent activity,
 category, location, or re-addition invalidates an earlier removal decision.
 
@@ -170,7 +170,7 @@ separate from mandatory completion-based protection observations.
 Legacy compatibility flag. True reports matching tracker failures and preserves
 the torrent; direct dead-tracker torrent deletion is disabled. False permits
 tracker URL removal through RemoveTrackerWithMessage, subject to fresh protection.
-Ordinary tracker handling preserves and reports failures. Manage recovery may recycle content only after explicit configuration, confirmed repair, sustained failure, and all protection checks.
+Ordinary tracker handling preserves and reports failures. Maintenance recovery may recycle content only after explicit configuration, confirmed repair, sustained failure, and all protection checks.
 
 ### RemoveTrackerWithMessage
 
@@ -249,5 +249,5 @@ OnlyEncodes mandatory time begins at completion, not when a torrent was added.
 Client upload/download counters and screenshots cannot establish the exact cause
 of a tracker warning. Do not remove/re-add a torrent to try to erase an obligation.
 
-See [Manage recovery](../features/torrent-maintenance.md) and
+See [Maintenance recovery](../features/torrent-maintenance.md) and
 [maintenance configuration](maintenance.md) for safe repair and storage controls.
