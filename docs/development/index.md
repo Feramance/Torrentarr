@@ -206,10 +206,10 @@ docker run -d --name torrentarr-test -p 6969:6969 -v $(pwd)/config:/config torre
 
 ### Local PR versions
 
-GitHub Actions stamps PR images as `<project-version>-pr.<pr-number>.<run-number>.<run-attempt>`. Local builds use the project version from `Directory.Build.props` by default. To identify a local PR build, use run number `0` and increment the last number for each local rebuild.
+GitHub Actions stamps PR images as `<project-version>-pr.<pr-number>.<run-number>.<run-attempt>`. For local Compose builds, install `bump2version` in your Python environment and run the script with the PR number. It uses run number `0` and increments the last number on each invocation. The counter is stored in this checkout's Git directory. Release and regular local builds use the canonical project version.
 
 ```bash
-VERSION=6.20.0-1-pr.563.0.1 docker compose up -d --build
+bash scripts/build-pr.sh 563
 # Direct Docker build
 docker build --build-arg VERSION=6.20.0-1-pr.563.0.1 -t torrentarr:test .
 # Run the Host directly with .NET

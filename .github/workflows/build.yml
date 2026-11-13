@@ -239,13 +239,23 @@ jobs:
         ref: ${{ github.event.pull_request.head.sha }}
         repository: ${{ github.event.pull_request.head.repo.full_name }}
 
+    - name: Set up Python
+      uses: actions/setup-python@v7.1.0
+      with:
+        python-version: '3.12'
+
     - name: Set PR build version
       id: version
       env:
         PR_NUMBER: ${{ github.event.pull_request.number }}
       run: |
+        python -m pip install bump2version
         PROJECT_VERSION=$(grep -oP '<Version>\K[^<]+' Directory.Build.props)
-        echo "value=${PROJECT_VERSION}-pr.${PR_NUMBER}.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+        PREVIOUS_VERSION="${PROJECT_VERSION}-pr.${PR_NUMBER}.${GITHUB_RUN_NUMBER}.$((GITHUB_RUN_ATTEMPT - 1))"
+        BUMP_OUTPUT=$(bump2version --config-file .bumpversion-pr.cfg --current-version "$PREVIOUS_VERSION" --dry-run --list attempt)
+        VERSION=$(sed -n 's/^new_version=//p' <<< "$BUMP_OUTPUT")
+        test -n "$VERSION"
+        echo "value=$VERSION" >> "$GITHUB_OUTPUT"
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v4
