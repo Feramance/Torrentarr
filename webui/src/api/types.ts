@@ -528,6 +528,7 @@ export interface MetaResponse {
   update_channel?: "latest" | "stable" | "nightly";
   auto_update_supported?: boolean;
   current_version: string;
+  is_test_build?: boolean;
   latest_version: string | null;
   update_available: boolean;
   changelog: string | null; // Latest version changelog

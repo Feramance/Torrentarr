@@ -33,6 +33,7 @@ COPY src/Torrentarr.Host/*.csproj ./src/Torrentarr.Host/
 COPY src/Torrentarr.WebUI/*.csproj ./src/Torrentarr.WebUI/
 COPY src/Torrentarr.Workers/*.csproj ./src/Torrentarr.Workers/
 COPY Directory.Build.props ./
+COPY Directory.Build.targets ./
 
 # Restore only the Host project and its transitive dependencies
 RUN dotnet restore src/Torrentarr.Host/Torrentarr.Host.csproj

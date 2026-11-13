@@ -39,7 +39,9 @@ const offline = {
     transmission: { alive: false, host: "offline", port: 9091, version: null },
   },
 };
-function view() {
+function view(
+  initialMeta = { current_version: "6.15.2", is_test_build: false },
+) {
   return render(
     <ToastProvider>
       <SearchProvider>
@@ -47,7 +49,7 @@ function view() {
           <AppShell
             authRequired={false}
             onSignOut={() => {}}
-            initialMeta={{ current_version: "6.15.2" }}
+            initialMeta={initialMeta}
           />
         </WebUIProvider>
       </SearchProvider>
@@ -63,6 +65,13 @@ function saved() {
   window.dispatchEvent(new Event("torrentarr:config-saved"));
 }
 describe("configured navigation", () => {
+  it("shows the commit and Test Build label together", () => {
+    view({ current_version: "6.20.0-1+af26a1fb71b9", is_test_build: true });
+    expect(
+      screen.getByText("v6.20.0-1+af26a1fb71b9 · Test Build"),
+    ).toBeInTheDocument();
+  });
+
   it("hides every unavailable Arr/client tab while keeping core views", async () => {
     view();
     await waitFor(() => expect(api.getStatus).toHaveBeenCalled());

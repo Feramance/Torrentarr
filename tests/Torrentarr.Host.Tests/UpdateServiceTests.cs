@@ -329,8 +329,42 @@ public class UpdateServiceTests
     [InlineData("6.20.0-1", "6.20.0-1-pr.563.1774.1", false)]
     [InlineData("6.20.0-2", "6.20.0-1-pr.563.1774.1", true)]
     [InlineData("6.20.1-1", "6.20.0-1-pr.563.1774.2", true)]
+    [InlineData("6.20.1-1", "6.20.0-1+af26a1fb71b9", true)]
     public void IsNewerVersion_UnderstandsBuildChannelTags(string latest, string current, bool expected)
     {
         UpdateService.IsNewerVersion(latest, current).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("6.20.0-1", "6.20.1-1", false)]
+    [InlineData("6.20.0-1+af26a1fb71b9", "6.20.1-1", false)]
+    [InlineData("6.20.0-1", "v6.20.0-1", false)]
+    [InlineData("6.20.0-1+af26a1fb71b9", "v6.20.0-1", true)]
+    [InlineData("6.20.0-1-pr.563.1774.2", "v6.20.0-1", true)]
+    [InlineData("6.20.0-2", "6.20.0-1", true)]
+    [InlineData("6.20.0-1+af26a1fb71b9", null, false)]
+    public void IsTestBuild_ComparesAgainstLatestPublishedRelease(string current, string? latest, bool expected)
+    {
+        UpdateService.IsTestBuild(current, latest).Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task LatestPublishedLookupFailureDoesNotPreventStableUpdateCheck()
+    {
+        var config = new TorrentarrConfig();
+        config.Settings.AutoUpdateChannel = "stable";
+        var service = new UpdateService(NullLogger<UpdateService>.Instance, config)
+        {
+            ReleaseFetcher = (_, channel, _) => channel == "latest"
+                ? throw new HttpRequestException("Latest release unavailable")
+                : Task.FromResult<Newtonsoft.Json.Linq.JObject?>(new() { ["tag_name"] = "v100.0.0" })
+        };
+
+        await service.CheckForUpdateAsync();
+
+        var meta = Newtonsoft.Json.Linq.JObject.FromObject(service.BuildMetaResponse());
+        meta.Value<string>("latest_version").Should().Be("100.0.0");
+        meta.Value<bool>("update_available").Should().BeTrue();
+        meta.Value<bool>("is_test_build").Should().BeFalse();
     }
 }

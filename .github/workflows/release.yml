@@ -244,6 +244,7 @@ jobs:
             -r "$rid" \
             --self-contained true \
             -p:PublishSingleFile=true \
+            -p:TorrentarrReleaseBuild=true \
             -p:IncludeNativeLibrariesForSelfExtract=true \
             -p:DebugType=embedded \
             -p:DebugSymbols=false \
@@ -256,6 +257,7 @@ jobs:
             -r "$rid" \
             --self-contained true \
             -p:PublishSingleFile=true \
+            -p:TorrentarrReleaseBuild=true \
             -p:IncludeNativeLibrariesForSelfExtract=true \
             -p:DebugType=embedded \
             -p:DebugSymbols=false \
@@ -356,12 +358,16 @@ jobs:
           type=raw,value=stable,enable=${{ env.RELEASE_TYPE != 'build' }}
           type=raw,value=v${{ env.VERSION }}
           type=raw,value=${{ env.VERSION }}
+        labels: |
+          org.opencontainers.image.version=${{ env.VERSION }}
     - name: Build and push Docker images
       uses: docker/build-push-action@v7
       with:
         context: .
         platforms: linux/amd64,linux/arm64
         push: true
+        build-args: |
+          VERSION=${{ env.VERSION }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha

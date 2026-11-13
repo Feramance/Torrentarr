@@ -1236,6 +1236,7 @@ function AppShell({
             <h1>{pageTitle}</h1>
             <span className="appbar__version" title={versionTitle}>
               {displayVersion}
+              {meta?.is_test_build ? " · Test Build" : null}
             </span>
             {metaLoading ? (
               <span className="spinner" aria-hidden="true" />

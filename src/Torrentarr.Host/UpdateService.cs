@@ -26,6 +26,8 @@ public class UpdateService
     // Cached check result — refreshed at most once per hour
     private DateTime _lastChecked = DateTime.MinValue;
     private string? _latestVersion;
+    private JObject? _latestPublishedRelease;
+    private DateTime _latestPublishedChecked;
     private bool _updateAvailable;
     private string? _changelog;
     private string? _changelogUrl;
@@ -88,10 +90,7 @@ public class UpdateService
         var asm = Assembly.GetEntryAssembly();
         var informational = asm?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
         if (!string.IsNullOrWhiteSpace(informational))
-        {
-            var plus = informational.IndexOf('+');
-            return plus >= 0 ? informational[..plus] : informational;
-        }
+            return informational;
 
         var ver = asm?.GetName().Version;
         if (ver == null) return "0.0.0";
@@ -135,7 +134,27 @@ public class UpdateService
                 http.DefaultRequestHeaders.Add("User-Agent", $"{RepoName}/{currentVersion}");
                 http.Timeout = TimeSpan.FromSeconds(10);
 
-                var release = await (ReleaseFetcher ?? FetchReleaseForChannelAsync)(http, channel, ct);
+                var fetch = ReleaseFetcher ?? FetchReleaseForChannelAsync;
+                if (forceRefresh || DateTime.UtcNow - _latestPublishedChecked >= TimeSpan.FromHours(1))
+                {
+                    _latestPublishedRelease = null;
+                    try
+                    {
+                        _latestPublishedRelease = await fetch(http, "latest", ct);
+                    }
+                    catch (Exception ex) when (channel != "latest" && !ct.IsCancellationRequested)
+                    {
+                        _logger.LogDebug(ex, "Could not check the latest published release");
+                    }
+                    finally
+                    {
+                        _latestPublishedChecked = DateTime.UtcNow;
+                    }
+                }
+
+                var release = channel == "latest"
+                    ? _latestPublishedRelease
+                    : await fetch(http, channel, ct);
                 if (release == null)
                 {
                     if (_issues != null) await _issues.ReportAsync(Issue("check"), ct);
@@ -170,6 +189,7 @@ public class UpdateService
         var channel = AutoUpdateChannel;
         var assets = AssetsForChannel(channel);
         var currentVersion = GetCurrentVersion();
+        var isTestBuild = IsTestBuild(currentVersion, _latestPublishedRelease?["tag_name"]?.ToObject<string>());
         var updateState = new
         {
             in_progress = ApplyState.InProgress,
@@ -182,6 +202,7 @@ public class UpdateService
             return new
             {
                 current_version = currentVersion,
+                is_test_build = isTestBuild,
                 latest_version = _latestVersion,
                 update_available = _updateAvailable,
                 changelog = _changelog,
@@ -208,6 +229,7 @@ public class UpdateService
         return new
         {
             current_version = currentVersion,
+            is_test_build = isTestBuild,
             latest_version = _latestVersion,
             update_available = _updateAvailable,
             changelog = _changelog,
@@ -699,13 +721,25 @@ public class UpdateService
     internal static bool IsNewerVersion(string latest, string current)
     {
         var parsedLatest = ParseReleaseVersion(latest);
-        var prSuffix = current.IndexOf("-pr.", StringComparison.Ordinal);
-        if (prSuffix >= 0)
-            current = current[..prSuffix];
-        var parsedCurrent = ParseReleaseVersion(current);
+        var parsedCurrent = ParseReleaseVersion(WithoutBuildSuffix(current));
         if (parsedLatest is null || parsedCurrent is null)
             return false;
         return parsedLatest.Value.CompareTo(parsedCurrent.Value) > 0;
+    }
+
+    private static string WithoutBuildSuffix(string version)
+        => version.Split('+', 2)[0].Split("-pr.", 2, StringSplitOptions.None)[0];
+
+    internal static bool IsTestBuild(string current, string? latest)
+    {
+        var canonical = WithoutBuildSuffix(current);
+        var parsedCurrent = ParseReleaseVersion(canonical);
+        var parsedLatest = ParseReleaseVersion(latest ?? "");
+        if (parsedCurrent is null || parsedLatest is null)
+            return false;
+
+        var comparison = parsedCurrent.Value.CompareTo(parsedLatest.Value);
+        return comparison > 0 || (comparison == 0 && current != canonical);
     }
 
     /// <summary>

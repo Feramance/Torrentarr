@@ -204,16 +204,14 @@ docker build -t torrentarr:test .
 docker run -d --name torrentarr-test -p 6969:6969 -v $(pwd)/config:/config torrentarr:test
 ```
 
-### Local PR versions
+### Local development versions
 
-GitHub Actions stamps PR images as `<project-version>-pr.<pr-number>.<run-number>.<run-attempt>`. For local Compose builds, install `bump2version` in your Python environment and run the script with the PR number. It uses run number `0` and increments the last number on each invocation. The counter is stored in this checkout's Git directory. Release and regular local builds use the canonical project version.
+Source builds, PR images, and nightly images append the first 12 characters of the checked-out commit to the project version. Official releases use the numeric version managed by `bump2version`.
 
 ```bash
-bash scripts/build-pr.sh 563
+bash scripts/build-compose.sh
 # Direct Docker build
-docker build --build-arg VERSION=6.20.0-1-pr.563.0.1 -t torrentarr:test .
-# Run the Host directly with .NET
-dotnet run --project src/Torrentarr.Host/Torrentarr.Host.csproj -p:InformationalVersion=6.20.0-1-pr.563.0.1
+docker build --build-arg VERSION="$(bash scripts/build-version.sh)" -t torrentarr:test .
 ```
 
 ## Documentation
