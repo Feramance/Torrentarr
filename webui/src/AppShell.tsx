@@ -1441,7 +1441,9 @@ function AppShell({
           </div>
         </div>
       </header>
-      <main className="container">
+      <main
+        className={`container${activeTab === "config" && (configSection === "clients" || configSection === "integrations") ? " instance-page" : ""}`}
+      >
         <Suspense fallback={<div className="loading">Loading...</div>}>
           <div className="view-transition">
             {visitedTabs.has("issues") && (
@@ -1539,7 +1541,7 @@ function AppShell({
               </div>
             ) : null}
             {visitedTabs.has("config") ? (
-              <div hidden={activeTab !== "config"}>
+              <div className="config-page" hidden={activeTab !== "config"}>
                 <ConfigView
                   active={activeTab === "config"}
                   key={`config-${configKey}`}

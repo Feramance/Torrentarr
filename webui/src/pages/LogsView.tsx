@@ -951,8 +951,6 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
                 onScroll={handleScroll}
                 style={{
                   height: "100%",
-                  backgroundColor: "var(--surface-sunken)",
-                  color: "var(--on-surface)",
                   fontFamily:
                     '"Cascadia Code", "Fira Code", "Consolas", "Monaco", monospace',
                   fontSize: "13px",

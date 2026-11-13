@@ -342,12 +342,11 @@ Torrentarr's WebUI provides a graphical interface for managing multiple qBittorr
 
 **Accessing the Config Editor:**
 1. Navigate to `http://your-torrentarr-host:6969/ui`
-2. Click "Config" in the navigation menu
-3. Scroll to "qBittorrent Instances" section
-4. Use "Add Instance", "Configure", or "Delete" buttons
+2. Open **Settings → Torrent Clients** in the navigation menu
+3. Use the **Add Instance** button at the lower right, or a row's Configure or Delete controls
 
 **Adding a New Instance:**
-1. Click "Add Instance" button
+1. Click the **Add Instance** button
 2. Fill in the form:
    - **Display Name**: Custom identifier (e.g., "qBit-seedbox")
    - **Host**: qBittorrent WebUI hostname or IP address

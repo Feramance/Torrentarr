@@ -3760,94 +3760,6 @@ details > summary:focus-visible {
   font-size: 13px;
 }
 
-/* React LogViewer Search Bar Styling */
-.react-lazylog-searchbar {
-  background: var(--surface) !important;
-  border-bottom: 1px solid var(--border) !important;
-  padding: 8px 12px !important;
-}
-
-[data-theme="dark"] .react-lazylog-searchbar {
-  background: var(--surface-sunken) !important;
-}
-
-.react-lazylog-searchbar-input {
-  background: var(--bg) !important;
-  color: var(--on-surface) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 6px !important;
-  padding: 6px 10px !important;
-  font-size: 13px !important;
-}
-
-[data-theme="dark"] .react-lazylog-searchbar-input {
-  background: var(--surface-sunken) !important;
-}
-
-.react-lazylog-searchbar-input:focus {
-  outline: none !important;
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent) !important;
-}
-
-[data-theme="light"] .react-lazylog-searchbar-input:focus {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent) !important;
-}
-
-.react-lazylog-searchbar-input::placeholder {
-  color: var(--muted) !important;
-}
-
-.react-lazylog-searchbar-matches {
-  color: var(--muted) !important;
-  font-size: 12px !important;
-}
-
-.react-lazylog-searchbar-filter,
-.react-lazylog-searchbar-up-arrow,
-.react-lazylog-searchbar-down-arrow {
-  background: transparent !important;
-  border: 1px solid var(--border) !important;
-  border-radius: 6px !important;
-  padding: 6px !important;
-  cursor: pointer !important;
-  transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease !important;
-}
-
-.react-lazylog-searchbar-filter:hover,
-.react-lazylog-searchbar-up-arrow:hover,
-.react-lazylog-searchbar-down-arrow:hover {
-  background: color-mix(in srgb, var(--primary) 10%, transparent) !important;
-  border-color: var(--primary) !important;
-}
-
-[data-theme="light"] .react-lazylog-searchbar-filter:hover,
-[data-theme="light"] .react-lazylog-searchbar-up-arrow:hover,
-[data-theme="light"] .react-lazylog-searchbar-down-arrow:hover {
-  background: color-mix(in srgb, var(--primary) 8%, transparent) !important;
-}
-
-.react-lazylog-searchbar-filter svg,
-.react-lazylog-searchbar-up-arrow svg,
-.react-lazylog-searchbar-down-arrow svg {
-  fill: var(--on-surface) !important;
-  width: 16px !important;
-  height: 16px !important;
-}
-
-.react-lazylog-searchbar-filter.inactive,
-.react-lazylog-searchbar-up-arrow.inactive,
-.react-lazylog-searchbar-down-arrow.inactive {
-  opacity: 0.5 !important;
-  cursor: not-allowed !important;
-}
-
-.react-lazylog-searchbar-matches.inactive {
-  opacity: 0.5 !important;
-}
-
 /* Test Connection Section */
 .test-connection-section {
   margin: 12px 0;
@@ -4619,6 +4531,202 @@ details > summary:focus-visible {
 .logs-viewer__lazy {
   flex: 1;
   min-height: 0;
+}
+
+/* The viewer injects a fixed dark palette. Scope overrides to its public
+   classes and use CSS module names without their generated hash suffixes. */
+.logs-viewer__lazy {
+  --log-hover: color-mix(in srgb, var(--accent) 8%, var(--surface-sunken));
+  --log-selected: color-mix(in srgb, var(--accent) 16%, var(--surface-sunken));
+  --log-cyan: #63ccd1;
+  --log-magenta: #de9bd8;
+  background: var(--surface-sunken);
+  color: var(--on-surface);
+  color-scheme: dark;
+}
+
+[data-theme="light"] .logs-viewer__lazy {
+  --log-cyan: #006b71;
+  --log-magenta: #86377e;
+  color-scheme: light;
+}
+
+.logs-viewer__lazy .react-lazylog {
+  background: var(--surface-sunken);
+  color: var(--on-surface);
+}
+
+.logs-viewer__lazy .react-lazylog-searchbar {
+  background: var(--surface);
+  color: var(--on-surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+}
+
+.logs-viewer__lazy .react-lazylog-searchbar-input {
+  background: var(--control-bg);
+  color: var(--on-surface);
+  border: 1px solid var(--control-border);
+  border-radius: 4px;
+  min-width: 0;
+  height: var(--control-height);
+  padding: 6px 10px;
+}
+
+.logs-viewer__lazy :is(.react-lazylog-searchbar .inactive, .log-number) {
+  color: var(--muted);
+  fill: currentColor;
+}
+
+.logs-viewer__lazy .react-lazylog-searchbar-input::placeholder {
+  color: var(--muted);
+}
+
+.logs-viewer__lazy .react-lazylog-searchbar .active,
+.logs-viewer__lazy .log-highlight .log-number,
+.logs-viewer__lazy .log-content a {
+  color: var(--accent);
+  fill: currentColor;
+}
+
+.logs-viewer__lazy .react-lazylog-searchbar button {
+  border: 1px solid var(--control-border);
+  border-radius: 4px;
+  padding: 6px;
+  background: transparent;
+}
+
+.logs-viewer__lazy .react-lazylog-searchbar button:hover,
+.logs-viewer__lazy .log-line:hover {
+  background: var(--log-hover);
+}
+
+.logs-viewer__lazy .log-line.log-highlight {
+  background: var(--log-selected);
+}
+
+.logs-viewer__lazy
+  :is(
+    .react-lazylog,
+    .react-lazylog-searchbar input,
+    .react-lazylog-searchbar button
+  ):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.logs-viewer__lazy [class*="index-module_searchMatch__"] {
+  background: var(--log-selected);
+  color: var(--on-surface);
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+}
+
+.logs-viewer__lazy [class*="index-module_searchMatchHighlighted__"] {
+  background: var(--primary);
+  color: var(--bg);
+}
+
+.logs-viewer__lazy
+  .log-part:is(
+    [class*="index-module_black__"],
+    [class*="index-module_blackBold__"],
+    [class*="index-module_white__"],
+    [class*="index-module_whiteBold__"]
+  ) {
+  color: var(--on-surface);
+}
+
+.logs-viewer__lazy
+  .log-part:is(
+    [class*="index-module_grey__"],
+    [class*="index-module_greyBold__"]
+  ) {
+  color: var(--muted);
+}
+
+.logs-viewer__lazy
+  .log-part:is(
+    [class*="index-module_red__"],
+    [class*="index-module_redBold__"]
+  ) {
+  color: var(--danger);
+}
+
+.logs-viewer__lazy
+  .log-part:is(
+    [class*="index-module_green__"],
+    [class*="index-module_greenBold__"]
+  ) {
+  color: var(--success);
+}
+
+.logs-viewer__lazy
+  .log-part:is(
+    [class*="index-module_yellow__"],
+    [class*="index-module_yellowBold__"]
+  ) {
+  color: var(--warning);
+}
+
+.logs-viewer__lazy
+  .log-part:is(
+    [class*="index-module_blue__"],
+    [class*="index-module_blueBold__"]
+  ) {
+  color: var(--accent);
+}
+
+.logs-viewer__lazy
+  .log-part:is(
+    [class*="index-module_cyan__"],
+    [class*="index-module_cyanBold__"]
+  ) {
+  color: var(--log-cyan);
+}
+
+.logs-viewer__lazy
+  .log-part:is(
+    [class*="index-module_magenta__"],
+    [class*="index-module_magentaBold__"]
+  ) {
+  color: var(--log-magenta);
+}
+
+.logs-viewer__lazy .log-part[class*="index-module_blackBg__"] {
+  --log-ansi-background: var(--muted);
+}
+.logs-viewer__lazy .log-part[class*="index-module_whiteBg__"] {
+  --log-ansi-background: var(--on-surface);
+}
+.logs-viewer__lazy .log-part[class*="index-module_greyBg__"] {
+  --log-ansi-background: var(--muted);
+}
+.logs-viewer__lazy .log-part[class*="index-module_redBg__"] {
+  --log-ansi-background: var(--danger);
+}
+.logs-viewer__lazy .log-part[class*="index-module_greenBg__"] {
+  --log-ansi-background: var(--success);
+}
+.logs-viewer__lazy .log-part[class*="index-module_yellowBg__"] {
+  --log-ansi-background: var(--warning);
+}
+.logs-viewer__lazy .log-part[class*="index-module_blueBg__"] {
+  --log-ansi-background: var(--accent);
+}
+.logs-viewer__lazy .log-part[class*="index-module_cyanBg__"] {
+  --log-ansi-background: var(--log-cyan);
+}
+.logs-viewer__lazy .log-part[class*="index-module_magentaBg__"] {
+  --log-ansi-background: var(--log-magenta);
+}
+
+.logs-viewer__lazy .log-part[class*="Bg__"] {
+  background-color: color-mix(
+    in srgb,
+    var(--log-ansi-background) 16%,
+    var(--surface-sunken)
+  );
 }
 
 .logs-viewer__empty {
@@ -6026,25 +6134,80 @@ pre,
   filter: brightness(0) invert(1);
 }
 
-.config-workspace {
-  overflow: clip;
-}
-
+.config-workspace,
 .config-workspace__layout,
-.maintenance-workspace > .card-body {
+.maintenance-workspace__body {
   display: grid;
   min-width: 0;
-  gap: 16px;
+  gap: var(--space);
 }
 
-.console-shell[data-density="compact"]
-  :is(.config-workspace__layout, .maintenance-workspace > .card-body) {
-  gap: 10px;
+:is(.config-workspace, .maintenance-workspace) {
+  --section-divider: var(--accent);
+  --nested-divider: color-mix(in srgb, var(--accent) 30%, var(--border));
+  min-width: 0;
 }
 
-.maintenance-workspace > .card-body > p,
-.config-arr-overview {
+:is(.config-workspace, .maintenance-workspace)
+  :is(.config-section, .tracker-card, .config-arr-group, .maintenance-history) {
+  min-width: 0;
+  border: 0;
+  border-block-start: 1px solid var(--section-divider);
+  border-radius: 0;
+  padding: var(--space) 0 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+:is(.config-workspace, .maintenance-workspace)
+  :is(.config-section .config-section, .config-section .tracker-card) {
+  border-block-start-color: var(--nested-divider);
+}
+
+:is(.config-workspace, .maintenance-workspace)
+  :is(.config-section__heading, .config-instance-header h3, .tracker-card h4) {
+  overflow-wrap: anywhere;
+}
+
+:is(.config-workspace, .maintenance-workspace)
+  .tracker-card
+  > :is(.card-header, .card-body) {
+  padding-inline: 0;
+  border: 0;
+  background: transparent;
+}
+
+:is(.config-workspace, .maintenance-workspace)
+  :is(.alert, .torrent-handling-summary, .modal-footer-note) {
+  border: 0;
+  border-block-start: 1px solid var(--nested-divider);
+  border-radius: 0;
+  padding-inline: 0;
+  background: transparent;
+}
+
+:is(.config-workspace, .maintenance-workspace) .alert {
+  border-block-start-color: currentColor;
+}
+
+.settings-notice,
+.maintenance-workspace__body > :is(p, [role="alert"]) {
   margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.settings-notice--warning {
+  color: var(--warning);
+}
+
+.settings-notice--error,
+.maintenance-workspace__body > [role="alert"] {
+  color: var(--danger);
+}
+
+.maintenance-workspace .table-wrap {
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .maintenance-shared,
@@ -6061,10 +6224,60 @@ pre,
   display: grid;
   gap: 22px;
 }
-.config-arr-toolbar {
+#root > .console-shell[data-density]:has(> .instance-page) {
+  height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.console-shell > .container.instance-page {
+  align-self: stretch;
+  padding-block-end: 0;
+}
+
+.instance-page > .view-transition,
+.instance-page .config-page {
+  height: 100%;
+  min-height: 0;
+}
+
+.instance-page .config-page:not([hidden]) {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.instance-page .config-workspace {
+  align-content: start;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scroll-padding-block: 12px calc(3 * var(--control-height));
+}
+
+.instance-add-bar {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  padding-block: 8px max(8px, env(safe-area-inset-bottom));
+  padding-inline-end: max(4px, env(safe-area-inset-right));
+  border-block-start: 1px solid var(--border);
 }
+
+.instance-add-bar .instance-add-button {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  justify-content: center;
+  padding: 0;
+}
+
+.instance-add-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+body:has(.instance-add-bar) .toasts {
+  bottom: calc(68px + env(safe-area-inset-bottom));
+}
+
 .integration-dialog {
   width: min(620px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
@@ -6103,34 +6316,16 @@ pre,
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.config-arr-group {
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-}
 .config-instance-header {
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 12px 14px 12px 18px;
-  background: color-mix(in srgb, var(--accent) 6%, var(--surface-sunken));
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
-}
-.config-instance-header::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--brand-gradient);
+  padding-block-end: 8px;
 }
 .config-arr-group > .hint {
-  margin: 10px 14px 0;
+  margin: 0 0 8px;
 }
 .config-arr-group h3 {
   display: flex;
@@ -6143,22 +6338,12 @@ pre,
   text-transform: uppercase;
 }
 .config-arr-group h3 > span {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  color: color-mix(in srgb, var(--accent) 70%, var(--on-surface));
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  color: var(--muted);
+  font-weight: 500;
   text-transform: none;
 }
 .config-arr-list {
   display: grid;
-  gap: 6px;
-  padding: 14px;
 }
 .config-arr-row {
   display: grid;
@@ -6168,8 +6353,8 @@ pre,
   gap: 12px;
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
+  border: 0;
+  border-block-start: 1px solid var(--nested-divider);
   background: transparent;
   color: var(--on-surface);
   text-align: left;
@@ -6183,10 +6368,8 @@ pre,
 }
 .config-arr-row:hover {
   background: color-mix(in srgb, var(--accent) 6%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
 }
 .config-arr-row.active {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   box-shadow: inset 2px 0 0 var(--accent);
 }
@@ -6272,7 +6455,7 @@ pre,
 }
 
 .config-inline-editor .modal-header {
-  background: var(--surface);
+  background: transparent;
   border: 0;
   padding: 0 0 10px;
 }
@@ -6285,7 +6468,7 @@ pre,
 .config-inline-actions {
   position: sticky;
   bottom: 0;
-  background: var(--surface);
+  background: var(--bg);
   z-index: 2;
 }
 
@@ -6296,8 +6479,8 @@ pre,
 
 .config-inline-editor .modal-footer {
   padding: 10px 0;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
+  background: transparent;
+  border-top: 1px solid var(--nested-divider);
 }
 
 .config-inline-editor .config-modal .config-modal__client-layout {

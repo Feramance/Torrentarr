@@ -361,8 +361,8 @@ export function MaintenanceView({
       setPlan(await previewMaintenance([clientId], [operation]));
     });
   return (
-    <section aria-label="Maintenance" className="card maintenance-workspace">
-      <div className="card-body">
+    <section aria-label="Maintenance" className="maintenance-workspace">
+      <div className="maintenance-workspace__body">
         <div className="actions manage-toolbar">
           <div className="field">
             <label htmlFor="manage-client">Torrent client</label>
@@ -822,7 +822,7 @@ export function MaintenanceView({
             {!selectedHistory.length ? (
               <p>No runs yet.</p>
             ) : (
-              <div className="table-wrap" style={{ overflowX: "auto" }}>
+              <div className="table-wrap">
                 <table
                   style={{
                     width: "100%",

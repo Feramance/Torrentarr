@@ -245,9 +245,7 @@ it("lists every client together by name with the same controls and shared settin
     screen.getByRole("navigation", { name: "Configuration sections" }),
   ).toBeInTheDocument();
   expect(
-    within(
-      screen.getByRole("region", { name: "qBittorrent Instances" }),
-    ).getByRole("button", { name: "Add Instance" }),
+    screen.getByRole("button", { name: "Add Instance" }),
   ).toBeInTheDocument();
   for (const name of ["a-transmission", "qBit", "z-qbit"]) {
     await openSection(name);
@@ -539,15 +537,11 @@ describe("ConfigView – addQbitInstance behaviour", () => {
 
     await openSection("qBit");
     expect(screen.queryByText("client-1")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Add Instance" }),
+    ).toHaveLength(1);
 
-    // Scope the shared add button to the torrent client section; the
-    // Integrations tab has its own top-level Add Instance button.
-    const qbitSection = screen.getByRole("region", {
-      name: "qBittorrent Instances",
-    });
-    const addBtn = within(qbitSection).getByRole("button", {
-      name: /add instance/i,
-    });
+    const addBtn = screen.getByRole("button", { name: "Add Instance" });
     await user.click(addBtn);
 
     // findAllByText: the card header AND the modal title both contain "client-1"
@@ -568,9 +562,7 @@ describe("ConfigView – addQbitInstance behaviour", () => {
 
     // Click once → creates client-1 and opens its configure modal
     const getAddBtn = () =>
-      within(
-        screen.getByRole("region", { name: "qBittorrent Instances" }),
-      ).getByRole("button", { name: /add instance/i });
+      screen.getByRole("button", { name: /add instance/i });
 
     await user.click(getAddBtn());
     // Card header + modal title both show "client-1"
@@ -1407,12 +1399,25 @@ it("groups mixed client storage by normalized type without conflating identities
   expect(
     screen.getByRole("textbox", { name: "Host", exact: true }),
   ).toHaveValue("canonical");
+  const add = screen.getByRole("button", { name: "Add Instance" });
+  await userEvent.click(add);
+  const picker = screen.getByRole("dialog", { name: "Add torrent client" });
   await userEvent.click(
-    within(screen.getByRole("region", { name: "custom Instances" })).getByRole(
-      "button",
-      { name: "Add Instance" },
-    ),
+    within(picker).getByRole("button", { name: "Close Add torrent client" }),
   );
+  expect(picker).not.toBeInTheDocument();
+  expect(add).toHaveFocus();
+  await userEvent.click(add);
+  await userEvent.click(
+    within(
+      screen.getByRole("dialog", { name: "Add torrent client" }),
+    ).getByRole("button", { name: "custom" }),
+  );
+  expect(
+    screen
+      .getByRole("region", { name: "Configure client-1" })
+      .closest(".config-workspace__editor"),
+  ).toHaveFocus();
   expect(screen.getByRole("textbox", { name: "Client Type" })).toHaveValue(
     "custom",
   );
@@ -1718,11 +1723,7 @@ it("focuses and scrolls after the requested editor mounts, without jumping on or
     );
     const calls = scroll.mock.calls.length;
     expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
-    await userEvent.click(
-      within(
-        screen.getByRole("region", { name: "qBittorrent Instances" }),
-      ).getByRole("button", { name: "Add Instance" }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "Add Instance" }));
     expect(titles.at(-1)).toBe("Configure client-1");
     expect(scroll).toHaveBeenCalledTimes(calls + 1);
     await userEvent.click(
@@ -1836,4 +1837,27 @@ it("edits General using the existing Settings keys", async () => {
   await waitFor(() =>
     expect(changes).toEqual({ "Settings.FailedCategory": "failed-updated" }),
   );
+});
+
+it("shows a loading error in the Settings workspace and retries", async () => {
+  let fail = true;
+  server.use(
+    http.get("/web/config", () =>
+      fail
+        ? HttpResponse.json(
+            { error: "Configuration unavailable" },
+            { status: 500 },
+          )
+        : HttpResponse.json(configWithInstances),
+    ),
+  );
+  renderConfig();
+  const workspace = screen.getByRole("region", { name: "Settings editor" });
+  expect(within(workspace).getByText("Loading configuration…")).toBeVisible();
+  expect(await within(workspace).findByRole("alert")).toBeVisible();
+  fail = false;
+  await userEvent.click(
+    within(workspace).getByRole("button", { name: "Retry" }),
+  );
+  expect(await screen.findByRole("region", { name: "General" })).toBeVisible();
 });

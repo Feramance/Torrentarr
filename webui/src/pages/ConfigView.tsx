@@ -151,7 +151,8 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     return () => window.removeEventListener("torrentarr:manage-saved", receive);
   }, []);
 
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [, setSavingSection] = useState<string | null>(null);
   const [pendingRenames, setPendingRenames] = useState<Map<string, string>>(
     new Map(),
@@ -210,6 +211,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const [config, schema] = await Promise.all([
         getConfig(),
@@ -222,14 +224,13 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       // Clear pending renames when config is loaded
       setPendingRenames(new Map());
     } catch (error) {
-      push(
+      setLoadError(
         error instanceof Error ? error.message : "Failed to load configuration",
-        "error",
       );
     } finally {
       setLoading(false);
     }
-  }, [push]);
+  }, []);
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -411,13 +412,20 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     monitorPath?: string;
   } | null>(null);
   const handledDestination = useRef<ConfigDestination | undefined>(undefined);
+  const instanceSection = section === "clients" || section === "integrations";
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [section]);
+
   const editorRef = useRef<HTMLDivElement>(null);
   const [editorRequest, setEditorRequest] = useState(0);
   useEffect(() => {
     const editor = editorRef.current;
     if (!editorRequest || !editor) return;
-    const headerHeight =
-      document.querySelector(".appbar")?.getBoundingClientRect().height ?? 0;
+    const headerHeight = editor.closest(".instance-page")
+      ? 0
+      : document.querySelector(".appbar")?.getBoundingClientRect().height ?? 0;
     const requested = destinationFocus.current;
     destinationFocus.current = null;
     const field = requested
@@ -448,7 +456,12 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     });
   }, [editorRequest]);
   const [fieldSearch, setFieldSearch] = useState("");
-  const [integrationPickerOpen, setIntegrationPickerOpen] = useState(false);
+  const [pickerSection, setPickerSection] = useState<
+    "clients" | "integrations"
+  >();
+  useEffect(() => {
+    setPickerSection(undefined);
+  }, [section, active]);
   const [isSetPasswordOpen, setSetPasswordOpen] = useState(false);
   const [isDirty, setDirty] = useState(false);
   const [serverValidationErrors, setServerValidationErrors] = useState<
@@ -1228,7 +1241,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     !equal(formState?.[key], originalConfig?.[key]);
 
   const applicationNotice = application && application.state !== "applied" && (
-    <p role="status" className="card-body">
+    <p role="status" className="settings-notice">
       {application.error ??
         (application.state === "pending"
           ? "Configuration saved; waiting for active operations to finish"
@@ -1244,57 +1257,66 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     </p>
   );
 
-  if (loading || !formState) {
+  const notices = (
+    <>
+      {applicationNotice}
+      {pendingRestarts.length > 0 && (
+        <p role="status" className="settings-notice">
+          Pending restart:{" "}
+          {pendingRestarts.map((item) => item.component).join(", ")}.{" "}
+          <button
+            type="button"
+            className="btn small"
+            disabled={restarting}
+            onClick={() => setConfirmRestart(true)}
+          >
+            {restarting ? "Restarting…" : "Retry restart"}
+          </button>
+        </p>
+      )}
+    </>
+  );
+
+  if (loading || loadError || !formState) {
     return (
-      <section className="card" aria-label="Settings editor">
-        {applicationNotice}
-        {pendingRestarts.length > 0 && (
-          <p role="status" className="card-body">
-            Pending restart:{" "}
-            {pendingRestarts.map((item) => item.component).join(", ")}.{" "}
-            <button
-              type="button"
-              className="btn small"
-              disabled={restarting}
-              onClick={() => setConfirmRestart(true)}
-            >
-              {restarting ? "Restarting…" : "Retry restart"}
-            </button>
-          </p>
-        )}
-        <div className="card-body">
-          <div className="loading">
+      <section className="config-workspace" aria-label="Settings editor">
+        {notices}
+        {loading ? (
+          <div className="loading" role="status">
             <span className="spinner" /> Loading configuration…
           </div>
-        </div>
+        ) : loadError ? (
+          <p className="settings-notice settings-notice--error" role="alert">
+            {loadError}{" "}
+            <button
+              type="button"
+              className="btn small ghost"
+              onClick={() => void loadConfig()}
+            >
+              Retry
+            </button>
+          </p>
+        ) : (
+          <p className="hint">No configuration available.</p>
+        )}
       </section>
     );
   }
 
   return (
     <>
-      <section className="card config-workspace" aria-label="Settings editor">
+      <section
+        className="config-workspace"
+        aria-label="Settings editor"
+        ref={scrollRef}
+      >
         {isDirty && (
-          <div className="card-header">
-            <span className="badge">Unsaved changes</span>
-          </div>
-        )}
-        {applicationNotice}
-        {pendingRestarts.length > 0 && (
-          <p role="status" className="card-body">
-            Pending restart:{" "}
-            {pendingRestarts.map((item) => item.component).join(", ")}.{" "}
-            <button
-              type="button"
-              className="btn small"
-              disabled={restarting}
-              onClick={() => setConfirmRestart(true)}
-            >
-              {restarting ? "Restarting…" : "Retry restart"}
-            </button>
+          <p className="settings-notice settings-notice--warning" role="status">
+            Unsaved changes
           </p>
         )}
-        <div className="card-body config-workspace__layout">
+        {notices}
+        <div className="config-workspace__layout">
           {section === "clients" && (
             <section
               className="config-arr-overview"
@@ -1314,14 +1336,6 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                         {clients.length === 1 ? "instance" : "instances"}
                       </span>
                     </h3>
-                    <button
-                      className="btn small"
-                      type="button"
-                      onClick={() => chooseEditor(() => addClient(type))}
-                    >
-                      <IconImage src={AddIcon} />
-                      Add Instance
-                    </button>
                   </header>
                   {type !== "qbittorrent" && (
                     <p className="hint">
@@ -1400,16 +1414,6 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
               className="config-arr-overview"
               aria-label="Configured integrations"
             >
-              <div className="config-arr-toolbar">
-                <button
-                  className="btn small"
-                  type="button"
-                  onClick={() => setIntegrationPickerOpen(true)}
-                >
-                  <IconImage src={AddIcon} />
-                  Add Instance
-                </button>
-              </div>
               {groupedArrSections.map((group) => (
                 <section
                   className="config-arr-group"
@@ -1688,31 +1692,75 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
             )}
         </div>
       </section>
-      {active && integrationPickerOpen && (
+      {active && instanceSection && (
+        <div className="instance-add-bar">
+          <button
+            className="btn primary instance-add-button"
+            type="button"
+            aria-label="Add Instance"
+            title="Add Instance"
+            aria-haspopup={
+              section === "integrations" || clientGroups.length > 1
+                ? "dialog"
+                : undefined
+            }
+            onClick={() => {
+              if (section === "clients" && clientGroups.length === 1)
+                chooseEditor(() => addClient("qbittorrent"));
+              else setPickerSection(section);
+            }}
+          >
+            <IconImage src={AddIcon} alt="" />
+          </button>
+        </div>
+      )}
+      {active && pickerSection && (
         <ShellDialog
-          title="Add integration"
+          title={
+            pickerSection === "clients"
+              ? "Add torrent client"
+              : "Add integration"
+          }
           className="integration-dialog"
-          onClose={() => setIntegrationPickerOpen(false)}
+          onClose={() => setPickerSection(undefined)}
         >
           <div
             className="integration-picker"
             role="group"
-            aria-label="Integration type"
+            aria-label={
+              pickerSection === "clients"
+                ? "Torrent client type"
+                : "Integration type"
+            }
           >
-            {INTEGRATION_TYPES.map(({ type, icon }) => (
-              <button
-                key={type}
-                type="button"
-                className="integration-picker__option"
-                onClick={() => {
-                  setIntegrationPickerOpen(false);
-                  chooseEditor(() => addArrInstance(type));
-                }}
-              >
-                <IconImage src={icon} alt="" />
-                <span>{arrTypeLabel(type)}</span>
-              </button>
-            ))}
+            {pickerSection === "clients"
+              ? clientGroups.map(([type]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className="integration-picker__option"
+                    onClick={() => {
+                      setPickerSection(undefined);
+                      chooseEditor(() => addClient(type));
+                    }}
+                  >
+                    {type === "qbittorrent" ? "qBittorrent" : type}
+                  </button>
+                ))
+              : INTEGRATION_TYPES.map(({ type, icon }) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className="integration-picker__option"
+                    onClick={() => {
+                      setPickerSection(undefined);
+                      chooseEditor(() => addArrInstance(type));
+                    }}
+                  >
+                    <IconImage src={icon} alt="" />
+                    <span>{arrTypeLabel(type)}</span>
+                  </button>
+                ))}
           </div>
         </ShellDialog>
       )}

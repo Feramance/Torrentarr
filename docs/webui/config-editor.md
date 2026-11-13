@@ -4,9 +4,11 @@ The **Settings** sidebar group edits the running Host's TOML through its configu
 Open **General**, **Interface & Access**, **Authentication**, **Torrent Clients**, or **Integrations**. This navigation change requires no upgrade steps for existing config files or databases. Integrations has separate Radarr, Sonarr, Lidarr, and Readarr sections,
 including empty types. Torrent Clients groups legacy and canonical entries by
 configured type, with qBittorrent first. Each torrent-client section shows its
-instance count and an **Add Instance** button that uses that type's defaults.
-Integrations instead has one **Add Instance** button above its sections; it
-opens an integration-type picker and creates the chosen type's next instance.
+instance count. Torrent Clients and Integrations each have one **Add Instance**
+button at the lower right. Torrent Clients adds qBittorrent directly when it is
+the only configured type, otherwise it opens a type picker with qBittorrent
+first. Integrations opens an integration-type picker. Either picker creates the
+chosen type's next instance.
 
 Instance rows show address, category scope, enabled state, and unsaved changes;
 client rows also show scan intervals, while integration rows show search/processing
