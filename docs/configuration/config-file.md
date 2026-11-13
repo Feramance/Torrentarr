@@ -70,7 +70,7 @@ The `[Settings]` section contains global configuration that applies to all Torre
 ```toml
 [Settings]
 # Internal config schema version - DO NOT MODIFY
-ConfigVersion = "6.20.3"
+ConfigVersion = "6.20.4"
 
 # Logging
 ConsoleLevel = "INFO"
@@ -112,7 +112,7 @@ ProcessRestartDelay = 5
 ### ConfigVersion
 
 ```toml
-ConfigVersion = "6.20.3"
+ConfigVersion = "6.20.4"
 ```
 
 **Type:** String
@@ -916,7 +916,7 @@ Each Arr instance has its own section with subsections for:
 - `[<Type>-<Name>.Overseerr]` - Request integration (Radarr/Sonarr only)
 - `[<Type>-<Name>.Torrent]` - Torrent management
 - `[<Type>-<Name>.Torrent.SeedingMode]` - Seeding configuration
-- `[[<Type>-<Name>.Torrent.Trackers]]` - Per-tracker settings
+- `[[Trackers]]` with `ArrInstances` - Per-integration tracker rules
 
 For complete Arr configuration documentation:
 
@@ -1110,7 +1110,7 @@ Absolute minimum configuration to get started:
 
 ```toml
 [Settings]
-ConfigVersion = "6.20.3"
+ConfigVersion = "6.20.4"
 
 [WebUI]
 Host = "0.0.0.0"

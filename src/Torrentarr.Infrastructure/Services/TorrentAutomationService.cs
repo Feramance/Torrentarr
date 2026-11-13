@@ -133,7 +133,7 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 {
                     torrent.ClientInstanceId = id;
                     var key = id + "|" + torrent.Hash;
-                    var fresh = cfg.Trackers.Any(t => t.Protection != null) || _config.ArrInstances.Values.Any(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent) && a.Torrent.Trackers.Any(t => t.Protection != null)) || cfg.Maintenance.ErrorRecovery.States.Contains(torrent.State, StringComparer.OrdinalIgnoreCase)
+                    var fresh = TrackerRules.ForTorrent(_config, torrent).Any(t => t.Protection != null) || cfg.Maintenance.ErrorRecovery.States.Contains(torrent.State, StringComparer.OrdinalIgnoreCase)
                         || _protection.Values.SelectMany(decisions => decisions).Any(d => d.ClientInstanceId == id && d.TorrentHash == torrent.Hash && NeedsFreshInspection(d));
                     await budget.WaitAsync(inspectionCt);
                     try

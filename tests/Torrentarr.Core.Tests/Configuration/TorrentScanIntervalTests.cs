@@ -89,7 +89,7 @@ public sealed class TorrentScanIntervalTests
             config.QBitInstances["qBit"].TorrentScanIntervalSeconds.Should().Be(120);
             config.TorrentClients["one"].TorrentScanIntervalSeconds.Should().Be(120);
             config.TorrentClients["explicit"].TorrentScanIntervalSeconds.Should().Be(15);
-            config.Settings.ConfigVersion.Should().Be("6.20.3");
+            config.Settings.ConfigVersion.Should().Be(ConfigurationLoader.ExpectedConfigVersion);
             File.ReadAllText(path + ".bak").Should().Be(original);
             var migrated = File.ReadAllText(path);
             loader.Load();

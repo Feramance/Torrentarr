@@ -814,6 +814,10 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
             if (!empty.HasValues && empty.Parent is Newtonsoft.Json.Linq.JProperty property) property.Remove();
 
         var updatedConfig = FlatToConfig(flatConfig, config);
+        TrackerRules.NormalizeNested(updatedConfig);
+        var renames = body?["renames"] as Newtonsoft.Json.Linq.JObject;
+        InstanceRenamePersistence.Validate(config, updatedConfig, renames);
+        TrackerRules.RenameReferences(config, updatedConfig, renames);
         var savePasswordHashError = WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(config, updatedConfig);
         if (savePasswordHashError != null)
             return Results.Json(new { error = savePasswordHashError }, statusCode: 403);
@@ -825,7 +829,6 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
                 keepOff.Type == Newtonsoft.Json.Linq.JTokenType.String ? keepOff.ToString() : "",
                 changes.Where(p => p.Value is Newtonsoft.Json.Linq.JArray).Select(p => p.Key)) is { } migrationError)
             return Results.BadRequest(new { error = migrationError });
-        var renames = body?["renames"] as Newtonsoft.Json.Linq.JObject;
         var applied = false;
         await InstanceRenamePersistence.SaveAsync(config, updatedConfig, renames,
             loader, db, reloader.ConfigPath, publish: () =>
@@ -836,6 +839,10 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
             });
         if (!applied) return Results.BadRequest(new { error = reloader.GetStatus().Error });
         await registry.ReconcileAsync(config.GetAllTorrentClients(), connect: false);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
     }
     catch (Exception ex)
     {
@@ -923,6 +930,7 @@ static Newtonsoft.Json.Linq.JObject BuildFlatConfig(TorrentarrConfig config, boo
         foreach (var property in canonical.Properties().OfType<Newtonsoft.Json.Linq.JProperty>())
             if (property.Value is Newtonsoft.Json.Linq.JObject clientObj) RedactSensitiveFields(clientObj);
     flat["TorrentClient"] = canonical;
+    flat["Trackers"] = Newtonsoft.Json.Linq.JArray.FromObject(config.Trackers);
 
     foreach (var (name, arr) in config.ArrInstances)
     {
@@ -985,7 +993,7 @@ static void RedactSensitiveFields(Newtonsoft.Json.Linq.JToken token)
 // ArrInstanceConfig.Search is [JsonProperty("EntrySearch")] so the JSON key stays EntrySearch.
 static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, TorrentarrConfig current)
 {
-    var result = new TorrentarrConfig();
+    var result = new TorrentarrConfig { Trackers = TrackerRules.ReadJson(flat["Trackers"]) };
 
     // Settings
     result.Settings = flat["Settings"] is Newtonsoft.Json.Linq.JObject settingsObj
@@ -1593,6 +1601,7 @@ app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, Torrentar
         if (passwordHashError != null)
             return Results.Json(new { error = passwordHashError }, statusCode: 403);
 
+        TrackerRules.NormalizeNested(updatedConfig);
         var liveValidation = reloader.Validate(updatedConfig);
         if (!liveValidation.Ok) return Results.BadRequest(new { error = liveValidation.Error });
         await InstanceRenamePersistence.SaveAsync(config, updatedConfig, null, loader, db, reloader.ConfigPath);

@@ -21,12 +21,7 @@ import DeleteIcon from "../../icons/trash.svg";
 import SaveIcon from "../../icons/check-mark.svg";
 import RefreshIcon from "../../icons/refresh-arrow.svg";
 import { safeClick } from "../../utils/safeClick";
-import {
-  ARR_TRACKER_FIELDS,
-  getTrackerProtectionFields,
-  getArrFieldSets,
-  QBIT_FIELDS,
-} from "./configFields";
+import { getArrFieldSets, QBIT_FIELDS } from "./configFields";
 import {
   ArrTorrentSummary,
   CategoryOverlapAlert,
@@ -140,7 +135,6 @@ export function ArrInstanceModal({
     entryOverseerrFields,
     torrentFields,
     seedingFields,
-    trackerFields,
   } = getArrFieldSets(keyName);
   const { push } = useToast();
 
@@ -462,17 +456,6 @@ export function ArrInstanceModal({
               sectionKey={keyName}
               validationErrors={validationErrors}
             />
-            <FieldGroup
-              title="Trackers"
-              fields={trackerFields}
-              state={state}
-              basePath={[]}
-              onChange={(path, def, value) =>
-                onChange([keyName, ...path], def, value)
-              }
-              sectionKey={keyName}
-              validationErrors={validationErrors}
-            />
           </div>
           <ConfigModalActions inline={inline}>
             {(validationErrors.length || saveDisabled) && saveBlockedReason ? (
@@ -685,21 +668,6 @@ export function QbitInstanceModal({
                       )}
                   </React.Fragment>
                 ))}
-              <FieldGroup
-                title="Trackers"
-                fields={[
-                  ...ARR_TRACKER_FIELDS,
-                  ...getTrackerProtectionFields(),
-                ]}
-                state={state}
-                basePath={[]}
-                onChange={(path, def, value) =>
-                  onChange([keyName, ...path], def, value)
-                }
-                qbitTrackers
-                sectionKey={fieldPathPrefix ?? keyName}
-                validationErrors={validationErrors}
-              />
               <div className="config-section">
                 <h3>Maintenance</h3>
                 <p>

@@ -38,6 +38,40 @@ public class SeedingServiceTests
     }
 
     [Fact]
+    public async Task ScopedRulesKeepProtectionIndependentAndPreferArrOverrides()
+    {
+        var config = new TorrentarrConfig
+        {
+            TorrentClients = new() { ["one"] = new(), ["two"] = new(), ["other"] = new() },
+            ArrInstances = new() { ["Radarr-Movies"] = new() { Category = "movies" }, ["Sonarr-TV"] = new() { Category = "tv" } },
+            Trackers =
+            [
+                new() { Uri = "tracker.example", Name = "shared", ClientIds = ["one", "two"], Priority = 10,
+                    HitAndRunMode = "and", MinSeedRatio = 5 },
+                new() { Uri = "tracker.example", Name = "override", ArrInstances = ["Radarr-Movies", "Sonarr-TV"], Priority = 1,
+                    HitAndRunMode = "disabled" }
+            ]
+        };
+        var service = CreateService(config);
+        var announce = new List<TorrentTracker> { new() { Url = "https://tracker.example/announce", Status = 2 } };
+        var torrent = new TorrentInfo { ClientInstanceId = "one", Category = "movies", Progress = 1, IsPrivate = false };
+        (await service.GetTrackerConfigAsync(torrent))!.Name.Should().Be("override");
+        service.GetProtectionDecisions(torrent, announce).Should().Contain(d => d.State == "protected");
+
+        torrent.ClientInstanceId = "two";
+        torrent.Category = "other";
+        (await service.GetTrackerConfigAsync(torrent))!.Name.Should().Be("shared");
+
+        torrent.ClientInstanceId = "other";
+        (await service.GetTrackerConfigAsync(torrent)).Should().BeNull();
+        service.GetProtectionDecisions(torrent, announce).Should().ContainSingle().Which.State.Should().Be("eligible");
+
+        torrent.Category = "tv";
+        (await service.GetTrackerConfigAsync(torrent))!.Name.Should().Be("override");
+        service.GetProtectionDecisions(torrent, announce).Should().NotContain(d => d.State == "protected");
+    }
+
+    [Fact]
     public async Task ProtectedTorrent_DoesNotApplyConfiguredTrackerRemoval()
     {
         var config = new TorrentarrConfig();

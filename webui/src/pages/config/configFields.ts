@@ -204,6 +204,8 @@ export const ARR_TRACKER_FIELDS: FieldDefinition[] = [
     nativeUnit: "seconds",
     allowNegative: true,
     validate: (value) => {
+      if (value === undefined || value === null || value === "")
+        return undefined;
       const total = parseDurationToSeconds(value, -2);
       if (total === -1) return undefined;
       if (!Number.isFinite(total) || total < -1) {
@@ -255,6 +257,8 @@ export const ARR_TRACKER_FIELDS: FieldDefinition[] = [
     nativeUnit: "seconds",
     allowNegative: true,
     validate: (value) => {
+      if (value === undefined || value === null || value === "")
+        return undefined;
       const total = parseDurationToSeconds(value, -2);
       if (total === -1) return undefined;
       if (!Number.isFinite(total) || total < -1) {
@@ -397,7 +401,6 @@ export function getArrFieldSets(arrKey: string) {
     seedingFields: arr.filter(
       (f) => f.path?.[0] === "Torrent" && f.path[1] === "SeedingMode",
     ),
-    trackerFields: [...ARR_TRACKER_FIELDS, ...getTrackerProtectionFields()],
   };
 }
 

@@ -108,24 +108,19 @@ public class SeedingService : ISeedingService
     /// </summary>
     private List<TrackerConfig> GetTrackerList(TorrentInfo torrent)
     {
-        var qbitTrackers = _config.GetTorrentClient(torrent.QBitInstanceName)?.Trackers
-                           ?? new List<TrackerConfig>();
+        var clientTrackers = TrackerRules.ForClient(_config, torrent.ClientInstanceId).ToList();
+        var integration = _config.ArrInstances.FirstOrDefault(pair =>
+            CategoryOwnershipHelper.ArrOwnsTorrent(_config, pair.Value, torrent));
+        if (integration.Value == null) return clientTrackers;
 
-        // Find the Arr instance that manages this torrent's category
-        var arrInstance = _config.ArrInstances.Values
-            .FirstOrDefault(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent));
-        var arrTrackers = arrInstance?.Torrent.Trackers ?? new List<TrackerConfig>();
+        var overrides = TrackerRules.ForIntegration(_config, integration.Key, integration.Value).ToList();
+        if (overrides.Count == 0) return clientTrackers;
 
-        if (arrTrackers.Count == 0) return qbitTrackers;
-
-        // Arr-level wins on normalized host collision
-        var merged = qbitTrackers
-            .ToDictionary(t => ExtractTrackerHost(t.Uri ?? "") ?? t.Uri ?? "", StringComparer.OrdinalIgnoreCase);
-        foreach (var t in arrTrackers)
-        {
-            var host = ExtractTrackerHost(t.Uri ?? "") ?? t.Uri ?? "";
-            merged[host] = t;
-        }
+        var merged = new Dictionary<string, TrackerConfig>(StringComparer.OrdinalIgnoreCase);
+        foreach (var tracker in clientTrackers)
+            merged.TryAdd(ExtractTrackerHost(tracker.Uri) ?? tracker.Uri, tracker);
+        foreach (var tracker in overrides)
+            merged[ExtractTrackerHost(tracker.Uri) ?? tracker.Uri] = tracker;
         return merged.Values.ToList();
     }
 
@@ -361,8 +356,7 @@ public class SeedingService : ISeedingService
         // Negative tiers are qBittorrent's synthetic DHT/PeX/LSD entries, not tracker obligations.
         torrentTrackers = torrentTrackers.Where(t => t.Tier >= 0).ToList();
         // All configured obligations apply, including different policies for the same tracker.
-        var obligations = (_config.GetTorrentClient(torrent.ClientInstanceId)?.Trackers ?? [])
-            .Concat(_config.ArrInstances.Values.Where(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent)).SelectMany(a => a.Torrent.Trackers));
+        var obligations = TrackerRules.ForTorrent(_config, torrent);
         var matched = obligations.Where(cfg => torrentTrackers.Any(t =>
             TrackerHostMatches(ExtractTrackerHost(t.Url), ExtractTrackerHost(cfg.Uri)))).ToList();
         var decisions = new List<ProtectionDecision>();
@@ -1081,8 +1075,7 @@ public class SeedingService : ISeedingService
 
     private bool HasConfiguredProtection(TorrentInfo torrent) =>
         torrent.IsPrivate != false
-        || (_config.GetTorrentClient(torrent.ClientInstanceId)?.Trackers ?? []).Concat(_config.ArrInstances.Values
-            .Where(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent)).SelectMany(a => a.Torrent.Trackers))
+        || TrackerRules.ForTorrent(_config, torrent)
             .Any(t => t.Protection != null || IsHnREnabled(t.HitAndRunMode)) || IsHnREnabled(GetSeedingConfig(torrent).HitAndRunMode);
 
     public async Task ReconcileProtectionLimitsAsync(TorrentInfo torrent, IReadOnlyList<TorrentTracker> trackers, CancellationToken ct)
@@ -1295,36 +1288,24 @@ public class SeedingService : ISeedingService
         }
     }
 
-    /// <summary>Pre-create all configured tracker AddTags on every qBit instance (qBitrr qbit_category_manager parity).</summary>
+    /// <summary>Pre-create tracker tags on the clients where the rules apply.</summary>
     public async Task<bool> EnsureAllTrackerTagsExistAsync(CancellationToken cancellationToken = default)
     {
-        var allTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var q in _config.GetAllTorrentClients().Values)
-        {
-            foreach (var t in q.Trackers)
-                foreach (var tag in t.AddTags)
-                    if (!string.IsNullOrWhiteSpace(tag))
-                        allTags.Add(tag.Trim());
-        }
-        foreach (var a in _config.ArrInstances.Values)
-        {
-            foreach (var t in a.Torrent.Trackers)
-                foreach (var tag in t.AddTags)
-                    if (!string.IsNullOrWhiteSpace(tag))
-                        allTags.Add(tag.Trim());
-        }
-
-        if (allTags.Count == 0)
-            return true;
-
         var succeeded = true;
-        foreach (var (_, client) in _qbitManager.GetAllClients())
+        foreach (var (id, client) in _qbitManager.GetAllClients())
         {
             if (!client.Capabilities.Tags) continue;
+            var tags = TrackerRules.ForClient(_config, id).Concat(_config.ArrInstances
+                    .Where(pair => CategoryOwnershipHelper.ArrOwnsTorrent(_config, pair.Value,
+                        new TorrentInfo { ClientInstanceId = id, Category = pair.Value.Category }))
+                    .SelectMany(pair => TrackerRules.ForIntegration(_config, pair.Key, pair.Value)))
+                .SelectMany(rule => rule.AddTags).Where(tag => !string.IsNullOrWhiteSpace(tag))
+                .Select(tag => tag.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (tags.Count == 0) continue;
             try
             {
                 var existing = await client.GetTagsAsync(cancellationToken);
-                var toCreate = allTags.Where(t => !existing.Contains(t, StringComparer.OrdinalIgnoreCase)).ToList();
+                var toCreate = tags.Where(t => !existing.Contains(t, StringComparer.OrdinalIgnoreCase)).ToList();
                 if (toCreate.Count > 0)
                 {
                     if (await client.CreateTagsAsync(toCreate, cancellationToken))

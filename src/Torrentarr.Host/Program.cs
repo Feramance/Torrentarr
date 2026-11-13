@@ -1128,9 +1128,11 @@ try
         var flat = new Dictionary<string, object?>();
         flat["Settings"] = cfg.Settings;
         flat["WebUI"] = cfg.WebUI;
-        foreach (var (key, qbit) in cfg.QBitInstances.Where(kv => kv.Value.Host != "CHANGE_ME"))
+        foreach (var (key, qbit) in cfg.QBitInstances.Where(kv => kv.Value.Host != "CHANGE_ME" || kv.Value.Disabled ||
+            cfg.Trackers.Any(rule => rule.ClientIds?.Contains(kv.Key, StringComparer.OrdinalIgnoreCase) == true)))
             flat[key] = qbit;
         flat["TorrentClient"] = cfg.TorrentClients;
+        flat["Trackers"] = cfg.Trackers;
         foreach (var (key, arr) in cfg.ArrInstances)
             flat[key] = arr;
 
@@ -1172,6 +1174,9 @@ try
             if (updatedConfig == null)
                 return Results.BadRequest(new { error = "Invalid config payload" });
 
+            TrackerRules.NormalizeNested(updatedConfig);
+            InstanceRenamePersistence.Validate(cfg, updatedConfig, renames);
+            TrackerRules.RenameReferences(cfg, updatedConfig, renames);
             var (valid, validationError) = ConfigValidationHelper.ValidateAll(updatedConfig);
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
@@ -1790,6 +1795,9 @@ try
             if (updatedConfig == null)
                 return Results.BadRequest(new { error = "Invalid config payload" });
 
+            TrackerRules.NormalizeNested(updatedConfig);
+            InstanceRenamePersistence.Validate(cfg, updatedConfig, renames);
+            TrackerRules.RenameReferences(cfg, updatedConfig, renames);
             var (valid, validationError) = ConfigValidationHelper.ValidateAll(updatedConfig);
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
@@ -2074,6 +2082,7 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
     currentObj["WebUI"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.WebUI, serializer);
     foreach (var (key, qbit) in cfg.QBitInstances)
         currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(qbit, serializer);
+    currentObj["Trackers"] = Newtonsoft.Json.Linq.JArray.FromObject(cfg.Trackers, serializer);
     currentObj["TorrentClient"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.TorrentClients, serializer);
     foreach (var (key, arr) in cfg.ArrInstances)
         currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(arr, serializer);
@@ -2127,7 +2136,7 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
             currentObj.Remove(emptyProp.Name);
     }
 
-    var updatedConfig = new TorrentarrConfig();
+    var updatedConfig = new TorrentarrConfig { Trackers = TrackerRules.ReadJson(currentObj["Trackers"]) };
     if (currentObj["Settings"] is Newtonsoft.Json.Linq.JObject settingsObj)
         updatedConfig.Settings = settingsObj.ToObject<SettingsConfig>(serializer) ?? new SettingsConfig();
     if (currentObj["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
@@ -2656,7 +2665,6 @@ class ProcessOrchestratorService : BackgroundService
         HashSet<string> managedCategories,
         IReadOnlySet<string> clientIds, CancellationToken cancellationToken)
     {
-        var tagToPriority = TorrentPolicyHelper.MergeGlobalTrackerTagToPriorityMax(_config);
         foreach (var (instanceName, client) in _qbitManager.GetAllClients().Where(pair => clientIds.Contains(pair.Key)))
         {
             try
@@ -2678,12 +2686,14 @@ class ProcessOrchestratorService : BackgroundService
                 foreach (var t in torrentList)
                     t.QBitInstanceName = instanceName;
 
+                torrentList = torrentList.Where(t => TrackerRules.ForTorrent(_config, t).Any(rule => rule.SortTorrents)).ToList();
                 if (torrentList.Count <= 1)
                     continue;
 
                 var sortPriorities = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 foreach (var t in torrentList)
                 {
+                    var tagToPriority = TorrentPolicyHelper.MergeTrackerTagPriorities(TrackerRules.ForTorrent(_config, t));
                     sortPriorities[t.Hash] = await seeding.GetTorrentQueueSortPriorityAsync(t, tagToPriority, cancellationToken);
                 }
 

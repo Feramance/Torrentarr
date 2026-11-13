@@ -8,7 +8,7 @@
 
 [Settings]
 # Internal config schema version - managed automatically
-ConfigVersion = "6.20.3"
+ConfigVersion = "6.20.4"
 
 # Logging level: CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
 ConsoleLevel = "INFO"
@@ -118,9 +118,6 @@ ManagedCategories = []
 
 # When true, managed categories also match nested subcategories
 MatchSubcategories = false
-
-# Global tracker configurations (inherited by all Arr instances)
-Trackers = []
 
 [qBit.CategorySeeding]
 # Download rate limit per torrent in KB/s (-1 = unlimited)
@@ -266,3 +263,14 @@ HealthyResetMinutes = 60
 Enabled = false
 ExecutionMode = 'manual'
 Schedule = '15 3 * * *'
+
+# Tracker rules use one nonempty scope array: ClientIds or ArrInstances.
+# [[Trackers]]
+# Name = "Private tracker"
+# URI = "https://tracker.example/announce"
+# ClientIds = ["qBit"]
+#
+# [[Trackers]]
+# Name = "Integration tracker override"
+# URI = "https://tracker.example/announce"
+# ArrInstances = ["Radarr-Movies", "Sonarr-TV"]

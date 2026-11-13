@@ -14,12 +14,12 @@ public class TorrentarrConfig
     internal object MonitoredPolicyCategoriesCacheLock => Current.CacheLock;
     private sealed record State(SettingsConfig Settings, Dictionary<string, QBitConfig> QBitInstances,
         Dictionary<string, TorrentClientInstanceConfig> TorrentClients, WebUIConfig WebUI,
-        Dictionary<string, ArrInstanceConfig> ArrInstances, long Revision)
+        Dictionary<string, ArrInstanceConfig> ArrInstances, List<ScopedTrackerConfig> Trackers, long Revision)
     {
         public HashSet<string>? Categories;
         public object CacheLock { get; } = new();
     }
-    private State _state = new(new(), new(), new(), new(), new(), 0);
+    private State _state = new(new(), new(), new(), new(), new(), new(), 0);
     private readonly AsyncLocal<State?> _operation = new();
     private State Current => _operation.Value ?? Volatile.Read(ref _state);
     public SettingsConfig Settings { get => Current.Settings; set => _state = _state with { Settings = value }; }
@@ -27,6 +27,7 @@ public class TorrentarrConfig
     public Dictionary<string, TorrentClientInstanceConfig> TorrentClients { get => Current.TorrentClients; set => _state = _state with { TorrentClients = value }; }
     public WebUIConfig WebUI { get => Current.WebUI; set => _state = _state with { WebUI = value }; }
     public Dictionary<string, ArrInstanceConfig> ArrInstances { get => Current.ArrInstances; set => _state = _state with { ArrInstances = value }; }
+    public List<ScopedTrackerConfig> Trackers { get => Current.Trackers; set => _state = _state with { Trackers = value }; }
     public List<ArrInstanceConfig> Arrs => ArrInstances.Values.ToList();
     [Newtonsoft.Json.JsonIgnore, System.Text.Json.Serialization.JsonIgnore, TomlIgnore]
     public long Revision => Current.Revision;
@@ -36,7 +37,7 @@ public class TorrentarrConfig
     public void Apply(TorrentarrConfig source, long revision)
     {
         Interlocked.Exchange(ref _state, new(source.Settings, source.QBitInstances, source.TorrentClients,
-            source.WebUI, source.ArrInstances, revision));
+            source.WebUI, source.ArrInstances, source.Trackers, revision));
         TorrentPolicyHelper.InvalidateMonitoredPolicyCategoriesCache(this);
     }
 
@@ -55,7 +56,7 @@ public class TorrentarrConfig
 
 public class SettingsConfig
 {
-    public string ConfigVersion { get; set; } = "6.20.3";
+    public string ConfigVersion { get; set; } = ConfigurationLoader.ExpectedConfigVersion;
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
     public int NoInternetSleepTimer { get; set; } = 15;
@@ -112,6 +113,7 @@ public class TorrentClientInstanceConfig
     public string? DownloadPath { get; set; }
     public List<string> ManagedCategories { get; set; } = new();
     public bool MatchSubcategories { get; set; }
+    [TomlIgnore(Condition = Tomlyn.TomlIgnoreCondition.WhenWriting)]
     public List<TrackerConfig> Trackers { get; set; } = new();
     public CategorySeedingConfig CategorySeeding { get; set; } = new();
     public MigrationNoticeDocument Migration { get; set; } = new();
@@ -312,6 +314,7 @@ public class TrackerConfig
 {
     public TrackerProtectionConfig? Protection { get; set; }
     public string? Name { get; set; }
+    [TomlPropertyName("URI")]
     public string Uri { get; set; } = "";
     public int Priority { get; set; }
     public bool SortTorrents { get; set; }
@@ -411,6 +414,7 @@ public class TorrentConfig
     public bool ReSearchStalled { get; set; }
     public bool RemoveDeadTrackers { get; set; }
     public List<string> RemoveTrackerWithMessage { get; set; } = new();
+    [TomlIgnore(Condition = Tomlyn.TomlIgnoreCondition.WhenWriting)]
     public List<TrackerConfig> Trackers { get; set; } = new();
     public SeedingModeConfig? SeedingMode { get; set; }
 }

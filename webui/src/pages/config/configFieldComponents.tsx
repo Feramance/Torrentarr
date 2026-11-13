@@ -36,7 +36,6 @@ import RefreshIcon from "../../icons/refresh-arrow.svg";
 import VisibilityIcon from "../../icons/visibility.svg";
 import { extractTooltipSummary } from "./configFields";
 import {
-  createDefaultTrackerEntry,
   fieldErrorDataPath,
   findFieldErrorMessage,
   getValue,
@@ -81,7 +80,6 @@ export interface FieldGroupProps {
   onRenameSection?: (oldName: string, newName: string) => void;
   qualityProfiles?: Array<{ id: number; name: string }>;
   sectionKey?: string;
-  qbitTrackers?: boolean;
   /** Full-path validation errors for the open config section/modal. */
   validationErrors?: ValidationError[];
 }
@@ -335,7 +333,6 @@ export function FieldGroup({
   onRenameSection,
   qualityProfiles = [],
   sectionKey,
-  qbitTrackers = false,
   validationErrors = [],
 }: FieldGroupProps): JSX.Element {
   const search = useContext(ConfigFieldSearch).trim().toLowerCase();
@@ -497,66 +494,6 @@ export function FieldGroup({
               </div>
             </>
           )}
-        </div>
-      </section>
-    );
-  }
-
-  if (title === "Trackers") {
-    const trackerPath = qbitTrackers ? ["Trackers"] : ["Torrent", "Trackers"];
-    const trackers = (getValue(state as ConfigDocument, trackerPath) ??
-      []) as ConfigDocument[];
-    const handleAddTracker = () => {
-      const nextTrackers = [...trackers, createDefaultTrackerEntry()];
-      onChange(
-        [...basePath, ...trackerPath],
-        {} as FieldDefinition,
-        nextTrackers,
-      );
-    };
-    const handleDeleteTracker = (index: number) => {
-      const nextTrackers = [...trackers];
-      nextTrackers.splice(index, 1);
-      onChange(
-        [...basePath, ...trackerPath],
-        {} as FieldDefinition,
-        nextTrackers,
-      );
-    };
-    return (
-      <section className="config-section">
-        <h3 className="config-section__heading">{title}</h3>
-        <div className="config-section__body">
-          {qbitTrackers && (
-            <div className="alert info" style={{ marginBottom: "12px" }}>
-              Shared tracker configs inherited by all Arr instances on this qBit
-              instance.
-            </div>
-          )}
-          {!qbitTrackers && (
-            <div className="alert info" style={{ marginBottom: "12px" }}>
-              Trackers inherited from qBit instance. Add here only to override
-              specific settings.
-            </div>
-          )}
-          <div className="tracker-grid">
-            {trackers.map((tracker, index) => (
-              <TrackerCard
-                key={index}
-                fields={fields}
-                state={tracker}
-                basePath={[...basePath, ...trackerPath, String(index)]}
-                onChange={onChange}
-                onDelete={() => handleDeleteTracker(index)}
-              />
-            ))}
-          </div>
-          <div className="config-actions">
-            <button className="btn" type="button" onClick={handleAddTracker}>
-              <IconImage src={AddIcon} />
-              Add Tracker
-            </button>
-          </div>
         </div>
       </section>
     );
@@ -951,12 +888,14 @@ export function FieldGroup({
 }
 
 export function TrackerCard({
+  children,
   fields,
   state,
   basePath,
   onChange,
   onDelete,
 }: {
+  children?: React.ReactNode;
   fields: FieldDefinition[];
   state: ConfigDocument | null;
   basePath: string[];
@@ -986,11 +925,13 @@ export function TrackerCard({
         </button>
       </header>
       <div className="card-body">
+        {children}
         <FieldGroup
           title={null}
           fields={fields}
           state={state}
           basePath={[]}
+          sectionKey={basePath.join(".")}
           onChange={wrappedOnChange}
         />
       </div>

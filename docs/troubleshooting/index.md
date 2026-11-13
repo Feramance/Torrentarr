@@ -660,7 +660,10 @@ Category = "radarr"             # REQUIRED (must match qBit download client)
 
 2. **Check tracker-specific rules:**
    ```toml
-   [[Radarr.Torrent.Trackers]]
+   [Radarr]
+
+   [[Trackers]]
+   ArrInstances = ["Radarr"]
    Name = "PrivateTracker"
    URI = "https://tracker.example.com"
    MaxUploadRatio = 3.0      # Higher for private trackers

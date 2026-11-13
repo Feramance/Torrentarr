@@ -1,7 +1,7 @@
 # Configuration editor
 
 The **Settings** sidebar group edits the running Host's TOML through its configuration API.
-Open **General**, **Interface & Access**, **Authentication**, **Torrent Clients**, or **Integrations**. This navigation change requires no upgrade steps for existing config files or databases. Integrations has separate Radarr, Sonarr, Lidarr, and Readarr sections,
+Open **General**, **Interface & Access**, **Authentication**, **Torrent Clients**, **Integrations**, or **Trackers**. Integrations has separate Radarr, Sonarr, Lidarr, and Readarr sections,
 including empty types. Torrent Clients groups legacy and canonical entries by
 configured type, with qBittorrent first. Each torrent-client section shows its
 instance count. Torrent Clients and Integrations each have one **Add Instance**
@@ -13,7 +13,8 @@ chosen type's next instance.
 Instance rows show address, category scope, enabled state, and unsaved changes;
 client rows also show scan intervals, while integration rows show search/processing
 mode. Both instance sections start with their overview; select a row or add an instance
-to open its inline editor. Returning to the section hides the editor while retaining
+to open its inline editor. On wide screens the overview and editor sit side by
+side. On narrow screens the editor opens below the overview. Returning to the section hides the editor while retaining
 its draft. Field search appears only while an editor is open. Editors and Save
 controls use the page scroll, without a nested modal scroll area.
 
@@ -35,8 +36,8 @@ save never triggers a restart.
 
 | Editor | Ordered sections |
 | --- | --- |
-| Torrent client | General; Connection; Torrent scope; Download location; Free-space monitors; Seeding and Hit & Run; Trackers; Shared Settings shortcut |
-| Arr instance | General; Connection; Categories and torrent clients; Entry search; Quality profiles; Request integrations; Torrent handling; Seeding; Trackers |
+| Torrent client | General; Connection; Torrent scope; Download location; Free-space monitors; Seeding and Hit & Run; Shared Settings shortcut |
+| Arr instance | General; Connection; Categories and torrent clients; Entry search; Quality profiles; Request integrations; Torrent handling; Seeding |
 | General | Logging; Processing and categories; Connectivity; Updates and ffprobe; Worker recovery |
 | Interface & Access | Listener and URL settings; Proxy and exposure; API access; Appearance and live display |
 | Authentication | Access controls; Local login; OIDC |
@@ -47,6 +48,13 @@ request integration credentials and their TLS settings are grouped. Each exposed
 field appears once in its editor. Unrecognized saved fields survive ordinary
 partial updates. Blank redacted password placeholders retain the stored secret;
 use the password control to explicitly replace a credential.
+
+## Trackers
+
+Choose **Torrent clients** or **Arr integrations** on each rule, then select one
+or more instances in the checkbox dropdown. Arr rules follow the client scope
+of each selected integration. Each card summarizes the rule’s Hit & Run and
+queue sorting settings. Existing rules appear here automatically after upgrade.
 
 ## Torrent clients and storage
 

@@ -1,5 +1,7 @@
 import { configSections, type ConfigSection } from "../config/settingsSections";
 import type { ConfigDestination } from "../utils/navigateTab";
+import { TrackerSettings } from "./config/TrackerSettings";
+import { trackerRuleFields, trackerScope } from "./config/trackerRuleFields";
 import { ConfigFieldSearch } from "./config/ConfigFieldSearch";
 import React, {
   useCallback,
@@ -153,7 +155,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  const [, setSavingSection] = useState<string | null>(null);
+  const [savingSection, setSavingSection] = useState<string | null>(null);
   const [pendingRenames, setPendingRenames] = useState<Map<string, string>>(
     new Map(),
   );
@@ -814,6 +816,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       savedSectionKeys: Iterable<string> | "all",
       changedKeys: readonly string[] = [],
       applicationStatus?: import("../api/types").ConfigurationApplicationStatus,
+      trackerRenames: Record<string, string> = {},
     ) => {
       const message = formatConfigSaveMessage(
         reloadType,
@@ -855,6 +858,20 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
             if (Object.hasOwn(saved, key))
               draft[key] = structuredClone(saved[key]);
             else delete draft[key];
+          }
+          if (
+            Object.keys(trackerRenames).length &&
+            Array.isArray(draft.Trackers)
+          ) {
+            for (const rule of draft.Trackers as ConfigDocument[]) {
+              const scope = trackerScope(rule);
+              rule[scope.key] = scope.ids.map(
+                (id) =>
+                  Object.entries(trackerRenames).find(
+                    ([source]) => source.toLowerCase() === id.toLowerCase(),
+                  )?.[1] ?? id,
+              );
+            }
           }
         });
       });
@@ -964,6 +981,29 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           originalConfig,
           false,
         );
+        if (sectionKey === "Trackers") {
+          const rules = (formState.Trackers ?? []) as ConfigDocument[];
+          rules.forEach((rule, index) => {
+            const path = ["Trackers", String(index)];
+            const scope = trackerScope(rule);
+            if (scope.ids.length === 0) {
+              validationErrors.push({
+                path: [...path, scope.key],
+                message: "Select at least one instance for this tracker rule.",
+              });
+            }
+            validateFieldGroup(
+              validationErrors,
+              trackerRuleFields(rule),
+              rule,
+              path,
+              {
+                root: formState,
+                section: rule,
+              },
+            );
+          });
+        }
         if (validationErrors.length) {
           push(formatValidationErrors(validationErrors), "error");
           focusFirstValidationError(validationErrors);
@@ -1022,6 +1062,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           savedKeys,
           Object.keys(changes),
           applicationStatus,
+          renames,
         );
         return true;
       } catch (error) {
@@ -1316,7 +1357,34 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           </p>
         )}
         {notices}
-        <div className="config-workspace__layout">
+        <div
+          className={`config-workspace__layout${instanceSection ? " config-instance-layout" : ""}`}
+        >
+          {section === "trackers" && (
+            <TrackerSettings
+              rules={(formState.Trackers ?? []) as ConfigDocument[]}
+              clientIds={torrentClients
+                .filter(({ name, legacy }) =>
+                  legacy
+                    ? Object.hasOwn(originalConfig ?? {}, name)
+                    : Object.hasOwn(
+                        (originalConfig?.TorrentClient ?? {}) as ConfigDocument,
+                        name,
+                      ),
+                )
+                .map(({ name }) => name)}
+              integrationIds={arrSections
+                .filter(([name]) => Object.hasOwn(originalConfig ?? {}, name))
+                .map(([name]) => name)}
+              onChange={handleFieldChange}
+              onReplace={(rules) =>
+                handleFieldChange(["Trackers"], {} as FieldDefinition, rules)
+              }
+              onSave={() => void saveSection("Trackers")}
+              dirty={!equal(formState.Trackers, originalConfig?.Trackers)}
+              saving={savingSection === "Trackers"}
+            />
+          )}
           {section === "clients" && (
             <section
               className="config-arr-overview"

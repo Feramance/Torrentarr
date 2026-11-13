@@ -509,7 +509,10 @@ ForceMinimumCustomFormat = true    # Remove below threshold
 Configure per-tracker seeding rules:
 
 ```toml
-[[Radarr-Movies.Torrent.Trackers]]
+[Radarr-Movies]
+
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
 Name = "PrivateHD"
 URI = "https://tracker.privatehd.com"
 MaxUploadRatio = 3.0      # Higher ratio for private

@@ -1861,3 +1861,79 @@ it("shows a loading error in the Settings workspace and retries", async () => {
   );
   expect(await screen.findByRole("region", { name: "General" })).toBeVisible();
 });
+
+it("edits tracker scopes with the keyboard and saves only the chosen scope", async () => {
+  let savedRules: unknown = [];
+  const user = userEvent.setup();
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configWithInstances,
+        "qBit-1": { ...configWithInstances["qBit-1"], Disabled: true },
+        "Sonarr-TV": { URI: "http://sonarr:8989", Category: "tv" },
+        Trackers: savedRules,
+      }),
+    ),
+    http.post("/web/config", async ({ request }) => {
+      const body = (await request.json()) as {
+        changes: Record<string, unknown>;
+      };
+      savedRules = body.changes.Trackers;
+      return HttpResponse.json(okUpdateResponse);
+    }),
+  );
+  renderConfig();
+  await user.click(screen.getByRole("button", { name: "Trackers" }));
+  await user.click(await screen.findByRole("button", { name: "Add Tracker" }));
+  const section = screen.getByRole("region", { name: "Tracker rules" });
+  const tracker = within(section);
+  const selectClients = tracker.getByRole("button", {
+    name: "Select torrent clients",
+  });
+  selectClients.focus();
+  await user.keyboard("{Enter}");
+  await user.tab();
+  expect(
+    tracker.getByRole("checkbox", { name: "qBit", exact: true }),
+  ).toHaveFocus();
+  await user.keyboard(" ");
+  await user.tab();
+  expect(tracker.getByRole("checkbox", { name: "qBit-1" })).toHaveFocus();
+  await user.keyboard(" {Escape}");
+  expect(tracker.getByRole("button", { name: "qBit, qBit-1" })).toHaveFocus();
+  expect(tracker.getByRole("button", { name: "qBit, qBit-1" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+
+  await user.selectOptions(
+    tracker.getByLabelText("Applies to"),
+    "ArrInstances",
+  );
+  const selectIntegrations = tracker.getByRole("button", {
+    name: "Select arr integrations",
+  });
+  selectIntegrations.focus();
+  await user.tab();
+  expect(tracker.getByRole("checkbox", { name: "Radarr-1080" })).toHaveFocus();
+  await user.keyboard(" ");
+  await user.tab();
+  await user.keyboard(" {Escape}");
+  await user.type(
+    tracker.getByRole("textbox", { name: "URI" }),
+    "https://tracker.example",
+  );
+  await user.click(tracker.getByRole("button", { name: "Save Trackers" }));
+  await waitFor(() =>
+    expect(savedRules).toEqual([
+      expect.objectContaining({
+        ArrInstances: ["Radarr-1080", "Sonarr-TV"],
+        URI: "https://tracker.example",
+      }),
+    ]),
+  );
+  expect(savedRules).not.toEqual([
+    expect.objectContaining({ ClientIds: expect.anything() }),
+  ]);
+  expect(tracker.getByText(/Legacy Hit & Run is off/)).toBeInTheDocument();
+});

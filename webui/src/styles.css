@@ -6220,7 +6220,8 @@ pre,
 }
 
 .config-arr-overview {
-  max-width: 1440px;
+  min-width: 0;
+  align-content: start;
   display: grid;
   gap: 22px;
 }
@@ -7125,4 +7126,35 @@ select,
     appearance: auto;
     background-image: none;
   }
+}
+
+@media (min-width: 1320px) {
+  .config-instance-layout:has(> .config-workspace__editor) {
+    grid-template-columns: minmax(360px, 2fr) minmax(0, 3fr);
+    align-items: start;
+  }
+
+  .config-instance-layout:has(> .config-workspace__editor) .config-arr-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .config-instance-layout:has(> .config-workspace__editor) .config-arr-name {
+    grid-column: 1 / -1;
+  }
+}
+
+.tracker-scope-options {
+  min-width: 0;
+  margin: 4px 0 0;
+  border: 1px solid var(--border);
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.tracker-scope-options label,
+.tracker-protection-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px;
 }

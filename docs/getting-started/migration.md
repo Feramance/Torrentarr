@@ -34,6 +34,18 @@ This guide helps you migrate from older versions of Torrentarr or similar tools 
 
 ## Version-Specific Migration
 
+### Upgrading from qBitrr or Torrentarr to config schema 6.20.4
+
+Start Torrentarr with your existing `config.toml`. Torrentarr applies the
+qBitrr compatibility migrations, then moves client and Arr tracker rules to
+top-level `[[Trackers]]` entries. Each rule keeps its original assignment and
+settings, including when several rules use the same tracker host. No intermediate
+release or manual config edits are required.
+
+The migration saves the original file as `config.toml.bak`. To roll back,
+stop Torrentarr and restore that file before starting qBitrr or an older
+Torrentarr release. The tracker migration makes no database changes.
+
 ### Migrating to v5.8.0+ (Database Consolidation)
 
 !!! warning "Breaking Change: Database Consolidation"

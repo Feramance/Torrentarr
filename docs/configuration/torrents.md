@@ -468,51 +468,25 @@ Override global torrent settings on a per-tracker basis.
 ### Tracker Configuration Structure
 
 ```toml
-[Radarr-Movies.Torrent.Trackers]
+[Radarr-Movies]
 
-[[Radarr-Movies.Torrent.Trackers.PassThePopcorn]]
-UseTracker = true
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
 MaximumETA = 1800                       # 30 minutes (overrides global)
 DownloadRateLimit = -1
 UploadRateLimit = -1
 MaxUploadRatio = 3.0                    # Seed to 3:1
 MaxSeedingTime = 86400                  # 24 hours
 RemoveTorrent = -1
-TrackerURLInclude = ["passthepopcorn.me"]
+URI = "https://passthepopcorn.me"
 ```
 
 ### Tracker Settings
 
-#### UseTracker
+#### URI
 
-**Type:** Boolean
-**Default:** `true`
-
-Enable tracking for this tracker configuration.
-
-```toml
-UseTracker = true
-```
-
----
-
-#### TrackerURLInclude
-
-**Type:** List of strings
-**Required:** Yes
-
-URL patterns to match for this tracker.
-
-```toml
-TrackerURLInclude = ["passthepopcorn.me", "ptp.me"]
-```
-
-**Matching:**
-
-- Partial match against tracker announce URL
-- Case-insensitive
-
----
+The tracker announce host or URL. A rule matches that host and its subdomains.
+Create one rule for each alternate host.
 
 #### MaximumETA (per-tracker)
 
@@ -720,21 +694,28 @@ MaxUploadRatio = -1  # No global ratio limit
 MaxSeedingTime = -1  # No global time limit
 
 # Tracker-specific overrides
-[[Radarr-Movies.Torrent.Trackers.PassThePopcorn]]
-UseTracker = true
-TrackerURLInclude = ["passthepopcorn.me"]
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
+URI = "https://passthepopcorn.me"
 MaximumETA = 1800  # 30 minutes (fast tracker)
 MaxUploadRatio = 3.0
 MaxSeedingTime = 86400  # 24 hours
 DownloadRateLimit = -1
 UploadRateLimit = -1
 
-[[Radarr-Movies.Torrent.Trackers.BroadcasTheNet]]
-UseTracker = true
-TrackerURLInclude = ["broadcasthe.net", "landof.tv"]
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
+URI = "https://broadcasthe.net"
 MaximumETA = 3600  # 1 hour
 MaxUploadRatio = 2.0
 MaxSeedingTime = 172800  # 48 hours (more patient)
+
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
+URI = "https://landof.tv"
+MaximumETA = 3600
+MaxUploadRatio = 2.0
+MaxSeedingTime = 172800
 ```
 
 ---
@@ -885,16 +866,18 @@ IgnoreTorrentsYoungerThan = 600  # 10 minutes
 
 ```toml
 # Slow public tracker
-[[Radarr-Movies.Torrent.Trackers.YTS]]
-UseTracker = true
-TrackerURLInclude = ["yts.mx"]
+[Radarr-Movies]
+
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
+URI = "https://yts.mx"
 MaximumETA = -1  # Disable ETA limit
 MaxSeedingTime = 3600  # Seed for 1 hour only
 
 # Fast private tracker
-[[Radarr-Movies.Torrent.Trackers.PrivateHD]]
-UseTracker = true
-TrackerURLInclude = ["privatehd.to"]
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
+URI = "https://privatehd.to"
 MaximumETA = 1800  # 30 minutes
 MaxSeedingTime = 86400  # Seed for 24 hours
 ```

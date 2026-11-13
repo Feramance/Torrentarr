@@ -17,9 +17,14 @@ category, location, or re-addition invalidates an earlier removal decision.
 
 ## Configuration structure
 
-Each torrent client has CategorySeeding and Trackers. Legacy `[qBit]` / `[qBit-name]`
-and canonical `[TorrentClient.name]` use the same keys. Arr torrent seeding settings
-can override ordinary handling for that Arr category; client instances remain independent.
+Each torrent client has its own `CategorySeeding`. Configure tracker rules under
+**Settings → Trackers** or as top-level `[[Trackers]]` entries in TOML.
+
+Each rule requires exactly one nonempty list of instance IDs. Use `ClientIds`
+for rules shared by torrent clients and `ArrInstances` for rules scoped to
+integration categories. Each selected integration uses its existing torrent-client
+scope. Arr overrides take precedence for ordinary tracker behavior, and every
+applicable protection obligation still has to clear.
 
 ```toml
 [TorrentClient.seedbox]
@@ -33,18 +38,21 @@ MaxSeedingTime = -1
 RemoveTorrent = -1
 HitAndRunMode = 'disabled'
 
-[[TorrentClient.seedbox.Trackers]]
+[[Trackers]]
+ClientIds = ["seedbox"]
 Name = 'TorrentLeech Power User'
 URI = 'https://tracker.torrentleech.org'
 Priority = 0
 Protection = { Policy = 'torrentleech-power', AllowClientRatioClearance = false, AdditionalSeedHours = 6.0, AccountingGraceMinutes = 60, RecoveryReserveHours = 6.0 }
 
-[[TorrentClient.seedbox.Trackers]]
+[[Trackers]]
+ClientIds = ["seedbox"]
 Name = 'TorrentLeech alternate host'
 URI = 'https://tracker.tleechreload.org'
 Protection = { Policy = 'torrentleech-power', AllowClientRatioClearance = false }
 
-[[TorrentClient.seedbox.Trackers]]
+[[Trackers]]
+ClientIds = ["seedbox"]
 Name = 'OnlyEncodes'
 URI = 'https://tracker.onlyencodes.cc'
 Protection = { Policy = 'onlyencodes', AllowClientRatioClearance = false, FulfillmentHours = 168.0, DeadlineStart = 'added', AdditionalSeedHours = 6.0, AccountingGraceMinutes = 60, RecoveryReserveHours = 6.0 }

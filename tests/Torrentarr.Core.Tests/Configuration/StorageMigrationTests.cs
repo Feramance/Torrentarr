@@ -60,9 +60,10 @@ public sealed class StorageMigrationTests : IDisposable
             string? migrated = null;
             for (var pass = 0; pass < 2; pass++)
             {
-                var client = loader.Load().QBitInstances["qBit"];
+                var config = loader.Load();
+                var client = config.QBitInstances["qBit"];
                 client.CategorySeeding.MaxSeedingTime.Should().Be(1209600);
-                client.Trackers.Should().HaveCount(3).And.OnlyContain(t => t.MaxSeedingTime == 1209600);
+                config.Trackers.Should().HaveCount(3).And.OnlyContain(t => t.MaxSeedingTime == 1209600);
                 client.DownloadPath.Should().Be(withEnvironment ? "/remote/runtime" : "/remote/file");
                 var monitor = client.FreeSpace.Single();
                 monitor.Path.Should().Be(root + (withEnvironment ? "/runtime" : "/file"));
@@ -72,9 +73,10 @@ public sealed class StorageMigrationTests : IDisposable
                 var persisted = File.ReadAllText(_file);
                 if (migrated != null) persisted.Should().Be(migrated);
                 migrated = persisted;
-                var table = (TomlTable)TomlSerializer.Deserialize<TomlTable>(persisted)!["qBit"];
+                var configTable = TomlSerializer.Deserialize<TomlTable>(persisted)!;
+                var table = (TomlTable)configTable["qBit"];
                 ((TomlTable)table["CategorySeeding"])["MaxSeedingTime"].Should().Be("2w");
-                ((TomlTableArray)table["Trackers"]).Should().HaveCount(3)
+                ((TomlTableArray)configTable["Trackers"]).Should().HaveCount(3)
                     .And.OnlyContain(t => (string)t["MaxSeedingTime"] == "2w");
                 persisted.Should().NotContain("42G").And.NotContain(root + "/runtime");
             }

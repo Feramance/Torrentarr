@@ -6,12 +6,13 @@ export const configSections = {
   auth: "Authentication",
   clients: "Torrent Clients",
   integrations: "Integrations",
+  trackers: "Trackers",
 } as const;
 
 export type ConfigSection = keyof typeof configSections;
 export type SimpleConfigSection = Exclude<
   ConfigSection,
-  "clients" | "integrations"
+  "clients" | "integrations" | "trackers"
 >;
 
 export const maintenanceSections = [
