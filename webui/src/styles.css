@@ -6225,6 +6225,8 @@ pre,
   gap: 22px;
 }
 #root > .console-shell[data-density]:has(> .instance-page) {
+  /* flex:1 lets a long inline editor grow the shell past the viewport. */
+  flex: none;
   height: 100dvh;
   grid-template-rows: auto minmax(0, 1fr);
 }
@@ -6491,10 +6493,15 @@ body:has(.instance-add-bar) .toasts {
 }
 
 .config-inline-editor .config-modal__summary {
-  display: none;
+  display: block;
+  grid-column: 1;
+  grid-row: 1;
+  overflow: visible;
 }
 
 .config-inline-editor .config-modal__fields {
+  grid-column: 1;
+  grid-row: 2;
   max-height: none;
   overflow: visible;
   gap: 0;
