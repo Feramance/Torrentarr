@@ -37,6 +37,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     private int _automaticSearches;
     private (bool Remove, bool Blocklist)? _deletion;
     private string? _queueJson;
+    private Func<int, string>? _queuePage;
     private int _seriesProfile = 1;
     private string _commandsJson = "[]";
     private string _historyJson = "[]";
@@ -62,6 +63,39 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         _loop = Task.Run(ListenAsync);
     }
 
+
+    [Theory]
+    [InlineData("radarr", "v3", "downloadFolderImported")]
+    [InlineData("sonarr", "v5", "downloadFolderImported")]
+    [InlineData("lidarr", "v1", "downloadImported")]
+    [InlineData("readarr", "v1", "downloadImported")]
+    public async Task ImportConfirmationRequiresCurrentHistoryAndCompleteQueue(string type, string version, string eventType)
+    {
+        _version = version;
+        var config = new TorrentarrConfig();
+        config.ArrInstances[type] = new() { Category = "media", Type = type, URI = _url, APIKey = _key };
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var service = new ArrImportService(NullLogger<ArrImportService>.Instance, config,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
+        var added = DateTimeOffset.Parse("2026-11-04T12:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
+        _historyJson = JsonConvert.SerializeObject(new[] { new { id = 99, downloadId = "HASH", eventType, date = added.AddSeconds(1) } });
+
+        _queuePage = page => page == 1
+            ? """{"page":1,"pageSize":1,"totalRecords":2,"records":[{"id":1,"downloadId":"OTHER"}]}"""
+            : """{"page":2,"pageSize":1,"totalRecords":2,"records":[{"id":2,"downloadId":"HASH"}]}""";
+        (await service.IsImportedAsync("hash", "media", added)).Should().BeFalse();
+        _requests.Should().Contain(request => request.Path.Contains("page=2"));
+
+        _queuePage = page => page == 1
+            ? """{"page":1,"pageSize":1,"totalRecords":2,"records":[{"id":1,"downloadId":"OTHER"}]}"""
+            : """{"page":2,"pageSize":1,"totalRecords":2,"records":[]}""";
+        (await service.IsImportedAsync("hash", "media", added)).Should().BeFalse();
+
+        _queuePage = _ => """{"page":1,"pageSize":1,"totalRecords":0,"records":[]}""";
+        (await service.IsImportedAsync("hash", "media", added)).Should().BeTrue();
+        (await service.IsImportedAsync("hash", "media", added.AddSeconds(2))).Should().BeFalse();
+    }
 
     [Theory]
     [InlineData("radarr", "v3")]
@@ -939,7 +973,9 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
                 queue["records"] = new JArray(((JArray)queue["records"]!).Where(r => r["seriesId"]?.Type == JTokenType.Integer));
                 json = queue.ToString(Formatting.None);
             }
-            if (relative.Contains("/queue?"))
+            if (relative.Contains("/queue?") && _queuePage != null)
+                json = _queuePage(int.Parse(ctx.Request.QueryString["page"] ?? "1"));
+            else if (relative.Contains("/queue?"))
             {
                 var queue = JObject.Parse(json);
                 queue["page"] = int.Parse(ctx.Request.QueryString["page"] ?? "1");

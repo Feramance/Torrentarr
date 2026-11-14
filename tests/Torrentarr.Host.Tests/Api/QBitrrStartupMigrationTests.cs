@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using System.Net;
 using System.Net.Http.Headers;
 using FluentAssertions;
@@ -46,6 +47,33 @@ public sealed class QBitrrStartupMigrationTests
         {
             File.Delete(factory.TempConfigPath + ".bak");
         }
+    }
+
+    [Theory]
+    [InlineData("/web/config")]
+    [InlineData("/api/config")]
+    public async Task NewerConfigRejectsEditsAndPreservesUnknownFields(string endpoint)
+    {
+        using var factory = new NewerConfigFactory();
+        var original = File.ReadAllBytes(factory.TempConfigPath);
+        using var client = factory.CreateClientWithoutApiToken();
+        var config = factory.Services.GetRequiredService<TorrentarrConfig>();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.WebUI.Token);
+
+        using var response = await client.PostAsJsonAsync(endpoint,
+            new { changes = new Dictionary<string, string> { ["Settings.ConsoleLevel"] = "DEBUG" } });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        File.ReadAllBytes(factory.TempConfigPath).Should().Equal(original);
+        File.Exists(factory.TempConfigPath + ".bak").Should().BeFalse();
+    }
+
+    private sealed class NewerConfigFactory : TorrentarrWebApplicationFactory
+    {
+        protected override string GetTestConfigToml() => DefaultTestConfigToml
+            .Replace("6.14.6", "99.0.0-1")
+            .Replace("test-api-token", "")
+            + "\n[FutureSection]\nFutureValue = 'preserve this'\n";
     }
 
     private sealed class QBitrrWebApplicationFactory : TorrentarrWebApplicationFactory

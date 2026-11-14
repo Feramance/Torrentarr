@@ -116,7 +116,7 @@ ConfigVersion = "6.20.5"
 ```
 
 **Type:** String
-**Default:** `"6.20.2"`
+**Default:** The schema version supported by the installed Torrentarr build.
 **Required:** Yes (managed automatically)
 
 Internal configuration schema version. **DO NOT MODIFY** this value manually. Torrentarr uses it to detect when config migrations are needed. Updated automatically when Torrentarr migrates an older config to the current format.

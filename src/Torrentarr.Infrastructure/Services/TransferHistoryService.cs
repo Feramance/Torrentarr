@@ -88,7 +88,8 @@ public sealed class TransferHistoryCollector(
         await db.SaveChangesAsync(ct);
         if (_lastPruneMinute == long.MinValue || minute - _lastPruneMinute >= 60)
         {
-            await db.TransferSamples.Where(s => s.Minute < minute - 7 * 24 * 60).ExecuteDeleteAsync(ct);
+            var oldestMinute = minute / TransferHistoryApi.WeekBucketMinutes * TransferHistoryApi.WeekBucketMinutes - TransferHistoryApi.WeekMinutes;
+            await db.TransferSamples.Where(s => s.Minute < oldestMinute).ExecuteDeleteAsync(ct);
             _lastPruneMinute = minute;
         }
     }
@@ -96,6 +97,9 @@ public sealed class TransferHistoryCollector(
 
 public static class TransferHistoryApi
 {
+    internal const int WeekBucketMinutes = 30;
+    internal const int WeekMinutes = 7 * 24 * 60;
+
     public static void MapTransferHistory(this IEndpointRouteBuilder app)
     {
         app.MapGet("/web/statistics/catalog", async (string kind, string? instance,
@@ -149,7 +153,7 @@ public static class TransferHistoryApi
         {
             "1h" => (60, 1),
             "24h" => (1440, 5),
-            "7d" => (10080, 30),
+            "7d" => (WeekMinutes, WeekBucketMinutes),
             _ => throw new ArgumentOutOfRangeException(nameof(range))
         };
         // Use completed wall-clock buckets so the expected coverage is unambiguous.

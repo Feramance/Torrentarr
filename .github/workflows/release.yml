@@ -103,6 +103,14 @@ jobs:
         sed -i "s|<FileVersion>[^<]*</FileVersion>|<FileVersion>${FILE_VERSION}</FileVersion>|" Directory.Build.props
         sed -i "s|<AssemblyVersion>[^<]*</AssemblyVersion>|<AssemblyVersion>${FILE_VERSION}</AssemblyVersion>|" Directory.Build.props
         echo "Updated Version=${VERSION} FileVersion/AssemblyVersion=${FILE_VERSION}"
+    - name: Set up .NET
+      uses: actions/setup-dotnet@v6.1.0
+      with:
+        global-json-file: global.json
+    - name: Synchronize config schema artifacts
+      run: |
+        dotnet run --project tools/Torrentarr.ConfigSchemaGenerator/Torrentarr.ConfigSchemaGenerator.csproj
+        dotnet run --no-build --project tools/Torrentarr.ConfigSchemaGenerator/Torrentarr.ConfigSchemaGenerator.csproj -- --check
     - name: Capture new version
       id: version
       run: |
@@ -123,7 +131,7 @@ jobs:
         git config user.name "${GITHUB_ACTOR}"
         git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
         git checkout -B "${BRANCH}"
-        git add .bumpversion.cfg Directory.Build.props Dockerfile docs/index.md src/Torrentarr.Core/Configuration/TorrentarrConfig.cs src/Torrentarr.Core/Configuration/ConfigurationLoader.cs config.example.toml
+        git add .bumpversion.cfg Directory.Build.props Dockerfile docs/index.md src/Torrentarr.Core/Configuration/ConfigurationLoader.cs config.example.toml docs/configuration/config-file.md docs/configuration/maintenance-controls.md webui/src/config/configFields.generated.ts
         git commit -m "[skip ci] Bump version to v${VERSION}"
         git push origin "${BRANCH}"
 

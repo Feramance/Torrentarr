@@ -73,15 +73,7 @@ public class SeedingService : ISeedingService
         string? category,
         bool matchSubcategories)
     {
-        if (string.IsNullOrWhiteSpace(category) || baseConfig.Categories.Count == 0)
-            return baseConfig;
-
-        var names = baseConfig.Categories.Where(item => !string.IsNullOrWhiteSpace(item.Name))
-            .Select(item => item.Name).ToList();
-        var match = CategoryPathHelper.MatchesConfigured(category, names, prefix: matchSubcategories)
-            ?? CategoryPathHelper.MatchesConfigured(category, names, prefix: false);
-        var categoryOverride = baseConfig.Categories.FirstOrDefault(item =>
-            string.Equals(CategoryPathHelper.NormalizeCategory(item.Name), match, StringComparison.Ordinal));
+        var categoryOverride = CategoryPathHelper.FindSeedingOverride(baseConfig, category, matchSubcategories);
         if (categoryOverride == null)
             return baseConfig;
 
@@ -400,7 +392,7 @@ public class SeedingService : ISeedingService
                         observation.EligibleSince = null;
                     if (observation.PolicyFingerprint != policyFingerprint) observation.EligibleSince = null;
                     observation.PolicyFingerprint = policyFingerprint;
-                    TrackerProtectionEvaluator.Observe(observation, torrent, healthy, now);
+                    TrackerProtectionEvaluator.Observe(observation, torrent, healthy, now, maximumGap);
                     observation.ClientRatio = torrent.Ratio;
                     if (peak.AddedOn == torrent.AddedOn)
                         observation.MaximumDownloadPercent = Math.Max(observation.MaximumDownloadPercent, peak.MaximumDownloadPercent);

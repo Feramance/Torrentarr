@@ -376,62 +376,59 @@ public class TorrentProcessor : ITorrentProcessor
             return;
         }
 
-        if (_importService != null)
+        if (_importService == null)
         {
-            libraryEntry = await EnsureTorrentInDatabaseAsync(torrent, owner, cancellationToken);
+            _logger.LogWarning("Arr import service is unavailable for torrent {Hash}", hash);
+            return;
+        }
 
-            var contentPath = torrent.ContentPath;
+        libraryEntry = await EnsureTorrentInDatabaseAsync(torrent, owner, cancellationToken);
+
+        var contentPath = torrent.ContentPath;
+        if (!string.IsNullOrEmpty(contentPath))
+        {
+            if (_pathTracker?.IsHashAlreadyScanned(torrent.QBitInstanceName, torrent.Hash) == true)
+            {
+                _logger.LogInformation("Skipping import — hash already sent to scan: {Hash}", hash);
+                return;
+            }
+            if (!File.Exists(contentPath) && !Directory.Exists(contentPath))
+            {
+                _logger.LogWarning("Missing torrent file for import: {Path} ({Hash})", contentPath, hash);
+                _cache.AddToIgnoreCache(torrent.QBitInstanceName, hash, TimeSpan.FromSeconds(_config.Settings.IgnoreTorrentsYoungerThan));
+                return;
+            }
+            if (_pathTracker?.IsPathAlreadyScanned(torrent.QBitInstanceName, contentPath) == true)
+            {
+                _logger.LogInformation("Skipping import — path already sent to scan: {Path}", contentPath);
+                return;
+            }
+        }
+
+        using var activityClient = ArrActivityTracking.ForClient(torrent.QBitInstanceName);
+        var submittedAt = DateTimeOffset.UtcNow;
+        var result = await _importService.TriggerImportAsync(
+            hash, torrent.ContentPath, owner, cancellationToken);
+
+        if (result.Success)
+        {
+            libraryEntry.ImportSubmittedAt = submittedAt.ToUnixTimeSeconds();
+            await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
+            _logger.LogInformation("Successfully triggered import for torrent {Hash}: {Message}",
+                hash, result.Message);
+
             if (!string.IsNullOrEmpty(contentPath))
-            {
-                if (_pathTracker?.IsHashAlreadyScanned(torrent.QBitInstanceName, torrent.Hash) == true)
-                {
-                    _logger.LogInformation("Skipping import — hash already sent to scan: {Hash}", hash);
-                    return;
-                }
-                if (!File.Exists(contentPath) && !Directory.Exists(contentPath))
-                {
-                    _logger.LogWarning("Missing torrent file for import: {Path} ({Hash})", contentPath, hash);
-                    _cache.AddToIgnoreCache(torrent.QBitInstanceName, hash, TimeSpan.FromSeconds(_config.Settings.IgnoreTorrentsYoungerThan));
-                    return;
-                }
-                if (_pathTracker?.IsPathAlreadyScanned(torrent.QBitInstanceName, contentPath) == true)
-                {
-                    _logger.LogInformation("Skipping import — path already sent to scan: {Path}", contentPath);
-                    return;
-                }
-            }
+                _pathTracker?.MarkScanned(torrent.QBitInstanceName, contentPath, hash, submittedAt);
 
-            using var activityClient = ArrActivityTracking.ForClient(torrent.QBitInstanceName);
-            var submittedAt = DateTimeOffset.UtcNow;
-            var result = await _importService.TriggerImportAsync(
-                hash, torrent.ContentPath, owner, cancellationToken);
-
-            if (result.Success)
-            {
-                libraryEntry.ImportSubmittedAt ??= submittedAt.ToUnixTimeSeconds();
-                await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
-                _logger.LogInformation("Successfully triggered import for torrent {Hash}: {Message}",
-                    hash, result.Message);
-
-                if (!string.IsNullOrEmpty(contentPath))
-                    _pathTracker?.MarkScanned(torrent.QBitInstanceName, contentPath, hash, submittedAt);
-
-                var arrCfg = _config.ArrInstances.Values.FirstOrDefault(i =>
-                    i.Category.Equals(libraryEntry.Category, StringComparison.OrdinalIgnoreCase));
-                if (arrCfg?.Torrent.AutoDelete == true && !string.IsNullOrEmpty(contentPath))
-                    await RunPostImportAutoDeleteCleanupAsync(torrent, arrCfg, contentPath, cancellationToken);
-            }
-            else
-            {
-                _logger.LogWarning("Failed to trigger import for torrent {Hash}: {Message}",
-                    hash, result.Message);
-            }
+            var arrCfg = _config.ArrInstances.Values.FirstOrDefault(i =>
+                i.Category.Equals(libraryEntry.Category, StringComparison.OrdinalIgnoreCase));
+            if (arrCfg?.Torrent.AutoDelete == true && !string.IsNullOrEmpty(contentPath))
+                await RunPostImportAutoDeleteCleanupAsync(torrent, arrCfg, contentPath, cancellationToken);
         }
         else
         {
-            _logger.LogWarning("ArrImportService not available, marking as imported without triggering");
-            libraryEntry.Imported = true;
-            await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
+            _logger.LogWarning("Failed to trigger import for torrent {Hash}: {Message}",
+                hash, result.Message);
         }
     }
 
@@ -1725,6 +1722,7 @@ public class TorrentProcessor : ITorrentProcessor
             _dbContext.TorrentLibrary.Add(entry);
         }
         else if (!CategoryPathHelper.CategoryEquals(entry.Category, owner) || entry.ArrInstance.Length > 0 && entry.ArrInstance != arr
+            || torrent.AddedOn > 0 && entry.TorrentAddedOn is { } previousAddedOn && previousAddedOn != torrent.AddedOn
             || entry.AutoDeletePendingAddedOn is { } addedOn && addedOn != torrent.AddedOn
             || entry.ImportSubmittedAt is { } submittedAt && submittedAt < torrent.AddedOn)
         {
@@ -1734,6 +1732,7 @@ public class TorrentProcessor : ITorrentProcessor
             _pathTracker?.InvalidateTorrent(torrent.ClientInstanceId, torrent.Hash);
         }
         else entry.ArrInstance = arr;
+        if (torrent.AddedOn > 0) entry.TorrentAddedOn = torrent.AddedOn;
         await _dbContext.SaveChangesWithRetryAsync(_logger, _restartCoordinator, cancellationToken: cancellationToken);
         return entry;
     }

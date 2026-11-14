@@ -208,19 +208,30 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
-    public void SaveConfig_FormatsCategoryRatiosWithInvariantCulture()
+    public void SaveConfig_RoundTripsRatiosAndStringsWithCommaDecimalCulture()
     {
         WriteToml("""
             [Settings]
             ConfigVersion = "6.14.6"
 
+            [qBit]
+            Password = 'a"b\c'
+
             [qBit.CategorySeeding]
+            MinSeedRatio = 1.5
 
             [[qBit.CategorySeeding.Categories]]
             Name = "movies"
             MaxUploadRatio = 3.5
             MinSeedRatio = 1.25
             HitAndRunPartialSeedRatio = 0.75
+
+            [Radarr-Movies.Torrent]
+            MaximumDeletablePercentage = 0.85
+            FileNameExclusionRegex = ['\.mkv', "director's cut"]
+
+            [Radarr-Movies.Torrent.SeedingMode]
+            MaxUploadRatio = 2.75
             """);
 
         var loader = new ConfigurationLoader(_tempFilePath);
@@ -240,7 +251,15 @@ public class ConfigurationLoaderTests : IDisposable
         saved.Should().Contain("MaxUploadRatio = 3.5");
         saved.Should().Contain("MinSeedRatio = 1.25");
         saved.Should().Contain("HitAndRunPartialSeedRatio = 0.75");
-        loader.Load().QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle();
+        var loaded = loader.Load();
+        loaded.QBitInstances["qBit"].Password.Should().Be("a\"b\\c");
+        loaded.QBitInstances["qBit"].CategorySeeding.MinSeedRatio.Should().Be(1.5);
+        loaded.QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle();
+        var torrent = loaded.ArrInstances["Radarr-Movies"].Torrent;
+        torrent.MaximumDeletablePercentage.Should().Be(0.85);
+        torrent.SeedingMode!.MaxUploadRatio.Should().Be(2.75);
+        torrent.FileNameExclusionRegex.Should().Equal(@"\.mkv", "director's cut");
+        saved.Should().Contain(@"'\.mkv'");
     }
 
     [Fact]
@@ -1157,31 +1176,30 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_DoesNotDowngradeConfigVersionWhenNewerThanExpected_AfterValidateAndFill()
+    public void LoadAndSave_PreserveConfigFromNewerBuild()
     {
-        WriteToml("""
+        const string original = """
             [Settings]
-            ConfigVersion = "99.0.0"
+            ConfigVersion = "99.0.0-1"
 
             [WebUI]
-            Host = "0.0.0.0"
             Port = 6969
-            Token = ""
-            AuthDisabled = false
-            LocalAuthEnabled = true
-            OIDCEnabled = false
-            Username = ""
-            PasswordHash = ""
-            LiveArr = true
-            Theme = "Dark"
-            ViewDensity = "Comfortable"
-            """);
 
-        _ = new ConfigurationLoader(_tempFilePath).Load();
+            [FutureSection]
+            FutureValue = "keep this"
+            """;
+        WriteToml(original);
 
-        var content = File.ReadAllText(_tempFilePath);
-        content.Should().Contain("ConfigVersion = \"99.0.0\"");
-        content.Should().Contain("BehindHttpsProxy");
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var loaded = loader.LoadOrCreate().Config;
+        loaded.Settings.ConfigVersion.Should().Be("99.0.0-1");
+        ConfigurationLoader.ValidateConfigVersion(loaded).IsValid.Should().BeFalse();
+        File.ReadAllText(_tempFilePath).Should().Be(original);
+        File.Exists(_tempFilePath + ".bak").Should().BeFalse();
+
+        var save = () => loader.SaveConfig(new TorrentarrConfig());
+        save.Should().Throw<InvalidOperationException>().WithMessage("*newer Torrentarr build*");
+        File.ReadAllText(_tempFilePath).Should().Be(original);
     }
 
     [Fact]

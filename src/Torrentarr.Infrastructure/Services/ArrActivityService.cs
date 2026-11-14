@@ -101,8 +101,12 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
         }
         if (minute - _lastPrune >= 60)
         {
-            await db.ArrActivitySamples.Where(s => s.Minute < minute - 10080).ExecuteDeleteAsync(ct);
-            await db.ArrActivityOperations.Where(o => (o.ConfirmedAt ?? o.SubmittedAt) < now.ToUnixTimeSeconds() - 604800).ExecuteDeleteAsync(ct);
+            var oldestMinute = minute / ArrActivityApi.HourBucketMinutes * ArrActivityApi.HourBucketMinutes - ArrActivityApi.WeekMinutes;
+            await db.ArrActivitySamples.Where(s => s.Minute < oldestMinute).ExecuteDeleteAsync(ct);
+            var expiredSubmission = now.ToUnixTimeSeconds() - ArrActivityApi.WeekMinutes * 60;
+            await db.ArrActivityOperations.Where(o => o.ConfirmedAt != null
+                ? o.ConfirmedAt < oldestMinute * 60
+                : o.SubmittedAt < expiredSubmission).ExecuteDeleteAsync(ct);
             _lastPrune = minute;
         }
     }
@@ -164,6 +168,9 @@ public sealed record ArrActivityHistory(string Range, int BucketMinutes, DateTim
 
 public static class ArrActivityApi
 {
+    internal const int HourBucketMinutes = 60;
+    internal const int WeekMinutes = 7 * 24 * 60;
+
     public static void MapArrActivity(this IEndpointRouteBuilder app) => app.MapGet("/web/statistics/arr-activity",
         async (string? range, string? worker, TorrentarrConfig config, TorrentarrDbContext db, CancellationToken ct) =>
         {
@@ -182,7 +189,7 @@ public static class ArrActivityApi
         {
             "1h" => (60, 1),
             "24h" => (1440, 60),
-            "7d" => (10080, 60),
+            "7d" => (WeekMinutes, HourBucketMinutes),
             _ => throw new ArgumentOutOfRangeException(nameof(range))
         };
         var end = now.ToUnixTimeSeconds() / 60 / bucket * bucket;

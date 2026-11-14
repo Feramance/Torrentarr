@@ -1,3 +1,4 @@
+using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
 
 namespace Torrentarr.Core.Configuration;
@@ -163,13 +164,22 @@ public static class ConfigValidationHelper
         foreach (var (id, client) in config.GetAllTorrentClients())
         {
             var defaults = client.CategorySeeding;
-            foreach (var rule in TrackerRules.ForClient(config, id))
+            var categories = defaults.Categories.Select(category => CategoryPathHelper.NormalizeCategory(category.Name))
+                .Concat(config.ArrInstances.Values.Select(arr => CategoryPathHelper.NormalizeCategory(arr.Category)))
+                .Prepend("").Distinct(StringComparer.Ordinal);
+            foreach (var category in categories)
             {
-                if (rule.Protection is { RequireLegacyClearance: false }) continue;
-                var mode = rule.HitAndRunMode ?? defaults.HitAndRunMode;
-                if (mode == "time" && (rule.MinSeedingTimeDays ?? defaults.MinSeedingTimeDays) <= 0 ||
-                    mode == "ratio" && (rule.MinSeedRatio ?? defaults.MinSeedRatio) <= 0)
-                    return $"Tracker '{rule.Name ?? TrackerRules.Host(rule.Uri)}' on '{id}': {mode} requires a positive minimum.";
+                var categoryOverride = CategoryPathHelper.FindSeedingOverride(defaults, category, client.MatchSubcategories);
+                var torrent = new TorrentInfo { ClientInstanceId = id, Category = category };
+                foreach (var rule in TrackerRules.ForTorrent(config, torrent))
+                {
+                    if (rule.Protection is { RequireLegacyClearance: false }) continue;
+                    var mode = rule.HitAndRunMode ?? categoryOverride?.HitAndRunMode ?? defaults.HitAndRunMode;
+                    var ratio = rule.MinSeedRatio ?? categoryOverride?.MinSeedRatio ?? defaults.MinSeedRatio;
+                    var days = rule.MinSeedingTimeDays ?? categoryOverride?.MinSeedingTimeDays ?? defaults.MinSeedingTimeDays;
+                    if (Check(mode, ratio, days, null, null, null, null) is { } error)
+                        return $"Tracker '{rule.Name ?? TrackerRules.Host(rule.Uri)}' on '{id}', category '{(category.Length == 0 ? "(default)" : category)}': {error}";
+                }
             }
         }
         return null;

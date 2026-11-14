@@ -122,8 +122,12 @@ if (string.IsNullOrEmpty(configForDI.WebUI.Token))
     var tokenBytes = new byte[32];
     RandomNumberGenerator.Fill(tokenBytes);
     configForDI.WebUI.Token = Convert.ToBase64String(tokenBytes);
-    configLoader.SaveConfig(configForDI);
-    Log.Information("Generated and persisted API token (Token was empty)");
+    if (ConfigurationLoader.ValidateConfigVersion(configForDI).IsValid)
+    {
+        configLoader.SaveConfig(configForDI);
+        Log.Information("Generated and persisted API token (Token was empty)");
+    }
+    else Log.Warning("Generated an in-memory API token because the config schema is newer than this build");
 }
 
 var insecureExposure = WebUIAuthHelpers.CheckInsecureExposure(configForDI.WebUI);
@@ -781,6 +785,10 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
         reloadType = EscalateReloadType(reloadType, "full", reloadTiers);
     }
 
+    var version = ConfigurationLoader.ValidateConfigVersion(config);
+    if (!version.IsValid)
+        return Results.Conflict(new { error = version.Message });
+
     // ── Apply changes to config + save ─────────────────────────────────────
     try
     {
@@ -792,7 +800,10 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
         foreach (var (key, value) in changes)
         {
             // Reject protected keys (qBitrr parity)
-            if (string.Equals(key, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(key, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "Settings", StringComparison.OrdinalIgnoreCase)
+                    && value is Newtonsoft.Json.Linq.JObject settingsChange
+                    && settingsChange.Property("ConfigVersion", StringComparison.OrdinalIgnoreCase) != null)
                 return Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403);
 
             // Never overwrite a real secret with the redaction placeholder from the frontend
@@ -999,6 +1010,7 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
     result.Settings = flat["Settings"] is Newtonsoft.Json.Linq.JObject settingsObj
         ? settingsObj.ToObject<SettingsConfig>() ?? current.Settings
         : current.Settings;
+    result.Settings.ConfigVersion = current.Settings.ConfigVersion;
 
     // WebUI — restore redacted sensitive fields
     if (flat["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)

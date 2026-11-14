@@ -13,6 +13,28 @@ namespace Torrentarr.Infrastructure.Tests.Database;
 public class SchemaParityTests
 {
     [Fact]
+    public void ManualMigrationAddsTorrentIdentityWithoutDiscardingExistingImportState()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseSqlite(connection).Options);
+        db.Database.EnsureCreated();
+        db.Database.ExecuteSqlRaw("ALTER TABLE torrentlibrary DROP COLUMN torrentaddedon");
+        db.Database.ExecuteSqlRaw("""
+            INSERT INTO torrentlibrary (hash, category, qbitinstance, arrinstance, imported, allowedseeding, allowedstalled, freespacepaused)
+            VALUES ('hash', 'movies', 'qBit', 'Radarr-Movies', 1, 0, 0, 0)
+            """);
+
+        ManualSqliteMigrations.Apply(db);
+        ManualSqliteMigrations.Apply(db);
+
+        var entry = db.TorrentLibrary.Single();
+        entry.Imported.Should().BeTrue();
+        entry.TorrentAddedOn.Should().BeNull();
+    }
+
+    [Fact]
     public void SqliteModel_CreatesExpectedQBitrrCompatibleTables()
     {
         var connection = new SqliteConnection("Data Source=:memory:");

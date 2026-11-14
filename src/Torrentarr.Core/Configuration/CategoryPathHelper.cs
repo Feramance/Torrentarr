@@ -91,6 +91,17 @@ public static class CategoryPathHelper
         return best?.Original;
     }
 
+    public static CategorySeedingCategoryOverride? FindSeedingOverride(
+        CategorySeedingConfig defaults, string? category, bool matchSubcategories)
+    {
+        if (string.IsNullOrWhiteSpace(category) || defaults.Categories.Count == 0)
+            return null;
+
+        var match = MatchesConfigured(category, defaults.Categories.Select(item => item.Name), prefix: matchSubcategories);
+        return defaults.Categories.FirstOrDefault(item =>
+            string.Equals(NormalizeCategory(item.Name), match, StringComparison.Ordinal));
+    }
+
     public static IReadOnlyList<(string Parent, string Child)> FindOverlapConflicts(IEnumerable<string> configured)
     {
         var items = configured

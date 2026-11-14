@@ -314,6 +314,26 @@ public sealed class StorageMigrationTests : IDisposable
     }
 
     [Fact]
+    public void InvalidStorageDoesNotWriteMigrationOrBackup()
+    {
+        const string original = """
+            [Settings]
+            ConfigVersion = "6.20.4"
+            [TorrentClient.seedbox]
+            Host = "localhost"
+            [[TorrentClient.seedbox.FreeSpace]]
+            Path = "relative"
+            Limit = "10G"
+            """;
+        File.WriteAllText(_file, original);
+
+        var load = () => new ConfigurationLoader(_file).LoadOrCreate();
+        load.Should().Throw<InvalidDataException>().WithMessage("*seedbox*");
+        File.ReadAllText(_file).Should().Be(original);
+        File.Exists(_file + ".bak").Should().BeFalse();
+    }
+
+    [Fact]
     public void DuplicateNormalizedMonitorPathsAreRejected()
     {
         var path = Path.GetTempPath();

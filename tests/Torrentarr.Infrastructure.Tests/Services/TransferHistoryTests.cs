@@ -72,7 +72,10 @@ public sealed class TransferHistoryTests
         {
             var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
             db.Database.EnsureCreated();
-            db.TransferSamples.Add(new() { ClientInstance = "one", Minute = Now.ToUnixTimeSeconds() / 60 - 10081 });
+            var oldestMinute = Now.AddDays(-7).ToUnixTimeSeconds() / 60;
+            db.TransferSamples.AddRange(
+                new() { ClientInstance = "one", Minute = oldestMinute - 1 },
+                new() { ClientInstance = "one", Minute = oldestMinute, DownloadRate = 10 });
             await db.SaveChangesAsync();
         }
         var config = new TorrentarrConfig();
@@ -91,15 +94,18 @@ public sealed class TransferHistoryTests
         var collector = new TransferHistoryCollector(provider.GetRequiredService<IServiceScopeFactory>(), config, registry.Object,
             NullLogger<TransferHistoryCollector>.Instance);
         var clock = new Mock<TimeProvider>();
-        var now = Now;
+        var now = Now.AddMinutes(23);
         clock.Setup(c => c.GetUtcNow()).Returns(() => now);
         collector.Clock = clock.Object;
         await collector.CollectAsync(default);
-        now = Now.AddSeconds(20);
+        now = now.AddSeconds(20);
         await collector.CollectAsync(default);
         using var check = provider.CreateScope();
-        var saved = await check.ServiceProvider.GetRequiredService<TorrentarrDbContext>().TransferSamples.ToListAsync();
-        saved.Should().ContainSingle().Which.DownloadRate.Should().Be(123);
+        var checkDb = check.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+        var saved = await checkDb.TransferSamples.OrderBy(s => s.Minute).ToListAsync();
+        saved.Select(s => s.DownloadRate).Should().Equal(10, 123);
+        var history = await TransferHistoryApi.QueryAsync(checkDb, ["one"], "7d", now);
+        history.Series.Single().Points[0].DownloadRate.Should().Be(10);
         registry.Verify(r => r.GetClient("disabled"), Times.Never);
     }
 

@@ -146,8 +146,12 @@ try
             var tokenBytes = new byte[32];
             RandomNumberGenerator.Fill(tokenBytes);
             config.WebUI.Token = Convert.ToBase64String(tokenBytes);
-            configLoader.SaveConfig(config);
-            Log.Information("Generated and persisted API token (Token was empty)");
+            if (ConfigurationLoader.ValidateConfigVersion(config).IsValid)
+            {
+                configLoader.SaveConfig(config);
+                Log.Information("Generated and persisted API token (Token was empty)");
+            }
+            else Log.Warning("Generated an in-memory API token because the config schema is newer than this build");
         }
 
         Log.Information("Configuration loaded from {Path}", ConfigurationLoader.GetDefaultConfigPath());
@@ -2075,6 +2079,10 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
     TorrentarrConfig cfg,
     Newtonsoft.Json.Linq.JObject changesObj)
 {
+    var version = ConfigurationLoader.ValidateConfigVersion(cfg);
+    if (!version.IsValid)
+        return (null, Results.Conflict(new { error = version.Message }));
+
     var serializer = Newtonsoft.Json.JsonSerializer.Create(CreateConfigMergeSerializerSettings());
 
     var currentObj = new Newtonsoft.Json.Linq.JObject();
@@ -2089,7 +2097,10 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
 
     foreach (var change in changesObj.Properties())
     {
-        if (string.Equals(change.Name, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(change.Name, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(change.Name, "Settings", StringComparison.OrdinalIgnoreCase)
+                && change.Value is Newtonsoft.Json.Linq.JObject settingsChange
+                && settingsChange.Property("ConfigVersion", StringComparison.OrdinalIgnoreCase) != null)
             return (null, Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403));
 
         if (IsSensitiveDottedKey(change.Name) &&
@@ -2139,6 +2150,7 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
     var updatedConfig = new TorrentarrConfig { Trackers = TrackerRules.ReadJson(currentObj["Trackers"]) };
     if (currentObj["Settings"] is Newtonsoft.Json.Linq.JObject settingsObj)
         updatedConfig.Settings = settingsObj.ToObject<SettingsConfig>(serializer) ?? new SettingsConfig();
+    updatedConfig.Settings.ConfigVersion = cfg.Settings.ConfigVersion;
     if (currentObj["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
         updatedConfig.WebUI = webuiObj.ToObject<WebUIConfig>(serializer) ?? new WebUIConfig();
     if (currentObj["TorrentClient"] is Newtonsoft.Json.Linq.JObject torrentClientObj)

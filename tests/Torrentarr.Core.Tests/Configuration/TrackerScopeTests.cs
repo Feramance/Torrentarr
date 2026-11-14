@@ -129,6 +129,101 @@ public sealed class TrackerScopeTests : IDisposable
     }
 
     [Theory]
+    [InlineData(true, "time")]
+    [InlineData(false, "ratio")]
+    public void ScopedRulesValidateEffectiveCategoryMinimums(bool arrScope, string mode)
+    {
+        var config = new TorrentarrConfig();
+        var client = config.TorrentClients["seedbox"] = new() { MatchSubcategories = true };
+        config.ArrInstances["Sonarr-TV"] = new() { Category = "tv" };
+        var rule = new ScopedTrackerConfig { Name = "Private tracker", Uri = "example.test" };
+        if (arrScope)
+        {
+            rule.ArrInstances = ["Sonarr-TV"];
+            rule.HitAndRunMode = mode;
+        }
+        else rule.ClientIds = ["seedbox"];
+        config.Trackers = [rule];
+        var category = new CategorySeedingCategoryOverride { Name = "tv", HitAndRunMode = mode, MinSeedRatio = 2, MinSeedingTimeDays = 2 };
+        client.CategorySeeding.Categories = [category];
+
+        ConfigValidationHelper.ValidateHnrModes(config).Should().BeNull();
+
+        if (arrScope)
+        {
+            category.HitAndRunMode = null;
+            category.MinSeedingTimeDays = null;
+        }
+        else
+        {
+            rule.MinSeedRatio = 0;
+        }
+        ConfigValidationHelper.ValidateHnrModes(config).Should().Contain("Private tracker").And.Contain("seedbox").And.Contain("tv");
+
+        rule.MinSeedingTimeDays = 3;
+        rule.MinSeedRatio = 3;
+        ConfigValidationHelper.ValidateHnrModes(config).Should().BeNull();
+    }
+
+    [Fact]
+    public void LegacyModesNormalizeAcrossCanonicalClientsAndScopedTrackers()
+    {
+        File.WriteAllText(ConfigPath, $"""
+            [Settings]
+            ConfigVersion = '{ConfigurationLoader.ExpectedConfigVersion}'
+            [TorrentClient.seedbox.CategorySeeding]
+            HitAndRunMode = true
+            [[TorrentClient.seedbox.CategorySeeding.Categories]]
+            Name = 'movies'
+            HitAndRunClearMode = 'or'
+            [[Trackers]]
+            ClientIds = ['seedbox']
+            URI = 'tracker.example'
+            HitAndRunMode = false
+            HitAndRunClearMode = 'and'
+            """);
+
+        var loader = new ConfigurationLoader(ConfigPath);
+        var config = loader.Load();
+        var seeding = config.TorrentClients["seedbox"].CategorySeeding;
+        seeding.HitAndRunMode.Should().Be("and");
+        seeding.Categories.Single().HitAndRunMode.Should().Be("or");
+        config.Trackers.Single().HitAndRunMode.Should().Be("and");
+        var migrated = File.ReadAllText(ConfigPath);
+        migrated.Should().NotContain("HitAndRunClearMode");
+        loader.Load();
+        File.ReadAllText(ConfigPath).Should().Be(migrated);
+    }
+
+    [Fact]
+    public void ReleaseSuffixDoesNotReplayLegacyMigrations()
+    {
+        var original = $"""
+            [Settings]
+            ConfigVersion = '{ConfigurationLoader.ExpectedConfigVersion}-2'
+            LoopSleepTimer = 5
+            [qBit]
+            [qBit.CategorySeeding]
+            StalledDelay = 0
+            [[Trackers]]
+            ClientIds = ['qBit']
+            URI = 'tracker.example'
+            HitAndRunMode = 'or'
+            """;
+        File.WriteAllText(ConfigPath, original);
+
+        var loader = new ConfigurationLoader(ConfigPath);
+        var config = loader.LoadOrCreate().Config;
+        config.QBitInstances["qBit"].CategorySeeding.StalledDelay.Should().Be(0);
+        config.QBitInstances["qBit"].TorrentScanIntervalSeconds.Should().Be(30);
+        config.Trackers.Single().Protection.Should().BeNull();
+        ConfigurationLoader.ValidateConfigVersion(config).Message.Should().BeNull();
+
+        config.Settings.ConfigVersion = "99.0.0-1";
+        ConfigurationLoader.ValidateConfigVersion(config).IsValid.Should().BeFalse();
+    }
+
+    [Theory]
     [InlineData("and")]
     [InlineData("or")]
     [InlineData("disabled")]

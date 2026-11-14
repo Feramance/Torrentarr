@@ -34,6 +34,18 @@ This guide helps you migrate from older versions of Torrentarr or similar tools 
 
 ## Version-Specific Migration
 
+### Config versions and rollback
+
+Torrentarr compares the three numeric version components when applying migrations.
+A release build suffix such as `-2` does not trigger a config migration. The release
+workflow advances the expected config version when the release version passes the
+latest migration boundary and synchronizes the example file and WebUI schema.
+
+Startup validates migrated settings before replacing an older file and saves the
+previous version as `config.toml.bak`. Keep a separate copy of your config and
+database before upgrading. An older Torrentarr build leaves a newer config file
+untouched and rejects config edits until you upgrade or restore a compatible copy.
+
 ### Tracker protection in config schema 6.20.5
 
 Torrentarr automatically adds observation-based protection to tracker rules that

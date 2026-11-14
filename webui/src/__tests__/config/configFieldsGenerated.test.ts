@@ -61,10 +61,10 @@ describe("generated config schema", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("uses Torrentarr's +1 major config version", () => {
+  it("declares a three-part Torrentarr config version", () => {
     const version = CONFIG_SCHEMA.sections.Settings.find(
       (field) => field.key === "ConfigVersion",
     );
-    expect(version?.default).toBe("6.20.5");
+    expect(version?.default).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });

@@ -22,7 +22,7 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
     private readonly ConcurrentDictionary<string, DateTimeOffset> _nextInspection = new();
     private readonly ConcurrentDictionary<string, int> _inspectionFailures = new();
     private readonly ConcurrentDictionary<string, string> _inspectionErrors = new();
-    private readonly ConcurrentDictionary<string, (DateTimeOffset At, List<TorrentTracker> Trackers, bool? IsPrivate)> _trackerInspections = new();
+    private readonly ConcurrentDictionary<string, (DateTimeOffset At, List<TorrentTracker> Trackers, bool? IsPrivate, long AddedOn)> _trackerInspections = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _nextFullInspection = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastInspection = new();
     private long _inspectionRevision = -1;
@@ -87,13 +87,14 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
         using var processing = ConfigMutationGuard.EnterProcessing();
         if (_inspectionRevision != _config.Revision)
         { _nextInspection.Clear(); _nextFullInspection.Clear(); _trackerInspections.Clear(); _inspectionRevision = _config.Revision; }
-        foreach (var (id, cfg) in _config.GetAllTorrentClients())
+        await Task.WhenAll(_config.GetAllTorrentClients().Select(async configuredClient =>
         {
+            var (id, cfg) = configuredClient;
             var client = _registry.GetClient(id);
             if (cfg.Disabled || client == null || _nextInspection.GetValueOrDefault(id) > Clock.GetUtcNow())
             {
                 _logger.LogTrace("Protection inspection deferred for {ClientInstance}: disabled={Disabled}; connected={Connected}; nextAttempt={NextAttempt:O}", id, cfg.Disabled, client != null, _nextInspection.GetValueOrDefault(id));
-                continue;
+                return;
             }
             using var inspectionScope = _logger.BeginScope(new Dictionary<string, object> { ["Operation"] = "ProtectionInspection", ["ClientInstance"] = id, ["CycleId"] = Guid.NewGuid().ToString("N") });
             var started = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -115,8 +116,7 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 List<ProtectionDecision> Previous(TorrentInfo torrent) =>
                     _protection.GetValueOrDefault(id + "|" + torrent.Hash) ?? [];
                 if (!full) torrents = torrents.Where(t => Previous(t).Any(NeedsFreshInspection)).ToList();
-                torrents = torrents.OrderBy(t => _trackerInspections.GetValueOrDefault(id + "|" + t.Hash).At)
-                    .ThenByDescending(t => Previous(t).Any(d => d.DeadlineRisk != "none"))
+                torrents = torrents.OrderByDescending(t => Previous(t).Any(d => d.DeadlineRisk != "none"))
                     .ThenByDescending(t => cfg.Maintenance.ErrorRecovery.States.Contains(t.State, StringComparer.OrdinalIgnoreCase)).ToList();
                 var cachePrefix = id + "|";
                 foreach (var key in _trackerInspections.Keys)
@@ -129,7 +129,6 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                     .Select(s => s.Key).ToListAsync(inspectionCt);
                 foreach (var stale in oldTrackerIssues.Where(k => !allHashes.Contains(k.Split('|')[1])))
                     await MaintenancePersistence.DeleteAsync(db, stale, inspectionCt);
-                using var budget = new SemaphoreSlim(2);
                 using var observations = new SemaphoreSlim(1);
                 await Task.WhenAll(torrents.Select(async torrent =>
                 {
@@ -137,67 +136,63 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                     var key = id + "|" + torrent.Hash;
                     var fresh = seeding?.HasConfiguredProtection(torrent) == true || cfg.Maintenance.ErrorRecovery.States.Contains(torrent.State, StringComparer.OrdinalIgnoreCase)
                         || Previous(torrent).Any(NeedsFreshInspection);
-                    await budget.WaitAsync(inspectionCt);
+                    List<TorrentTracker> trackers;
+                    var fetchedAt = Clock.GetUtcNow();
+                    if (!fresh && _trackerInspections.TryGetValue(key, out var cached)
+                        && cached.AddedOn == torrent.AddedOn && fetchedAt >= cached.At && fetchedAt - cached.At < TimeSpan.FromMinutes(15))
+                    {
+                        _logger.LogTrace("Protection tracker cache hit for {Hash}: fetchedAt={FetchedAt:O}; expiresAt={ExpiresAt:O}", torrent.Hash, cached.At, cached.At.AddMinutes(15));
+                        trackers = cached.Trackers;
+                        torrent.IsPrivate ??= cached.IsPrivate;
+                        fetchedAt = cached.At;
+                    }
+                    else
+                    {
+                        _logger.LogTrace("Protection tracker observation requested for {Hash}: freshRequired={FreshRequired}; privacyKnown={PrivacyKnown}", torrent.Hash, fresh, torrent.IsPrivate.HasValue);
+                        if (!torrent.IsPrivate.HasValue) torrent.IsPrivate = (await client.GetTorrentPropertiesAsync(torrent.Hash, inspectionCt))?.IsPrivate;
+                        trackers = await client.GetTorrentTrackersAsync(torrent.Hash, inspectionCt);
+                    }
+                    // Persist completed observations before a slow or cancelled fetch ends the sweep.
+                    await observations.WaitAsync(inspectionCt);
                     try
                     {
-                        List<TorrentTracker> trackers;
-                        var fetchedAt = Clock.GetUtcNow();
-                        if (!fresh && _trackerInspections.TryGetValue(key, out var cached) && Clock.GetUtcNow() - cached.At < TimeSpan.FromMinutes(15))
+                        foreach (var operation in new[] { MaintenanceOperation.ErrorRecovery, MaintenanceOperation.UnregisteredCleanup, MaintenanceOperation.RepairPaused })
                         {
-                            _logger.LogTrace("Protection tracker cache hit for {Hash}: fetchedAt={FetchedAt:O}; expiresAt={ExpiresAt:O}", torrent.Hash, cached.At, cached.At.AddMinutes(15));
-                            trackers = cached.Trackers;
-                            torrent.IsPrivate ??= cached.IsPrivate;
-                            fetchedAt = cached.At;
+                            var failed = operation == MaintenanceOperation.ErrorRecovery ? MaintenanceRecovery.IsError(torrent, cfg.Maintenance)
+                                : operation == MaintenanceOperation.UnregisteredCleanup && trackers.Any(t => cfg.Maintenance.Unregistered.Messages.Any(m => t.Msg.Contains(m, StringComparison.OrdinalIgnoreCase)));
+                            if (failed || MaintenanceRecovery.Read(db, torrent, operation.ToString()).Stage != "new")
+                                MaintenanceRecovery.Observe(db, torrent, operation.ToString(), failed, cfg.Maintenance.ErrorRecovery, Clock.GetUtcNow());
                         }
-                        else
-                        {
-                            _logger.LogTrace("Protection tracker observation requested for {Hash}: freshRequired={FreshRequired}; privacyKnown={PrivacyKnown}", torrent.Hash, fresh, torrent.IsPrivate.HasValue);
-                            if (!torrent.IsPrivate.HasValue) torrent.IsPrivate = (await client.GetTorrentPropertiesAsync(torrent.Hash, inspectionCt))?.IsPrivate;
-                            trackers = await client.GetTorrentTrackersAsync(torrent.Hash, inspectionCt);
-                        }
-                        // Persist completed observations before a slow or cancelled fetch ends the sweep.
-                        await observations.WaitAsync(inspectionCt);
-                        try
-                        {
-                            foreach (var operation in new[] { MaintenanceOperation.ErrorRecovery, MaintenanceOperation.UnregisteredCleanup, MaintenanceOperation.RepairPaused })
-                            {
-                                var failed = operation == MaintenanceOperation.ErrorRecovery ? MaintenanceRecovery.IsError(torrent, cfg.Maintenance)
-                                    : operation == MaintenanceOperation.UnregisteredCleanup && trackers.Any(t => cfg.Maintenance.Unregistered.Messages.Any(m => t.Msg.Contains(m, StringComparison.OrdinalIgnoreCase)));
-                                if (failed || MaintenanceRecovery.Read(db, torrent, operation.ToString()).Stage != "new")
-                                    MaintenanceRecovery.Observe(db, torrent, operation.ToString(), failed, cfg.Maintenance.ErrorRecovery, Clock.GetUtcNow());
-                            }
 
-                            if (seeding != null)
-                            {
-                                if (_config.Revision != _config.LatestRevision) throw new OperationCanceledException("Configuration changed during inspection.");
+                        if (seeding != null)
+                        {
+                            if (_config.Revision != _config.LatestRevision) throw new OperationCanceledException("Configuration changed during inspection.");
 
-                                await seeding.ObserveTrackerIssueAsync(torrent, trackers, inspectionCt);
-                                var decisions = seeding.GetProtectionDecisions(torrent, trackers, observe: true);
-                                await seeding.ReconcileProtectionLimitsFromDecisionsAsync(torrent, decisions, inspectionCt);
-                                if (torrent.RatioLimit == -1 && torrent.SeedingTimeLimit == -1
-                                    && torrent.InactiveSeedingTimeLimit is null or -1)
-                                    foreach (var decision in decisions.Where(d => d.NativeStopLimitRisk))
-                                    {
-                                        decision.NativeStopLimitRisk = false;
-                                        decision.Reason = decision.Reason.Replace(" Native stop limits may interrupt seeding; changes require verification.", "");
-                                    }
-                                foreach (var decision in decisions)
+                            await seeding.ObserveTrackerIssueAsync(torrent, trackers, inspectionCt);
+                            var decisions = seeding.GetProtectionDecisions(torrent, trackers, observe: true);
+                            await seeding.ReconcileProtectionLimitsFromDecisionsAsync(torrent, decisions, inspectionCt);
+                            if (torrent.RatioLimit == -1 && torrent.SeedingTimeLimit == -1
+                                && torrent.InactiveSeedingTimeLimit is null or -1)
+                                foreach (var decision in decisions.Where(d => d.NativeStopLimitRisk))
                                 {
-                                    if (decision.State != "eligible" && (torrent.IsStopped || torrent.State.Contains("paused", StringComparison.OrdinalIgnoreCase)))
-                                    {
-                                        var owner = MaintenancePersistence.Read<PauseOwnership>(db, MaintenancePersistence.Key(id, torrent.Hash, "routine-pause"));
-                                        if (!owner.Owned || owner.AddedOn != torrent.AddedOn) decision.Reason += " User/unknown pause ownership blocks automatic resume.";
-                                    }
-                                    urgent |= NeedsFreshInspection(decision);
+                                    decision.NativeStopLimitRisk = false;
+                                    decision.Reason = decision.Reason.Replace(" Native stop limits may interrupt seeding; changes require verification.", "");
                                 }
-                                _protection[key] = decisions;
+                            foreach (var decision in decisions)
+                            {
+                                if (decision.State != "eligible" && (torrent.IsStopped || torrent.State.Contains("paused", StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    var owner = MaintenancePersistence.Read<PauseOwnership>(db, MaintenancePersistence.Key(id, torrent.Hash, "routine-pause"));
+                                    if (!owner.Owned || owner.AddedOn != torrent.AddedOn) decision.Reason += " User/unknown pause ownership blocks automatic resume.";
+                                }
+                                urgent |= NeedsFreshInspection(decision);
                             }
-                            _trackerInspections[key] = (fetchedAt, trackers, torrent.IsPrivate);
-                            completed++;
+                            _protection[key] = decisions;
                         }
-                        finally { observations.Release(); }
+                        _trackerInspections[key] = (fetchedAt, trackers, torrent.IsPrivate, torrent.AddedOn);
+                        completed++;
                     }
-                    finally { budget.Release(); }
+                    finally { observations.Release(); }
                 }));
                 _lastInspection[id] = Clock.GetUtcNow();
                 _inspectionFailures[id] = 0;
@@ -226,7 +221,7 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 _nextInspection[id] = Clock.GetUtcNow().AddMinutes(Math.Min(30, Math.Pow(2, failures - 1)));
                 _logger.LogWarning("Protection inspection delayed for {Instance}; existing protection retained. {Error}", id, _inspectionErrors[id]);
             }
-        }
+        }));
         _appliedRevision = _config.Revision;
     }
 

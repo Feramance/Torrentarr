@@ -356,11 +356,15 @@ public sealed class TorrentProcessorTests : IDisposable
             It.IsAny<CancellationToken>()), Times.Once());
     }
 
-    [Fact]
-    public async Task ImportTorrentAsync_TriggerSuccess_DoesNotMarkImportedUntilArrConfirms()
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task ImportTorrentAsync_DoesNotMarkImportedUntilArrConfirms(bool serviceAvailable, bool readded)
     {
         const string hash = "import-hash";
         const string instance = "qBit";
+        var previousSubmission = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds();
         var tempFile = Path.GetTempFileName();
         try
         {
@@ -369,7 +373,9 @@ public sealed class TorrentProcessorTests : IDisposable
                 Hash = hash,
                 Category = "radarr-hd",
                 QbitInstance = instance,
-                Imported = false
+                TorrentAddedOn = readded ? previousSubmission - 60 : null,
+                ImportSubmittedAt = readded ? null : previousSubmission,
+                Imported = readded
             });
             await _db.SaveChangesAsync();
 
@@ -387,6 +393,7 @@ public sealed class TorrentProcessorTests : IDisposable
                 Hash = hash,
                 Category = "radarr-hd",
                 ContentPath = tempFile,
+                AddedOn = previousSubmission,
                 QBitInstanceName = instance
             }));
 
@@ -403,14 +410,22 @@ public sealed class TorrentProcessorTests : IDisposable
                 config,
                 new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
                 new DatabaseRestartCoordinator(),
-                importMock.Object,
+                serviceAvailable ? importMock.Object : null,
                 pathTracker: pathTracker);
 
+            if (readded) pathTracker.MarkScanned(instance, tempFile, hash);
             await processor.ImportTorrentAsync(hash, instance);
+            _db.ChangeTracker.Clear();
 
             var entry = await _db.TorrentLibrary.SingleAsync(t => t.Hash == hash && t.QbitInstance == instance);
             entry.Imported.Should().BeFalse("Torrentarr should wait for Arr to confirm the scan succeeded");
-            pathTracker.IsHashAlreadyScanned("qBit", hash).Should().BeTrue("successful trigger should still suppress duplicate scans");
+            if (serviceAvailable)
+                entry.TorrentAddedOn.Should().Be(previousSubmission);
+            if (serviceAvailable)
+                entry.ImportSubmittedAt.Should().BeGreaterThan(previousSubmission);
+            else
+                entry.ImportSubmittedAt.Should().Be(previousSubmission);
+            pathTracker.IsHashAlreadyScanned("qBit", hash).Should().Be(serviceAvailable);
         }
         finally
         {

@@ -139,7 +139,7 @@ public static class TrackerProtectionEvaluator
         return result;
     }
 
-    public static void Observe(ProtectionObservation observation, TorrentInfo torrent, bool healthy, DateTimeOffset now)
+    public static void Observe(ProtectionObservation observation, TorrentInfo torrent, bool healthy, DateTimeOffset now, TimeSpan maximumGap)
     {
         if (!EvidenceMatches(observation, torrent))
         { observation.SeedSeconds = 0; observation.EligibleSince = null; observation.HealthySeeding = false; observation.LastObserved = null; }
@@ -149,9 +149,9 @@ public static class TrackerProtectionEvaluator
             && torrent.State.ToLowerInvariant() is "uploading" or "stalledup" or "forcedup" or "seeding";
         if (seeding && observation.HealthySeeding && observation.LastObserved is { } last)
         {
-            var elapsed = (now - last).TotalSeconds;
-            if (elapsed >= 0 && elapsed <= 330)
-                observation.SeedSeconds += Math.Max(0, Math.Min(elapsed, torrent.SeedingTime - observation.ClientSeedSeconds));
+            var elapsed = now - last;
+            if (elapsed >= TimeSpan.Zero && elapsed <= maximumGap)
+                observation.SeedSeconds += Math.Max(0, Math.Min(elapsed.TotalSeconds, torrent.SeedingTime - observation.ClientSeedSeconds));
         }
         if (double.IsFinite(torrent.Progress)) observation.MaximumDownloadPercent = Math.Max(observation.MaximumDownloadPercent, torrent.Progress * 100);
         observation.CompletionOn = torrent.CompletionOn;

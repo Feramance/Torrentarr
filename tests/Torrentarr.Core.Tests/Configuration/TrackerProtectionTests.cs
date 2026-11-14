@@ -90,16 +90,32 @@ public class TrackerProtectionTests
     public void ObservationsDoNotCreditRestartGapsAndResetOnCounterRollback()
     {
         var torrent = Torrent(); var state = new ProtectionObservation();
-        TrackerProtectionEvaluator.Observe(state, torrent, true, Now);
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now, TimeSpan.FromMinutes(5));
         torrent.SeedingTime += 300;
-        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddMinutes(5));
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddMinutes(5), TimeSpan.FromMinutes(5));
         state.SeedSeconds.Should().Be(300);
         torrent.SeedingTime += 3600;
-        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddMinutes(65));
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddMinutes(65), TimeSpan.FromMinutes(5));
         state.SeedSeconds.Should().Be(300);
         torrent.SeedingTime = 1;
-        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddMinutes(66));
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddMinutes(66), TimeSpan.FromMinutes(5));
         state.SeedSeconds.Should().Be(0);
+    }
+
+    [Fact]
+    public void SeedCreditUsesTheConfiguredObservationGap()
+    {
+        var torrent = Torrent();
+        var state = new ProtectionObservation();
+        var gap = TimeSpan.FromSeconds(60);
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now, gap);
+        torrent.SeedingTime += 61;
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddSeconds(61), gap);
+        state.SeedSeconds.Should().Be(0);
+
+        torrent.SeedingTime += 60;
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddSeconds(121), gap);
+        state.SeedSeconds.Should().Be(60);
     }
 
     [Fact]
@@ -133,7 +149,7 @@ public class TrackerProtectionTests
             CompletionOn = torrent.CompletionOn,
             ClientSeedSeconds = torrent.SeedingTime - 300
         };
-        TrackerProtectionEvaluator.Observe(state, torrent, true, Now);
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now, TimeSpan.FromMinutes(5));
         state.SeedSeconds.Should().Be(0);
     }
 
@@ -149,7 +165,7 @@ public class TrackerProtectionTests
         var torrent = Torrent();
         var state = Observation(200000);
         state.AddedOn = torrent.AddedOn - 1;
-        TrackerProtectionEvaluator.Observe(state, torrent, true, Now);
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now, TimeSpan.FromMinutes(5));
         state.SeedSeconds.Should().Be(0);
         state.AddedOn.Should().Be(torrent.AddedOn);
     }

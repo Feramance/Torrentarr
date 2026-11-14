@@ -18,8 +18,14 @@ internal sealed class TorrentClientConfigDocument
 /// </summary>
 public class ConfigurationLoader
 {
-    /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
-    public const string ExpectedConfigVersion = "6.20.5";
+    private const string ReleaseConfigVersion = "6.20.0";
+    private static readonly Version TrackerProtectionSchemaVersion = new(6, 20, 5);
+    private static readonly Version ExpectedSchemaVersion = Version.Parse(ReleaseConfigVersion) < TrackerProtectionSchemaVersion
+        ? TrackerProtectionSchemaVersion
+        : Version.Parse(ReleaseConfigVersion);
+
+    /// <summary>Expected config schema version, including migrations ahead of the last release.</summary>
+    public static string ExpectedConfigVersion { get; } = ExpectedSchemaVersion.ToString();
 
     /// <summary>
     /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.
@@ -121,10 +127,12 @@ public class ConfigurationLoader
         }
         foreach (var (key, value) in storageEnvironment) runtimeStorage[key] = value;
 
-        // Apply config migrations on the raw TOML table before parsing (qBitrr parity)
+        var newerSchema = ReadConfigVersion(tomlTable) > ExpectedSchemaVersion;
+
+        // Apply migrations in memory so a newer file can still be inspected without rewriting it.
         var scanMigrated = TorrentScanInterval.Migrate(tomlTable);
         var migrated = ApplyConfigMigrations(tomlTable) || scanMigrated;
-        var migrationContent = migrated && persistMigrations ? TomlSerializer.Serialize(tomlTable) : null;
+        var migrationContent = migrated && persistMigrations && !newerSchema ? TomlSerializer.Serialize(tomlTable) : null;
 
         var failedEnvironmentDownloadPathClient = storageEnvironment.Count > 0
             ? StorageConfigMigration.ApplyEnvironment(tomlTable, runtimeStorage, storageEnvironment.Keys)
@@ -192,6 +200,16 @@ public class ConfigurationLoader
         if (TrackerRules.Validate(config) is { } trackerError)
             throw new InvalidDataException(trackerError);
 
+        // Apply TORRENTARR_* environment variable overrides (qBitrr parity: QBITRR_* env vars)
+        ApplyEnvironmentOverrides(config);
+        foreach (var (id, client) in config.GetAllTorrentClients())
+        {
+            if (id == failedEnvironmentDownloadPathClient)
+                client.Migration.EnvironmentDownloadPathFailed = true;
+            var error = TorrentScanInterval.Validate(client.TorrentScanIntervalSeconds) ?? StorageConfigMigration.Validate(client) ?? MaintenanceConfigValidation.Validate(client.Maintenance) ?? StorageConfigurationValidation.Validate(client);
+            if (error != null) throw new InvalidDataException($"Torrent client '{id}': {error}");
+        }
+
         if (migrationContent != null)
         {
             try
@@ -209,16 +227,6 @@ public class ConfigurationLoader
             {
                 // Migration save failed — continue with in-memory migrated table
             }
-        }
-
-        // Apply TORRENTARR_* environment variable overrides (qBitrr parity: QBITRR_* env vars)
-        ApplyEnvironmentOverrides(config);
-        foreach (var (id, client) in config.GetAllTorrentClients())
-        {
-            if (id == failedEnvironmentDownloadPathClient)
-                client.Migration.EnvironmentDownloadPathFailed = true;
-            var error = TorrentScanInterval.Validate(client.TorrentScanIntervalSeconds) ?? StorageConfigMigration.Validate(client) ?? MaintenanceConfigValidation.Validate(client.Maintenance) ?? StorageConfigurationValidation.Validate(client);
-            if (error != null) throw new InvalidDataException($"Torrent client '{id}': {error}");
         }
 
         return config;
@@ -375,19 +383,8 @@ public class ConfigurationLoader
     {
         var changed = false;
 
-        // Determine current config version
-        var currentVersion = new Version(0, 0, 1);
-        if (root.TryGetValue("Settings", out var settingsObj) && settingsObj is TomlTable settings)
-        {
-            if (settings.TryGetValue("ConfigVersion", out var verObj))
-            {
-                var verStr = verObj?.ToString() ?? "0.0.1";
-                if (!Version.TryParse(verStr, out currentVersion!))
-                    currentVersion = new Version(0, 0, 1);
-            }
-        }
-
-        var expected = Version.Parse(ExpectedConfigVersion);
+        var currentVersion = ReadConfigVersion(root);
+        var expected = ExpectedSchemaVersion;
         var needsMigration = currentVersion < expected;
 
         // Migration 1: Move WebUI Host/Port/Token from [Settings] to [WebUI]
@@ -431,7 +428,7 @@ public class ConfigurationLoader
             changed = true;
 
         if (MigrateTrackerScopes(root)) changed = true;
-        if (currentVersion < new Version(6, 20, 5) && MigrateTrackerProtection(root)) changed = true;
+        if (currentVersion < TrackerProtectionSchemaVersion && MigrateTrackerProtection(root)) changed = true;
 
         // Bump ConfigVersion to this build's expected when the file is older or equal; never downgrade a newer
         // ConfigVersion (forward-compatible / prerelease configs) just because ValidateAndFill added keys.
@@ -742,19 +739,34 @@ public class ConfigurationLoader
     {
         var changed = false;
 
-        // Migrate in all [qBit*] CategorySeeding and Trackers sections
-        foreach (var kvp in root)
+        void MigrateClient(TomlTable client)
         {
-            if (!(kvp.Key.Equals("qBit", StringComparison.OrdinalIgnoreCase) ||
-                  kvp.Key.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase)))
-                continue;
-            if (kvp.Value is not TomlTable qbitTable) continue;
-            if (qbitTable.TryGetValue("CategorySeeding", out var csObj) && csObj is TomlTable catSeeding)
-                if (MigrateHnrModeField(catSeeding)) changed = true;
-            if (qbitTable.TryGetValue("Trackers", out var qtrObj))
-                foreach (var trackerTable in GetTrackerTables(qtrObj))
-                    if (MigrateHnrModeField(trackerTable))
-                        changed = true;
+            if (client.TryGetValue("CategorySeeding", out var seeding) && seeding is TomlTable category)
+            {
+                changed |= MigrateHnrModeField(category);
+                if (category.TryGetValue("Categories", out var overrides))
+                    foreach (var item in GetTrackerTables(overrides))
+                        changed |= MigrateHnrModeField(item);
+            }
+            if (client.TryGetValue("Trackers", out var clientTrackers))
+                foreach (var tracker in GetTrackerTables(clientTrackers))
+                    changed |= MigrateHnrModeField(tracker);
+        }
+
+        if (root.TryGetValue("Trackers", out var scopedTrackers))
+            foreach (var tracker in ReadTrackerRows(scopedTrackers))
+                changed |= MigrateHnrModeField(tracker);
+
+        foreach (var (name, value) in root)
+        {
+            if (value is not TomlTable section) continue;
+            if (name == "TorrentClient")
+            {
+                foreach (var client in section.Values.OfType<TomlTable>())
+                    MigrateClient(client);
+            }
+            else if (name.Equals("qBit", StringComparison.OrdinalIgnoreCase) || name.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase))
+                MigrateClient(section);
         }
 
         // Migrate in all Arr Tracker sections
@@ -2080,15 +2092,15 @@ public class ConfigurationLoader
             return (config, true);
         }
 
-        var config2 = Load();
-        var (isValid, message, currentVersion) = ValidateConfigVersion(config2);
-        if (message == "migration_needed")
-        {
-            config2.Settings.ConfigVersion = ExpectedConfigVersion;
-            SaveConfig(config2, _configPath);
-        }
-        return (config2, false);
+        return (Load(), false);
     }
+
+    private static Version ReadConfigVersion(TomlTable root) =>
+        ParseConfigVersion(root.TryGetValue("Settings", out var value) && value is TomlTable settings
+            && settings.TryGetValue("ConfigVersion", out var version) ? version?.ToString() : null);
+
+    internal static Version ParseConfigVersion(string? value) =>
+        Version.TryParse(value?.Split('-', '+')[0], out var version) ? version : new Version(0, 0, 1);
 
     /// <summary>
     /// Validates config version against expected. Used for GET /web/config warning and optional migration.
@@ -2097,14 +2109,8 @@ public class ConfigurationLoader
     public static (bool IsValid, string? Message, string CurrentVersion) ValidateConfigVersion(TorrentarrConfig config)
     {
         var currentStr = config.Settings?.ConfigVersion ?? "0.0.1";
-        if (!Version.TryParse(currentStr, out var current))
-            current = new Version(0, 0, 1);
-        if (!Version.TryParse(ExpectedConfigVersion, out var expected))
-        {
-            var numericExpected = ExpectedConfigVersion.Split('-', '+')[0];
-            if (!Version.TryParse(numericExpected, out expected))
-                expected = new Version(0, 0, 1);
-        }
+        var current = ParseConfigVersion(currentStr);
+        var expected = ExpectedSchemaVersion;
 
         if (current == expected)
             return (true, null, currentStr);
@@ -2182,6 +2188,12 @@ public class ConfigurationLoader
     {
         var filePath = Path.GetFullPath(path ?? _configPath);
         using var mutation = ConfigMutationGuard.EnterPublication(filePath);
+        if (File.Exists(filePath))
+        {
+            var existing = TomlSerializer.Deserialize<TomlTable>(File.ReadAllText(filePath))!;
+            if (ReadConfigVersion(existing) > ExpectedSchemaVersion)
+                throw new InvalidOperationException($"This config was created by a newer Torrentarr build. Upgrade Torrentarr before saving it (supported schema {ExpectedConfigVersion}).");
+        }
         ConfigMutationGuard.WriteAtomic(filePath, SerializeConfig(config));
     }
 
@@ -2202,21 +2214,21 @@ public class ConfigurationLoader
 
         // Settings section
         sb.AppendLine("[Settings]");
-        sb.AppendLine($"ConfigVersion = \"{config.Settings.ConfigVersion}\"");
-        sb.AppendLine($"ConsoleLevel = \"{config.Settings.ConsoleLevel}\"");
+        sb.AppendLine($"ConfigVersion = \"{EscapeTomlString(config.Settings.ConfigVersion)}\"");
+        sb.AppendLine($"ConsoleLevel = \"{EscapeTomlString(config.Settings.ConsoleLevel)}\"");
         sb.AppendLine($"Logging = {config.Settings.Logging.ToString().ToLower()}");
         sb.AppendLine($"NoInternetSleepTimer = {config.Settings.NoInternetSleepTimer}");
         sb.AppendLine($"LoopSleepTimer = {config.Settings.LoopSleepTimer}");
         sb.AppendLine($"SearchLoopDelay = {config.Settings.SearchLoopDelay}");
-        sb.AppendLine($"FailedCategory = \"{config.Settings.FailedCategory}\"");
-        sb.AppendLine($"RecheckCategory = \"{config.Settings.RecheckCategory}\"");
+        sb.AppendLine($"FailedCategory = \"{EscapeTomlString(config.Settings.FailedCategory)}\"");
+        sb.AppendLine($"RecheckCategory = \"{EscapeTomlString(config.Settings.RecheckCategory)}\"");
         sb.AppendLine($"Tagless = {config.Settings.Tagless.ToString().ToLower()}");
         sb.AppendLine($"IgnoreTorrentsYoungerThan = {config.Settings.IgnoreTorrentsYoungerThan}");
-        sb.AppendLine($"PingURLS = [{string.Join(", ", config.Settings.PingURLS.Select(u => $"\"{u}\""))}]");
+        sb.AppendLine($"PingURLS = [{string.Join(", ", config.Settings.PingURLS.Select(u => $"\"{EscapeTomlString(u)}\""))}]");
         sb.AppendLine($"FFprobeAutoUpdate = {config.Settings.FFprobeAutoUpdate.ToString().ToLower()}");
         sb.AppendLine($"AutoUpdateEnabled = {config.Settings.AutoUpdateEnabled.ToString().ToLower()}");
-        sb.AppendLine($"AutoUpdateCron = \"{config.Settings.AutoUpdateCron}\"");
-        sb.AppendLine($"AutoUpdateChannel = \"{config.Settings.AutoUpdateChannel}\"");
+        sb.AppendLine($"AutoUpdateCron = \"{EscapeTomlString(config.Settings.AutoUpdateCron)}\"");
+        sb.AppendLine($"AutoUpdateChannel = \"{EscapeTomlString(config.Settings.AutoUpdateChannel)}\"");
         sb.AppendLine($"AutoRestartProcesses = {config.Settings.AutoRestartProcesses.ToString().ToLower()}");
         sb.AppendLine($"MaxProcessRestarts = {config.Settings.MaxProcessRestarts}");
         sb.AppendLine($"ProcessRestartWindow = {config.Settings.ProcessRestartWindow}");
@@ -2244,9 +2256,9 @@ public class ConfigurationLoader
 
         // WebUI section
         sb.AppendLine("[WebUI]");
-        sb.AppendLine($"Host = \"{config.WebUI.Host}\"");
+        sb.AppendLine($"Host = \"{EscapeTomlString(config.WebUI.Host)}\"");
         sb.AppendLine($"Port = {config.WebUI.Port}");
-        sb.AppendLine($"Token = \"{config.WebUI.Token}\"");
+        sb.AppendLine($"Token = \"{EscapeTomlString(config.WebUI.Token)}\"");
         sb.AppendLine($"BehindHttpsProxy = {config.WebUI.BehindHttpsProxy.ToString().ToLower()}");
         sb.AppendLine($"UrlBase = \"{EscapeTomlString(config.WebUI.UrlBase)}\"");
         sb.AppendLine($"AuthDisabled = {config.WebUI.AuthDisabled.ToString().ToLower()}");
@@ -2259,8 +2271,8 @@ public class ConfigurationLoader
         sb.AppendLine($"Username = \"{EscapeTomlString(config.WebUI.Username)}\"");
         sb.AppendLine($"PasswordHash = \"{EscapeTomlString(config.WebUI.PasswordHash)}\"");
         sb.AppendLine($"LiveArr = {config.WebUI.LiveArr.ToString().ToLower()}");
-        sb.AppendLine($"Theme = \"{config.WebUI.Theme}\"");
-        sb.AppendLine($"ViewDensity = \"{config.WebUI.ViewDensity}\"");
+        sb.AppendLine($"Theme = \"{EscapeTomlString(config.WebUI.Theme)}\"");
+        sb.AppendLine($"ViewDensity = \"{EscapeTomlString(config.WebUI.ViewDensity)}\"");
         sb.AppendLine($"CorsAllowedOrigins = [{string.Join(", ", config.WebUI.CorsAllowedOrigins.Select(origin => $"\"{EscapeTomlString(origin)}\""))}]");
         if (config.WebUI.OIDC != null)
         {
@@ -2286,31 +2298,31 @@ public class ConfigurationLoader
         {
             sb.AppendLine($"[{name}]");
             sb.AppendLine($"Disabled = {qbit.Disabled.ToString().ToLower()}");
-            sb.AppendLine($"Host = \"{qbit.Host}\"");
+            sb.AppendLine($"Host = \"{EscapeTomlString(qbit.Host)}\"");
             sb.AppendLine($"Port = {qbit.Port}");
-            sb.AppendLine($"UserName = \"{qbit.UserName}\"");
-            sb.AppendLine($"Password = \"{qbit.Password}\"");
+            sb.AppendLine($"UserName = \"{EscapeTomlString(qbit.UserName)}\"");
+            sb.AppendLine($"Password = \"{EscapeTomlString(qbit.Password)}\"");
             sb.AppendLine($"SkipTLSVerify = {qbit.SkipTLSVerify.ToString().ToLower()}");
             sb.AppendLine($"TorrentScanIntervalSeconds = {qbit.TorrentScanIntervalSeconds}");
             if (!string.IsNullOrEmpty(qbit.DownloadPath))
                 sb.AppendLine($"DownloadPath = \"{EscapeTomlString(qbit.DownloadPath)}\"");
             sb.AppendLine("FreeSpace = [" + string.Join(", ", qbit.FreeSpace.Select(m =>
                 $"{{ Path = \"{EscapeTomlString(m.Path)}\", Enabled = {m.Enabled.ToString().ToLowerInvariant()}, Limit = \"{EscapeTomlString(m.Limit)}\" }}")) + "]");
-            sb.AppendLine($"ManagedCategories = [{string.Join(", ", qbit.ManagedCategories.Select(c => $"\"{c}\""))}]");
+            sb.AppendLine($"ManagedCategories = [{string.Join(", ", qbit.ManagedCategories.Select(c => $"\"{EscapeTomlString(c)}\""))}]");
             sb.AppendLine($"MatchSubcategories = {qbit.MatchSubcategories.ToString().ToLower()}");
             sb.AppendLine();
 
             sb.AppendLine($"[{name}.CategorySeeding]");
             sb.AppendLine($"DownloadRateLimitPerTorrent = {qbit.CategorySeeding.DownloadRateLimitPerTorrent}");
             sb.AppendLine($"UploadRateLimitPerTorrent = {qbit.CategorySeeding.UploadRateLimitPerTorrent}");
-            sb.AppendLine($"MaxUploadRatio = {qbit.CategorySeeding.MaxUploadRatio}");
+            sb.AppendLine(FormattableString.Invariant($"MaxUploadRatio = {qbit.CategorySeeding.MaxUploadRatio}"));
             sb.AppendLine($"MaxSeedingTime = {qbit.CategorySeeding.MaxSeedingTime}");
             if (qbit.CategorySeeding.RemoveTorrent.HasValue) sb.AppendLine($"RemoveTorrent = {qbit.CategorySeeding.RemoveTorrent}");
             sb.AppendLine($"HitAndRunMode = \"{qbit.CategorySeeding.HitAndRunMode}\"");
-            sb.AppendLine($"MinSeedRatio = {qbit.CategorySeeding.MinSeedRatio}");
+            sb.AppendLine(FormattableString.Invariant($"MinSeedRatio = {qbit.CategorySeeding.MinSeedRatio}"));
             sb.AppendLine($"MinSeedingTimeDays = {qbit.CategorySeeding.MinSeedingTimeDays}");
             sb.AppendLine($"HitAndRunMinimumDownloadPercent = {qbit.CategorySeeding.HitAndRunMinimumDownloadPercent}");
-            sb.AppendLine($"HitAndRunPartialSeedRatio = {qbit.CategorySeeding.HitAndRunPartialSeedRatio}");
+            sb.AppendLine(FormattableString.Invariant($"HitAndRunPartialSeedRatio = {qbit.CategorySeeding.HitAndRunPartialSeedRatio}"));
             sb.AppendLine($"TrackerUpdateBuffer = {qbit.CategorySeeding.TrackerUpdateBuffer}");
             sb.AppendLine($"StalledDelay = {qbit.CategorySeeding.StalledDelay}");
             sb.AppendLine($"IgnoreTorrentsYoungerThan = {qbit.CategorySeeding.IgnoreTorrentsYoungerThan}");
@@ -2351,15 +2363,15 @@ public class ConfigurationLoader
             var instance = kvp.Value;
             sb.AppendLine($"[{kvp.Key}]");
             sb.AppendLine($"Managed = {instance.Managed.ToString().ToLower()}");
-            sb.AppendLine($"URI = \"{instance.URI}\"");
-            sb.AppendLine($"APIKey = \"{instance.APIKey}\"");
+            sb.AppendLine($"URI = \"{EscapeTomlString(instance.URI)}\"");
+            sb.AppendLine($"APIKey = \"{EscapeTomlString(instance.APIKey)}\"");
             sb.AppendLine($"SkipTLSVerify = {instance.SkipTLSVerify.ToString().ToLower()}");
-            sb.AppendLine($"Category = \"{instance.Category}\"");
+            sb.AppendLine($"Category = \"{EscapeTomlString(instance.Category)}\"");
             if (instance.MatchSubcategories.HasValue)
                 sb.AppendLine($"MatchSubcategories = {instance.MatchSubcategories.Value.ToString().ToLower()}");
             sb.AppendLine($"ReSearch = {instance.ReSearch.ToString().ToLower()}");
             if (!string.IsNullOrWhiteSpace(instance.ImportMode))
-                sb.AppendLine($"importMode = \"{instance.ImportMode}\"");
+                sb.AppendLine($"importMode = \"{EscapeTomlString(instance.ImportMode)}\"");
             sb.AppendLine($"RssSyncTimer = {instance.RssSyncTimer}");
             sb.AppendLine($"RefreshDownloadsTimer = {instance.RefreshDownloadsTimer}");
             sb.AppendLine($"ArrErrorCodesToBlocklist = [{string.Join(", ", instance.ArrErrorCodesToBlocklist.Select(e => $"\"{EscapeTomlString(e)}\""))}]");
@@ -2368,15 +2380,15 @@ public class ConfigurationLoader
             // Torrent section
             sb.AppendLine($"[{kvp.Key}.Torrent]");
             sb.AppendLine($"CaseSensitiveMatches = {instance.Torrent.CaseSensitiveMatches.ToString().ToLower()}");
-            sb.AppendLine($"FolderExclusionRegex = [{string.Join(", ", instance.Torrent.FolderExclusionRegex.Select(r => $"'{r}'"))}]");
-            sb.AppendLine($"FileNameExclusionRegex = [{string.Join(", ", instance.Torrent.FileNameExclusionRegex.Select(r => $"'{r}'"))}]");
+            sb.AppendLine($"FolderExclusionRegex = [{string.Join(", ", instance.Torrent.FolderExclusionRegex.Select(QuoteTomlPattern))}]");
+            sb.AppendLine($"FileNameExclusionRegex = [{string.Join(", ", instance.Torrent.FileNameExclusionRegex.Select(QuoteTomlPattern))}]");
             // Use TOML literal strings (single-quoted) for file extensions so backslashes
             // in patterns like '\.r[0-9]{2}' are preserved verbatim without escape processing.
-            sb.AppendLine($"FileExtensionAllowlist = [{string.Join(", ", instance.Torrent.FileExtensionAllowlist.Select(e => $"'{e}'"))}]");
+            sb.AppendLine($"FileExtensionAllowlist = [{string.Join(", ", instance.Torrent.FileExtensionAllowlist.Select(QuoteTomlPattern))}]");
             sb.AppendLine($"AutoDelete = {instance.Torrent.AutoDelete.ToString().ToLower()}");
             sb.AppendLine($"IgnoreTorrentsYoungerThan = {instance.Torrent.IgnoreTorrentsYoungerThan}");
             sb.AppendLine($"MaximumETA = {instance.Torrent.MaximumETA}");
-            sb.AppendLine($"MaximumDeletablePercentage = {instance.Torrent.MaximumDeletablePercentage}");
+            sb.AppendLine(FormattableString.Invariant($"MaximumDeletablePercentage = {instance.Torrent.MaximumDeletablePercentage}"));
             sb.AppendLine($"DoNotRemoveSlow = {instance.Torrent.DoNotRemoveSlow.ToString().ToLower()}");
             sb.AppendLine($"StalledDelay = {instance.Torrent.StalledDelay}");
             sb.AppendLine($"ReSearchStalled = {instance.Torrent.ReSearchStalled.ToString().ToLower()}");
@@ -2389,7 +2401,7 @@ public class ConfigurationLoader
             sb.AppendLine($"[{kvp.Key}.Torrent.SeedingMode]");
             sb.AppendLine($"DownloadRateLimitPerTorrent = {sm.DownloadRateLimitPerTorrent}");
             sb.AppendLine($"UploadRateLimitPerTorrent = {sm.UploadRateLimitPerTorrent}");
-            sb.AppendLine($"MaxUploadRatio = {sm.MaxUploadRatio}");
+            sb.AppendLine(FormattableString.Invariant($"MaxUploadRatio = {sm.MaxUploadRatio}"));
             sb.AppendLine($"MaxSeedingTime = {sm.MaxSeedingTime}");
             if (sm.RemoveTorrent.HasValue) sb.AppendLine($"RemoveTorrent = {sm.RemoveTorrent}");
             if (removeDead.HasValue) sb.AppendLine($"RemoveDeadTrackers = {removeDead.Value.ToString().ToLowerInvariant()}");
@@ -2498,8 +2510,12 @@ public class ConfigurationLoader
         sb.AppendLine();
     }
 
+    private static string QuoteTomlPattern(string value) =>
+        value.Contains('\'') || value.Any(char.IsControl) ? $"\"{EscapeTomlString(value)}\"" : $"'{value}'";
+
     private static string EscapeTomlString(string value)
     {
-        return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        var quoted = Newtonsoft.Json.JsonConvert.ToString(value);
+        return quoted[1..^1].Replace("\u007f", "\\u007f", StringComparison.Ordinal);
     }
 }

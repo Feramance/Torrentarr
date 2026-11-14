@@ -26,6 +26,19 @@ foreach (var field in ConfigSchemaBuilder.Sections["TrackerProtection"])
     docs.AppendLine($"| `Trackers[].Protection.{field.key}` | {field.kind} | `{JsonSerializer.Serialize(field.@default)}` | {field.description?.Replace("|", "\\|")} |");
 var docsOutput = docs.ToString().Replace("\r\n", "\n");
 
+var versionLine = $"ConfigVersion = \"{ConfigurationLoader.ExpectedConfigVersion}\"";
+var versionExamples = new[] { "config.example.toml", "docs/configuration/config-file.md" }
+    .Select(file =>
+    {
+        var path = Path.Combine(root, file);
+        var content = File.ReadAllText(path);
+        const string pattern = "(?m)^ConfigVersion = [^\\r\\n]+";
+        if (!System.Text.RegularExpressions.Regex.IsMatch(content, pattern))
+            throw new InvalidDataException($"Missing ConfigVersion example in {file}.");
+        return (Path: path, Content: content,
+            Updated: System.Text.RegularExpressions.Regex.Replace(content, pattern, versionLine));
+    }).ToArray();
+
 if (args.Contains("--check", StringComparer.Ordinal))
 {
     if (!File.Exists(outputPath) || File.ReadAllText(outputPath).Replace("\r\n", "\n") != output)
@@ -38,6 +51,13 @@ if (args.Contains("--check", StringComparer.Ordinal))
     {
         Console.Error.WriteLine("Generated maintenance control documentation is stale."); return 1;
     }
+    foreach (var example in versionExamples)
+    {
+        if (example.Content == example.Updated) continue;
+        Console.Error.WriteLine($"Config version example is stale: {example.Path}");
+        return 1;
+    }
+
     Console.WriteLine("Generated config schema and maintenance documentation are current.");
     return 0;
 }
@@ -45,5 +65,7 @@ if (args.Contains("--check", StringComparer.Ordinal))
 Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
 File.WriteAllText(outputPath, output);
 File.WriteAllText(docsPath, docsOutput);
+foreach (var example in versionExamples)
+    if (example.Content != example.Updated) File.WriteAllText(example.Path, example.Updated);
 Console.WriteLine($"Generated {outputPath}");
 return 0;

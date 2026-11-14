@@ -35,12 +35,17 @@ public class MediaValidationService : IMediaValidationService
     public MediaValidationService(
         ILogger<MediaValidationService> logger,
         TorrentarrConfig config, IOperationalIssueReporter? issues = null)
+        : this(logger, config, GetAppDataPath(), issues)
+    {
+    }
+
+    internal MediaValidationService(ILogger<MediaValidationService> logger, TorrentarrConfig config,
+        string appDataPath, IOperationalIssueReporter? issues = null)
     {
         _logger = logger;
         _config = config;
         _issues = issues;
 
-        var appDataPath = GetAppDataPath();
         _ffprobePath = Path.Combine(appDataPath, RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "ffprobe.exe" : "ffprobe");
         _ffprobeVersionPath = Path.Combine(appDataPath, "ffprobe_info.json");
     }

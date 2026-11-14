@@ -164,13 +164,32 @@ public sealed class ArrActivityTests : IDisposable
     public async Task Collector_PrunesExpiredHistoryAndMigrationIsRepeatable()
     {
         await using var db = Db();
-        db.Add(new ArrActivitySample { Instance = "old", Type = "sonarr", Minute = Now.AddDays(-8).ToUnixTimeSeconds() / 60 });
-        var old = Operation(10); old.SubmittedAt = Now.AddDays(-8).ToUnixTimeSeconds(); db.Add(old); await db.SaveChangesAsync();
-        ManualSqliteMigrations.Apply(db); ManualSqliteMigrations.Apply(db);
+        ManualSqliteMigrations.Apply(db);
+        var oldest = Now.AddDays(-7).ToUnixTimeSeconds();
+        db.AddRange(
+            new ArrActivitySample { Instance = "Sonarr-one", Type = "sonarr", Minute = oldest / 60 - 1 },
+            new ArrActivitySample { Instance = "Sonarr-one", Type = "sonarr", Minute = oldest / 60, QueueDepth = 5 });
+        var expired = Operation(10);
+        expired.SubmittedAt = oldest;
+        var retained = Operation(11);
+        retained.Outcome = "completed";
+        retained.ConfirmedAt = oldest;
+        var oldCompletion = Operation(12);
+        oldCompletion.Outcome = "completed";
+        oldCompletion.ConfirmedAt = oldest - 1;
+        db.AddRange(expired, retained, oldCompletion);
+        await db.SaveChangesAsync();
+        ManualSqliteMigrations.Apply(db);
         var collector = new ArrActivityCollector(_services.GetRequiredService<IServiceScopeFactory>(), _services, _config, NullLogger<ArrActivityCollector>.Instance);
-        await collector.CollectAsync(Now, new Dictionary<string, ProcessStatus>(), (_, _, _) => throw new IOException("must not poll expired operations"));
-        db.ChangeTracker.Clear(); (await db.ArrActivitySamples.CountAsync(s => s.Instance == "old")).Should().Be(0);
-        (await db.ArrActivityOperations.CountAsync()).Should().Be(0);
+        var now = Now.AddMinutes(23);
+        await collector.CollectAsync(now, new Dictionary<string, ProcessStatus>(), (_, _, _) => throw new IOException("must not poll expired operations"));
+        db.ChangeTracker.Clear();
+        (await db.ArrActivitySamples.AnyAsync(s => s.Minute < oldest / 60)).Should().BeFalse();
+        (await db.ArrActivityOperations.SingleAsync()).CommandId.Should().Be(11);
+        var history = await ArrActivityApi.QueryAsync(db, _config, "7d", "Sonarr-one", now);
+        var first = history.Series.Single().Points[0];
+        first.QueueDepth.Should().Be(5);
+        first.SearchesCompleted.Should().Be(1);
     }
 
     [Fact]

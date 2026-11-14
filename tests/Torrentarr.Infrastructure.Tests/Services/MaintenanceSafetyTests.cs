@@ -1784,7 +1784,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
         using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<TorrentAutomationService>.Instance);
         await Inspect(automation, default);
-        var cache = AutomationField<System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset At, List<TorrentTracker> Trackers, bool? IsPrivate)>>(automation, "_trackerInspections");
+        var cache = AutomationField<System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset At, List<TorrentTracker> Trackers, bool? IsPrivate, long AddedOn)>>(automation, "_trackerInspections");
         var key = "one|" + torrent.Hash;
         cache.Should().ContainKey(key);
 
@@ -1825,6 +1825,28 @@ public sealed class MaintenanceSafetyTests : IDisposable
     }
 
     [Fact]
+    public async Task TrackerInspectionStartsHealthyTorrentWhileTwoRequestsAreBlocked()
+    {
+        var first = AddTorrent("slow-one", "slow-one.mkv"); first.IsPrivate = true;
+        var second = AddTorrent("slow-two", "slow-two.mkv"); second.IsPrivate = true;
+        var healthy = AddTorrent("healthy", "healthy.mkv"); healthy.IsPrivate = true;
+        foreach (var slow in new[] { first, second })
+            _client.Setup(c => c.GetTorrentTrackersAsync(slow.Hash, It.IsAny<CancellationToken>()))
+                .Returns(async (string _, CancellationToken ct) =>
+                {
+                    await Task.Delay(Timeout.Infinite, ct);
+                    return new List<TorrentTracker>();
+                });
+
+        using var automation = new TorrentAutomationService(_config, _registry.Object,
+            _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance)
+        { InspectionBudget = TimeSpan.FromSeconds(1) };
+
+        await Inspect(automation, default);
+        _client.Verify(c => c.GetTorrentTrackersAsync(healthy.Hash, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task TrackerIssues_ForRemovedTorrentsClearAfterACompleteClientInventory()
     {
         var torrent = AddTorrent();
@@ -1850,7 +1872,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
     }
 
     [Fact]
-    public async Task TrackerCache_ReusesOriginalTimestampAndPrivacyThenExpires()
+    public async Task TrackerCache_ExpiresAndRefreshesAfterReaddition()
     {
         var torrent = AddTorrent(); torrent.IsPrivate = null; torrent.Ratio = 0;
         torrent.RatioLimit = -1; torrent.SeedingTimeLimit = -1;
@@ -1859,7 +1881,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>())).ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
         using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
         await Inspect(automation, default);
-        var cache = AutomationField<System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset At, List<TorrentTracker> Trackers, bool? IsPrivate)>>(automation, "_trackerInspections");
+        var cache = AutomationField<System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset At, List<TorrentTracker> Trackers, bool? IsPrivate, long AddedOn)>>(automation, "_trackerInspections");
         var key = "one|" + torrent.Hash;
         var original = cache[key] with { At = DateTimeOffset.UtcNow.AddMinutes(-10) };
         cache[key] = original;
@@ -1872,9 +1894,17 @@ public sealed class MaintenanceSafetyTests : IDisposable
         cache[key].At.Should().Be(original.At);
         cache[key].IsPrivate.Should().BeTrue();
         _client.Verify(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()), Times.Once);
-        cache[key] = original with { At = DateTimeOffset.UtcNow.AddMinutes(-16) };
+        torrent.AddedOn++;
+        torrent.IsPrivate = null;
+        _client.Setup(c => c.GetTorrentPropertiesAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TorrentPropertiesRecord { IsPrivate = false });
         AllowInspection(); await Inspect(automation, default);
+        cache[key].AddedOn.Should().Be(torrent.AddedOn);
+        cache[key].IsPrivate.Should().BeFalse();
         _client.Verify(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()), Times.Exactly(2));
+        cache[key] = cache[key] with { At = DateTimeOffset.UtcNow.AddMinutes(-16) };
+        AllowInspection(); await Inspect(automation, default);
+        _client.Verify(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()), Times.Exactly(3));
     }
 
     [Fact]
