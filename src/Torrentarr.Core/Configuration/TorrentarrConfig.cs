@@ -280,7 +280,7 @@ public class CategorySeedingConfig
     public int UploadRateLimitPerTorrent { get; set; } = -1;
     public double MaxUploadRatio { get; set; } = -1;
     public int MaxSeedingTime { get; set; } = -1;
-    public int RemoveTorrent { get; set; } = -1;
+    public int? RemoveTorrent { get; set; }
     public string HitAndRunMode { get; set; } = "disabled";
     public double MinSeedRatio { get; set; } = 1.0;
     public int MinSeedingTimeDays { get; set; }
@@ -412,8 +412,8 @@ public class TorrentConfig
     public bool DoNotRemoveSlow { get; set; } = true;
     public int StalledDelay { get; set; } = 15;
     public bool ReSearchStalled { get; set; }
-    public bool RemoveDeadTrackers { get; set; }
-    public List<string> RemoveTrackerWithMessage { get; set; } = new();
+    public bool? RemoveDeadTrackers { get; set; }
+    public List<string>? RemoveTrackerWithMessage { get; set; }
     [TomlIgnore(Condition = Tomlyn.TomlIgnoreCondition.WhenWriting)]
     public List<TrackerConfig> Trackers { get; set; } = new();
     public SeedingModeConfig? SeedingMode { get; set; }
@@ -425,9 +425,10 @@ public class SeedingModeConfig
     public int UploadRateLimitPerTorrent { get; set; } = -1;
     public double MaxUploadRatio { get; set; } = -1;
     public int MaxSeedingTime { get; set; } = -1;
-    public int RemoveTorrent { get; set; } = -1;
-    public bool RemoveDeadTrackers { get; set; }
-    public List<string> RemoveTrackerWithMessage { get; set; } = new()
+    public int? RemoveTorrent { get; set; }
+    public bool? RemoveDeadTrackers { get; set; }
+    public List<string>? RemoveTrackerWithMessage { get; set; }
+    public static IReadOnlyList<string> DefaultTrackerMessages { get; } = new List<string>
     {
         "skipping tracker announce (unreachable)",
         "No such host is known",

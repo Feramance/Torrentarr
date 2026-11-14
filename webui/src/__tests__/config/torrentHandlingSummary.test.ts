@@ -40,3 +40,15 @@ it("describes legacy tracker-message deletion as disabled", () => {
   expect(summary).toContain("Tracker messages cannot directly delete torrents");
   expect(summary).not.toContain("can trigger removal");
 });
+
+it("describes observation confirmation of legacy OR clearance", () => {
+  const summary = getTrackerSummary({
+    HitAndRunMode: "or",
+    MinSeedRatio: 1,
+    MinSeedingTimeDays: 8,
+    Protection: { RequireLegacyClearance: true, MinimumSeedHours: 192 },
+  });
+  expect(summary).toContain("ratio 1 or 8 days of seeding");
+  expect(summary).toContain("60 minutes of accounting grace");
+  expect(summary).not.toContain("mandatory completed seed hours");
+});

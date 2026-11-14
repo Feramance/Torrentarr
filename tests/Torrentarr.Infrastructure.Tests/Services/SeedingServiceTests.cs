@@ -98,13 +98,13 @@ public class SeedingServiceTests
     [InlineData(false, true)]
     [InlineData(true, false)]
     [InlineData(true, true)]
-    public async Task SuperSeeding_UsesFinalMatchingRuleAndSkipsUnchangedState(bool observed, bool desired)
+    public async Task SuperSeeding_UsesHighestPriorityRuleAndSkipsUnchangedState(bool observed, bool desired)
     {
         var config = new TorrentarrConfig();
         config.TorrentClients["client"] = new()
         {
             Trackers = [new() { Uri = "tracker.example", SuperSeedMode = !desired },
-            new() { Uri = "tracker.example", SuperSeedMode = desired }]
+            new() { Uri = "tracker.example", Priority = 1, SuperSeedMode = desired }]
         };
         using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var client = new Mock<ITorrentClient>();
@@ -152,7 +152,7 @@ public class SeedingServiceTests
     }
 
     [Fact]
-    public async Task CustomFormatRejection_DoesNotRequireOrdinarySeedingLimits()
+    public async Task CustomFormatRejection_RequiresOrdinarySeedingLimits()
     {
         var config = new TorrentarrConfig();
         config.TorrentClients["client"] = new() { CategorySeeding = new() { RemoveTorrent = 2, MaxSeedingTime = 100000 } };
@@ -168,7 +168,7 @@ public class SeedingServiceTests
             SeedingTimeLimit = -1
         };
         var service = CreateService(config, observed: torrent);
-        (await service.EvaluateRemovalAsync(torrent, TorrentRemovalIntent.RejectedByCustomFormat)).Allowed.Should().BeTrue();
+        (await service.EvaluateRemovalAsync(torrent, TorrentRemovalIntent.RejectedByCustomFormat)).Blockers.Should().Contain(b => b.Code == "seeding.limit");
         (await service.EvaluateRemovalAsync(torrent, TorrentRemovalIntent.SeedingLimit)).Blockers.Should().Contain(b => b.Code == "seeding.limit");
         config.TorrentClients["client"].CategorySeeding.HitAndRunMode = "and";
         config.TorrentClients["client"].CategorySeeding.MinSeedRatio = 2;
@@ -187,7 +187,7 @@ public class SeedingServiceTests
     [InlineData("and", 1, 1, 0.1, 90000, 0.5, 0, false)]
     [InlineData("and", 1, 1, 1.0, 100, 0.5, 0, true)]
     [InlineData("and", 1, 1, 0.0, 0, 0.05, 0, true)]
-    public void LegacyDiagnostics_UseClientTimeAndPreserveClearance(string mode, double minimumRatio,
+    public void HnrDiagnostics_UseClientTimeAndWaitForConfirmation(string mode, double minimumRatio,
         int minimumDays, double ratio, long seedSeconds, double progress, double remaining, bool eligible)
     {
         foreach (var trackerOverride in new[] { false, true })
@@ -208,7 +208,7 @@ public class SeedingServiceTests
             var torrent = new TorrentInfo
             {
                 ClientInstanceId = "client",
-                IsPrivate = true,
+                IsPrivate = trackerOverride,
                 Ratio = ratio,
                 SeedingTime = seedSeconds,
                 Progress = progress,
@@ -217,7 +217,8 @@ public class SeedingServiceTests
             };
             var decision = service.GetProtectionDecisions(torrent,
                 [new() { Url = "https://tracker.example/announce", Status = 2 }]).Should().ContainSingle().Subject;
-            decision.State.Should().Be(eligible ? "eligible" : "protected");
+            decision.State.Should().Be(progress < 0.1 ? "eligible" : "protected");
+            if (eligible && progress >= 0.1) decision.Reason.Should().Contain("Waiting for healthy confirmation");
             decision.ObservedSeedSeconds.Should().Be(seedSeconds);
             decision.RemainingSeedSeconds.Should().Be(remaining);
             decision.LocalEstimate.Should().BeFalse();
@@ -233,7 +234,7 @@ public class SeedingServiceTests
     public async Task RemovalDiagnostic_OnlyHealthyProtectionWaitsAreExpected(bool healthy, bool nativeRisk, string code)
     {
         var config = new TorrentarrConfig();
-        config.TorrentClients["client"] = new() { CategorySeeding = new() { HitAndRunMode = "and", MinSeedRatio = 1, MinSeedingTimeDays = 8 } };
+        config.TorrentClients["client"] = new() { CategorySeeding = new() { HitAndRunMode = "and", MinSeedRatio = 1, MinSeedingTimeDays = 8, RemoveTorrent = 1, MaxUploadRatio = 0.01 } };
         using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var client = new Mock<ITorrentClient>();
         client.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -246,7 +247,7 @@ public class SeedingServiceTests
             ClientInstanceId = "client",
             Hash = "hash",
             AddedOn = 1,
-            IsPrivate = true,
+            IsPrivate = false,
             Progress = 1,
             SeedingTime = 480000,
             Ratio = 0.048,
@@ -288,11 +289,11 @@ public class SeedingServiceTests
         var protection = service.GetProtectionDecisions(torrent, trackers).Should().ContainSingle().Subject;
         protection.LocalEstimate.Should().BeTrue();
         protection.ObservedSeedSeconds.Should().Be(0);
-        protection.RemainingSeedSeconds.Should().Be(48 * 3600);
+        protection.RemainingSeedSeconds.Should().Be(54 * 3600);
         protection.DeadlineRisk.Should().Be("unachievable");
         var decision = await service.EvaluateRemovalAsync(torrent, TorrentRemovalIntent.RejectedByAllowlist);
         decision.IsExpectedProtectionWait().Should().BeFalse();
-        decision.Blockers.Should().ContainSingle().Which.Code.Should().Be("hnr.protected.deadline-unachievable");
+        decision.Blockers.Should().Contain(b => b.Code == "hnr.protected.deadline-unachievable");
         decision.Reason.Should().Contain("Locally observed seed=0s").And.Contain("deadline risk=unachievable");
     }
 
@@ -370,7 +371,7 @@ public class SeedingServiceTests
     }
 
     [Fact]
-    public async Task StalledRemoval_RechecksStateAndAgeWithoutRatioRemovalPolicy()
+    public async Task StalledRemoval_RechecksStateAndAgeWithRemovalEnabled()
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var config = new TorrentarrConfig();
@@ -378,7 +379,7 @@ public class SeedingServiceTests
         {
             CategorySeeding = new CategorySeedingConfig
             {
-                RemoveTorrent = -1,
+                RemoveTorrent = 1,
                 StalledDelay = 5,
                 IgnoreTorrentsYoungerThan = 60
             }
@@ -396,7 +397,6 @@ public class SeedingServiceTests
             AddedOn = now - 7200,
             LastActivity = now - 3600
         };
-        (await service.CanDeleteTorrentAsync(torrent, "seeding")).Should().BeFalse();
         (await service.CanDeleteTorrentForIntentAsync(torrent, TorrentRemovalIntent.StalledDownload, "stalled")).Should().BeTrue();
         torrent.LastActivity = now - 10;
         (await service.CanDeleteTorrentForIntentAsync(torrent, TorrentRemovalIntent.StalledDownload, "stalled")).Should().BeFalse();
@@ -407,11 +407,11 @@ public class SeedingServiceTests
     }
 
     [Fact]
-    public async Task RejectedAllowlist_RemovalRequiresAgeAndTagClearanceButNotRatioPolicy()
+    public async Task RejectedAllowlist_RemovalRequiresAgeAndTagClearance()
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var config = new TorrentarrConfig();
-        config.QBitInstances["qBit"] = new QBitConfig { CategorySeeding = new CategorySeedingConfig { RemoveTorrent = -1 } };
+        config.QBitInstances["qBit"] = new QBitConfig { CategorySeeding = new CategorySeedingConfig { RemoveTorrent = 1, StalledDelay = 0 } };
         var service = CreateService(config);
         var torrent = new TorrentInfo
         {
@@ -718,7 +718,7 @@ public class SeedingServiceTests
     }
 
     [Fact]
-    public async Task HnrAllowsDeleteAsync_CategorySeedingHnr_AllowsWhenObligationsMet()
+    public async Task HnrAllowsDeleteAsync_CategorySeedingHnr_WaitsForConfirmation()
     {
         var config = new TorrentarrConfig();
         config.QBitInstances["qBit"] = new QBitConfig
@@ -737,7 +737,7 @@ public class SeedingServiceTests
 
         var result = await svc.HnrAllowsDeleteAsync(torrent, "removal criteria");
 
-        result.Should().BeTrue();
+        result.Should().BeFalse();
     }
 
     // ── ShouldRemoveTorrentAsync state-based logic ───────────────────────────────

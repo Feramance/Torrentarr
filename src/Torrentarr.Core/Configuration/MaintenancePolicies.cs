@@ -33,6 +33,8 @@ public class TrackerProtectionConfig
     public double MinimumSeedHours { get; set; } = 48;
     public double MinimumRatio { get; set; } = 1;
     public bool AllowClientRatioClearance { get; set; }
+    [Newtonsoft.Json.JsonProperty(DefaultValueHandling = Newtonsoft.Json.DefaultValueHandling.Ignore)]
+    public bool RequireLegacyClearance { get; set; }
     public string PartialPolicy { get; set; } = "preserve";
     public double DownloadThresholdPercent { get; set; } = 10;
     public bool ThresholdInclusive { get; set; } = true;

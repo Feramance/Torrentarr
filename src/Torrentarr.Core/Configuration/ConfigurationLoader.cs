@@ -19,7 +19,7 @@ internal sealed class TorrentClientConfigDocument
 public class ConfigurationLoader
 {
     /// <summary>Expected config schema version (qBitrr parity). Used for validation and mismatch warning.</summary>
-    public const string ExpectedConfigVersion = "6.20.4";
+    public const string ExpectedConfigVersion = "6.20.5";
 
     /// <summary>
     /// TEST USE ONLY. When set by test fixtures, GetDefaultConfigPath() returns this instead of env/defaults.
@@ -187,6 +187,8 @@ public class ConfigurationLoader
 
         if (tomlTable.TryGetValue("Trackers", out var trackerRows))
             config.Trackers = ReadTrackerRows(trackerRows).Select(ParseScopedTracker).ToList();
+        if (ConfigValidationHelper.ValidateHnrModes(config) is { } hnrError)
+            throw new InvalidDataException(hnrError);
         if (TrackerRules.Validate(config) is { } trackerError)
             throw new InvalidDataException(trackerError);
 
@@ -429,6 +431,7 @@ public class ConfigurationLoader
             changed = true;
 
         if (MigrateTrackerScopes(root)) changed = true;
+        if (currentVersion < new Version(6, 20, 5) && MigrateTrackerProtection(root)) changed = true;
 
         // Bump ConfigVersion to this build's expected when the file is older or equal; never downgrade a newer
         // ConfigVersion (forward-compatible / prerelease configs) just because ValidateAndFill added keys.
@@ -444,6 +447,28 @@ public class ConfigurationLoader
             }
         }
 
+        return changed;
+    }
+
+    private static bool MigrateTrackerProtection(TomlTable root)
+    {
+        if (!root.TryGetValue("Trackers", out var rows)) return false;
+        var changed = false;
+        foreach (var rule in ReadTrackerRows(rows))
+        {
+            if (rule.ContainsKey("Protection") || ResolveHnrMode(rule) is not ("and" or "or" or "ratio" or "time"))
+                continue;
+            MigrateHnrModeField(rule);
+            rule["Protection"] = new TomlTable
+            {
+                ["Policy"] = "custom",
+                ["MinimumSeedHours"] = Math.Max(0, ReadMinSeedingTimeDays(rule) ?? 0) * 24.0,
+                ["DownloadThresholdPercent"] = rule.TryGetValue("HitAndRunMinimumDownloadPercent", out var threshold)
+                    ? Convert.ToDouble(threshold) : 10.0,
+                ["RequireLegacyClearance"] = true
+            };
+            changed = true;
+        }
         return changed;
     }
 
@@ -774,7 +799,7 @@ public class ConfigurationLoader
     /// </summary>
     private static string ResolveHnrMode(TomlTable table)
     {
-        var validModes = new[] { "and", "or", "disabled" };
+        var validModes = new[] { "and", "or", "ratio", "time", "disabled" };
 
         // HitAndRunClearMode takes priority (newer key that supersedes bool HitAndRunMode)
         if (table.TryGetValue("HitAndRunClearMode", out var clearVal) && clearVal is string clearStr)
@@ -865,7 +890,6 @@ public class ConfigurationLoader
                     ["UploadRateLimitPerTorrent"] = (long)(-1),
                     ["MaxUploadRatio"] = -1.0,
                     ["MaxSeedingTime"] = (long)(-1),
-                    ["RemoveTorrent"] = (long)(-1),
                     ["HitAndRunMode"] = "disabled",
                     ["MinSeedRatio"] = 1.0,
                     ["MinSeedingTimeDays"] = (long)0,
@@ -1329,6 +1353,13 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("ProcessRestartDelay", out var restartDelay))
             settings.ProcessRestartDelay = DurationParser.ParseToSeconds(restartDelay, 5);
+
+        if (table.ContainsKey("TrackerRules") || table.ContainsKey("CategorySeedingRules"))
+        {
+            var minima = TomlSerializer.Deserialize<SettingsConfig>(TomlSerializer.Serialize(table));
+            settings.TrackerRules = minima?.TrackerRules;
+            settings.CategorySeedingRules = minima?.CategorySeedingRules;
+        }
 
         return settings;
     }
@@ -2192,6 +2223,25 @@ public class ConfigurationLoader
         sb.AppendLine($"ProcessRestartDelay = {config.Settings.ProcessRestartDelay}");
         sb.AppendLine();
 
+        if (config.Settings.TrackerRules?.Count > 0 || config.Settings.CategorySeedingRules?.Count > 0)
+        {
+            var minima = new TomlTable();
+            static TomlTableArray Rows<T>(IEnumerable<T> rules)
+            {
+                var rows = new TomlTableArray();
+                foreach (var rule in rules) rows.Add(TomlSerializer.Deserialize<TomlTable>(TomlSerializer.Serialize(rule))!);
+                return rows;
+            }
+            if (config.Settings.TrackerRules?.Count > 0)
+                minima["TrackerRules"] = Rows(config.Settings.TrackerRules);
+            if (config.Settings.CategorySeedingRules?.Count > 0)
+                minima["CategorySeedingRules"] = Rows(config.Settings.CategorySeedingRules);
+            // Prefix array headings so the compatibility rules remain within Settings.
+            foreach (var line in TomlSerializer.Serialize(minima).Trim().Split('\n'))
+                sb.AppendLine(line.StartsWith("[[") ? "[[Settings." + line[2..] : line);
+            sb.AppendLine();
+        }
+
         // WebUI section
         sb.AppendLine("[WebUI]");
         sb.AppendLine($"Host = \"{config.WebUI.Host}\"");
@@ -2255,7 +2305,7 @@ public class ConfigurationLoader
             sb.AppendLine($"UploadRateLimitPerTorrent = {qbit.CategorySeeding.UploadRateLimitPerTorrent}");
             sb.AppendLine($"MaxUploadRatio = {qbit.CategorySeeding.MaxUploadRatio}");
             sb.AppendLine($"MaxSeedingTime = {qbit.CategorySeeding.MaxSeedingTime}");
-            sb.AppendLine($"RemoveTorrent = {qbit.CategorySeeding.RemoveTorrent}");
+            if (qbit.CategorySeeding.RemoveTorrent.HasValue) sb.AppendLine($"RemoveTorrent = {qbit.CategorySeeding.RemoveTorrent}");
             sb.AppendLine($"HitAndRunMode = \"{qbit.CategorySeeding.HitAndRunMode}\"");
             sb.AppendLine($"MinSeedRatio = {qbit.CategorySeeding.MinSeedRatio}");
             sb.AppendLine($"MinSeedingTimeDays = {qbit.CategorySeeding.MinSeedingTimeDays}");
@@ -2334,14 +2384,16 @@ public class ConfigurationLoader
 
             // Torrent.SeedingMode section
             var sm = instance.Torrent.SeedingMode ?? new SeedingModeConfig();
+            var removeDead = sm.RemoveDeadTrackers ?? instance.Torrent.RemoveDeadTrackers;
+            var removeMessages = sm.RemoveTrackerWithMessage ?? instance.Torrent.RemoveTrackerWithMessage;
             sb.AppendLine($"[{kvp.Key}.Torrent.SeedingMode]");
             sb.AppendLine($"DownloadRateLimitPerTorrent = {sm.DownloadRateLimitPerTorrent}");
             sb.AppendLine($"UploadRateLimitPerTorrent = {sm.UploadRateLimitPerTorrent}");
             sb.AppendLine($"MaxUploadRatio = {sm.MaxUploadRatio}");
             sb.AppendLine($"MaxSeedingTime = {sm.MaxSeedingTime}");
-            sb.AppendLine($"RemoveTorrent = {sm.RemoveTorrent}");
-            sb.AppendLine($"RemoveDeadTrackers = {sm.RemoveDeadTrackers.ToString().ToLower()}");
-            sb.AppendLine($"RemoveTrackerWithMessage = [{string.Join(", ", sm.RemoveTrackerWithMessage.Select(m => $"\"{EscapeTomlString(m)}\""))}]");
+            if (sm.RemoveTorrent.HasValue) sb.AppendLine($"RemoveTorrent = {sm.RemoveTorrent}");
+            if (removeDead.HasValue) sb.AppendLine($"RemoveDeadTrackers = {removeDead.Value.ToString().ToLowerInvariant()}");
+            if (removeMessages != null) sb.AppendLine($"RemoveTrackerWithMessage = [{string.Join(", ", removeMessages.Select(m => $"\"{EscapeTomlString(m)}\""))}]");
             // HnR settings are now tracker-only (removed from SeedingMode in v5.9.1)
             sb.AppendLine();
 
@@ -2420,7 +2472,7 @@ public class ConfigurationLoader
         if (value is string s)
         {
             var lower = s.Trim().ToLowerInvariant();
-            return lower is "and" or "or" or "disabled" ? lower : "disabled";
+            return lower is "true" ? "and" : lower is "false" ? "disabled" : lower;
         }
         if (value is bool b)
             return b ? "and" : "disabled";
@@ -2428,7 +2480,7 @@ public class ConfigurationLoader
         var str = value?.ToString()?.Trim().ToLowerInvariant();
         if (str is "true") return "and";
         if (str is "false") return "disabled";
-        return str is "and" or "or" or "disabled" ? str : "disabled";
+        return str;
     }
 
     /// <summary>

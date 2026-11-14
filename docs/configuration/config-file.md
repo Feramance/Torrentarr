@@ -70,7 +70,7 @@ The `[Settings]` section contains global configuration that applies to all Torre
 ```toml
 [Settings]
 # Internal config schema version - DO NOT MODIFY
-ConfigVersion = "6.20.4"
+ConfigVersion = "6.20.5"
 
 # Logging
 ConsoleLevel = "INFO"
@@ -112,7 +112,7 @@ ProcessRestartDelay = 5
 ### ConfigVersion
 
 ```toml
-ConfigVersion = "6.20.4"
+ConfigVersion = "6.20.5"
 ```
 
 **Type:** String
@@ -1110,7 +1110,7 @@ Absolute minimum configuration to get started:
 
 ```toml
 [Settings]
-ConfigVersion = "6.20.4"
+ConfigVersion = "6.20.5"
 
 [WebUI]
 Host = "0.0.0.0"

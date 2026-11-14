@@ -24,6 +24,7 @@ export function PathMappingsEditor({
         PathMappings: "path mapping",
         FreeSpace: "free-space monitor",
         CategoryMappings: "category mapping",
+        Categories: "category override",
         CategoryTransitions: "category transition",
         TrackerAssignments: "tracker assignment",
       } as Record<string, string>
@@ -83,11 +84,13 @@ export function PathMappingsEditor({
                         ? {
                             ...entry,
                             [changed.at(-1)!]:
-                              def.type === "number" &&
-                              next !== "" &&
-                              Number.isFinite(Number(next))
-                                ? Number(next)
-                                : next,
+                              kind === "Categories" && next === ""
+                                ? null
+                                : def.type === "number" &&
+                                    next !== "" &&
+                                    Number.isFinite(Number(next))
+                                  ? Number(next)
+                                  : next,
                           }
                         : entry,
                     ),

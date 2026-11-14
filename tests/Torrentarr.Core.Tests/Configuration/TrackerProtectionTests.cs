@@ -81,9 +81,9 @@ public class TrackerProtectionTests
     {
         var torrent = Torrent(); torrent.AddedOn = Now.AddHours(-100).ToUnixTimeSeconds();
         var decision = TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12, torrent), Now, true);
-        decision.LatestRecoveryStart.Should().Be(Now.AddHours(25));
+        decision.LatestRecoveryStart.Should().Be(Now.AddHours(19));
         TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12, torrent), Now.AddHours(1), true).DeadlineRisk.Should().Be("warning");
-        TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12, torrent), Now.AddHours(25), true).DeadlineRisk.Should().Be("critical");
+        TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12, torrent), Now.AddHours(19), true).DeadlineRisk.Should().Be("critical");
     }
 
     [Fact]
@@ -105,7 +105,7 @@ public class TrackerProtectionTests
     [Fact]
     public void CounterRecheckDoesNotEraseAnExistingPartialObligation()
     {
-        var state = new ProtectionObservation { MaximumDownloadPercent = 55 };
+        var state = new ProtectionObservation { AddedOn = Torrent().AddedOn, MaximumDownloadPercent = 55 };
         TrackerProtectionEvaluator.Evaluate(Torrent(.05), new() { Policy = "onlyencodes" }, state, Now, true).State.Should().Be("protected");
     }
 

@@ -34,6 +34,17 @@ This guide helps you migrate from older versions of Torrentarr or similar tools 
 
 ## Version-Specific Migration
 
+### Tracker protection in config schema 6.20.5
+
+Torrentarr automatically adds observation-based protection to tracker rules that
+use legacy `and` or `or` clearance and have no explicit protection policy.
+The legacy ratio, time, and partial-download rules still determine when a
+torrent qualifies. Torrentarr confirms qualifying readings with healthy
+observations and the configured accounting grace period (60 minutes by default).
+This also applies to existing `6.20.5` migrated rules on startup, with a fresh
+confirmation window. Enabled category rules also use observation confirmation. Explicit standalone
+policies and disabled Hit & Run retain their existing behavior.
+
 ### Upgrading from qBitrr or Torrentarr to config schema 6.20.4
 
 Start Torrentarr with your existing `config.toml`. Torrentarr applies the

@@ -48,15 +48,24 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
                 [$"{secondArr}.Managed"] = false,
                 ["Trackers"] = new object[]
                 {
-                    new { Name = "Shared", URI = "https://tracker.example", ClientIds = new[] { first, second } },
-                    new { Name = "Override", URI = "https://tracker.example", ArrInstances = new[] { firstArr, secondArr } }
+                    new
+                    {
+                        Name = "Shared", URI = "https://tracker.example", ClientIds = new[] { first, second },
+                        HitAndRunMode = "ratio", MinSeedRatio = 1.5,
+                        Protection = new { RequireLegacyClearance = true, MinimumSeedHours = 48 }
+                    },
+                    new { Name = "Override", URI = "https://tracker.example", ArrInstances = new[] { firstArr, secondArr }, HitAndRunMode = "time", MinSeedingTimeDays = 2 }
                 }
             });
             (await save.Content.ReadAsStringAsync()).Should().Contain("applied");
             save.EnsureSuccessStatusCode();
             cfg.Trackers.Should().HaveCount(2);
             using var document = JsonDocument.Parse(await client.GetStringAsync(endpoint));
-            document.RootElement.GetProperty("Trackers").GetArrayLength().Should().Be(2);
+            var rules = document.RootElement.GetProperty("Trackers");
+            rules.GetArrayLength().Should().Be(2);
+            rules[0].GetProperty("HitAndRunMode").GetString().Should().Be("ratio");
+            rules[1].GetProperty("HitAndRunMode").GetString().Should().Be("time");
+            rules[0].GetProperty("Protection").GetProperty("RequireLegacyClearance").GetBoolean().Should().BeTrue();
 
             var before = File.ReadAllText(loader.ConfigPath);
             using var invalid = await Save(new()

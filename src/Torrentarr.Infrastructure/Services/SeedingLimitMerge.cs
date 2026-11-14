@@ -17,6 +17,8 @@ public static class SeedingLimitMerge
         var result = Clone(categorySeeding);
         OverlayArrSeedingMode(result, arrSeedingMode);
         OverlayTracker(result, tracker);
+        if (categorySeeding.RemoveTorrent == -1 || arrSeedingMode?.RemoveTorrent == -1 || tracker?.RemoveTorrent == -1)
+            result.RemoveTorrent = -1;
         return result;
     }
 

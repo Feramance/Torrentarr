@@ -283,7 +283,7 @@ export const ARR_TRACKER_FIELDS: FieldDefinition[] = [
     label: "Hit and Run Mode",
     path: ["HitAndRunMode"],
     type: "select",
-    options: ["and", "or", "disabled"],
+    options: ["and", "or", "ratio", "time", "disabled"],
     format: (v: unknown) =>
       v === true ? "and" : v === false ? "disabled" : (v as string),
     parse: (v: string | boolean) =>

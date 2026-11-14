@@ -11,7 +11,7 @@ export const CONFIG_SCHEMA = {
         "key": "ConfigVersion",
         "label": "Config Version",
         "kind": "text",
-        "default": "6.20.4",
+        "default": "6.20.5",
         "comments": [
           "Internal config schema version - DO NOT MODIFY",
           "This is managed automatically by qBitrr for config migrations"
@@ -949,7 +949,7 @@ export const CONFIG_SCHEMA = {
         "kind": "select",
         "default": "disabled",
         "comments": [
-          "Hit and Run mode: and = require both ratio and time; or = either clears; disabled = no HnR."
+          "Enabled Hit \u0026 Run rules use healthy observations to confirm clearance."
         ],
         "required": false,
         "secure": false,
@@ -957,10 +957,13 @@ export const CONFIG_SCHEMA = {
         "applyLive": true,
         "requiresRestart": false,
         "options": [
-          "disabled",
           "and",
-          "or"
-        ]
+          "or",
+          "ratio",
+          "time",
+          "disabled"
+        ],
+        "description": "Choose the conditions that qualify for Hit \u0026 Run clearance. Healthy tracker observations confirm clearance."
       },
       {
         "section": "qBit",
@@ -1086,6 +1089,99 @@ export const CONFIG_SCHEMA = {
         "applyLive": true,
         "requiresRestart": false,
         "nativeUnit": "seconds"
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "CategorySeeding",
+          "Categories"
+        ],
+        "key": "CategorySeeding.Categories",
+        "label": "Category overrides",
+        "kind": "collection",
+        "default": [],
+        "comments": "Category overrides. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Override Hit \u0026 Run for individual torrent categories. Blank values inherit client defaults.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Name"
+            ],
+            "key": "Name",
+            "label": "Category",
+            "kind": "text",
+            "default": "",
+            "comments": "Category. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "HitAndRunMode"
+            ],
+            "key": "HitAndRunMode",
+            "label": "Hit \u0026 Run mode",
+            "kind": "select",
+            "default": null,
+            "comments": "Hit \u0026 Run mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false,
+            "options": [
+              "and",
+              "or",
+              "ratio",
+              "time",
+              "disabled"
+            ]
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "MinSeedRatio"
+            ],
+            "key": "MinSeedRatio",
+            "label": "Minimum seed ratio",
+            "kind": "number",
+            "default": null,
+            "comments": "Minimum seed ratio. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false,
+            "minimum": 0
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "MinSeedingTimeDays"
+            ],
+            "key": "MinSeedingTimeDays",
+            "label": "Minimum seed days",
+            "kind": "number",
+            "default": null,
+            "comments": "Minimum seed days. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false,
+            "minimum": 0
+          }
+        ]
       },
       {
         "section": "qBit",
@@ -4138,7 +4234,7 @@ export const CONFIG_SCHEMA = {
         "kind": "select",
         "default": "disabled",
         "comments": [
-          "Hit and Run mode: and = require both ratio and time; or = either clears; disabled = no HnR."
+          "Enabled Hit \u0026 Run rules use healthy observations to confirm clearance."
         ],
         "required": false,
         "secure": false,
@@ -4146,10 +4242,13 @@ export const CONFIG_SCHEMA = {
         "applyLive": true,
         "requiresRestart": false,
         "options": [
-          "disabled",
           "and",
-          "or"
-        ]
+          "or",
+          "ratio",
+          "time",
+          "disabled"
+        ],
+        "description": "Choose the conditions that qualify for Hit \u0026 Run clearance. Healthy tracker observations confirm clearance."
       },
       {
         "section": "TorrentClient",
@@ -4275,6 +4374,99 @@ export const CONFIG_SCHEMA = {
         "applyLive": true,
         "requiresRestart": false,
         "nativeUnit": "seconds"
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "Categories"
+        ],
+        "key": "CategorySeeding.Categories",
+        "label": "Category overrides",
+        "kind": "collection",
+        "default": [],
+        "comments": "Category overrides. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Override Hit \u0026 Run for individual torrent categories. Blank values inherit client defaults.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Name"
+            ],
+            "key": "Name",
+            "label": "Category",
+            "kind": "text",
+            "default": "",
+            "comments": "Category. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "HitAndRunMode"
+            ],
+            "key": "HitAndRunMode",
+            "label": "Hit \u0026 Run mode",
+            "kind": "select",
+            "default": null,
+            "comments": "Hit \u0026 Run mode. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false,
+            "options": [
+              "and",
+              "or",
+              "ratio",
+              "time",
+              "disabled"
+            ]
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "MinSeedRatio"
+            ],
+            "key": "MinSeedRatio",
+            "label": "Minimum seed ratio",
+            "kind": "number",
+            "default": null,
+            "comments": "Minimum seed ratio. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false,
+            "minimum": 0
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "MinSeedingTimeDays"
+            ],
+            "key": "MinSeedingTimeDays",
+            "label": "Minimum seed days",
+            "kind": "number",
+            "default": null,
+            "comments": "Minimum seed days. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false,
+            "minimum": 0
+          }
+        ]
       },
       {
         "section": "TorrentClient",
@@ -8421,6 +8613,23 @@ export const CONFIG_SCHEMA = {
         "applyLive": true,
         "requiresRestart": false,
         "description": "Off by default: a client ratio does not prove tracker credit. OnlyEncodes never clears on ratio."
+      },
+      {
+        "section": "TrackerProtection",
+        "path": [
+          "RequireLegacyClearance"
+        ],
+        "key": "RequireLegacyClearance",
+        "label": "Use Hit \u0026 Run thresholds",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Use Hit \u0026 Run thresholds. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Apply the Hit \u0026 Run mode with this accounting grace period."
       },
       {
         "section": "TrackerProtection",

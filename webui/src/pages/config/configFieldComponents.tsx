@@ -662,19 +662,27 @@ export function FieldGroup({
       }
 
       const optionLabel = (value: string) =>
-        field.path?.at(-1) === "SearchBySeries"
+        field.path?.at(-1) === "HitAndRunMode"
           ? {
-              smart: "Smart",
-              series: "Series",
-              season: "Season",
-              episode: "Episode",
+              and: "Ratio and seeding time",
+              or: "Ratio or seeding time",
+              ratio: "Ratio only",
+              time: "Seeding time only",
+              disabled: "Disabled",
             }[value] ?? value
-          : field.path?.at(-1) === "ExecutionMode"
+          : field.path?.at(-1) === "SearchBySeries"
             ? {
-                manual: "Manual",
-                automatic: "Automatic",
+                smart: "Smart",
+                series: "Series",
+                season: "Season",
+                episode: "Episode",
               }[value] ?? value
-            : value;
+            : field.path?.at(-1) === "ExecutionMode"
+              ? {
+                  manual: "Manual",
+                  automatic: "Automatic",
+                }[value] ?? value
+              : value;
       return (
         <div key={key} className={fieldClassName} data-field-path={dataPath}>
           <label htmlFor={dataPath} title={tooltip}>

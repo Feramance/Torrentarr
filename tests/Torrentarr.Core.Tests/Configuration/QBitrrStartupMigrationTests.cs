@@ -106,6 +106,7 @@ public sealed class QBitrrStartupMigrationTests : IDisposable
         {
             Uri = "https://tracker.example/announce",
             HitAndRunMode = "or",
+            Protection = new() { MinimumSeedHours = 0, RequireLegacyClearance = true },
             MaxSeedingTime = 1209600,
             MinSeedRatio = 3,
             MinSeedingTimeDays = 0,
@@ -118,6 +119,7 @@ public sealed class QBitrrStartupMigrationTests : IDisposable
             {
                 Uri = "https://tracker.example/announce",
                 HitAndRunMode = "and",
+                Protection = new() { MinimumSeedHours = 0, RequireLegacyClearance = true },
                 MaxETA = 7200,
                 MinSeedRatio = 4,
                 MinSeedingTimeDays = 0,

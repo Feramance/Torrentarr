@@ -18,7 +18,7 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
     private readonly ITorrentClientRegistry _registry = registry;
     private readonly IServiceScopeFactory _scopes = scopes;
     private readonly ILogger<TorrentAutomationService> _logger = logger;
-    private readonly ConcurrentDictionary<string, List<ProtectionDecision>> _protection = new();
+    private readonly ConcurrentDictionary<string, List<ProtectionDecision>> _protection = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DateTimeOffset> _nextInspection = new();
     private readonly ConcurrentDictionary<string, int> _inspectionFailures = new();
     private readonly ConcurrentDictionary<string, string> _inspectionErrors = new();
@@ -107,14 +107,16 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 using var scope = _scopes.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
                 var seeding = scope.ServiceProvider.GetRequiredService<ISeedingService>() as SeedingService;
-                var urgent = _protection.Values.SelectMany(decisions => decisions).Any(d => d.ClientInstanceId == id && NeedsFreshInspection(d));
+                var urgent = false;
                 var full = _nextFullInspection.GetValueOrDefault(id) <= Clock.GetUtcNow();
                 var inspectionCt = inspection.Token;
                 var torrents = await client.GetTorrentsAsync(cancellationToken: inspectionCt);
                 var allHashes = torrents.Select(t => t.Hash).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                if (!full) torrents = torrents.Where(t => _protection.Values.SelectMany(decisions => decisions).Any(d => d.ClientInstanceId == id && d.TorrentHash == t.Hash
-                    && NeedsFreshInspection(d))).ToList();
-                torrents = torrents.OrderBy(t => _trackerInspections.GetValueOrDefault(id + "|" + t.Hash).At).ThenByDescending(t => _protection.Values.SelectMany(decisions => decisions).Any(d => d.ClientInstanceId == id && d.TorrentHash == t.Hash && d.DeadlineRisk != "none"))
+                List<ProtectionDecision> Previous(TorrentInfo torrent) =>
+                    _protection.GetValueOrDefault(id + "|" + torrent.Hash) ?? [];
+                if (!full) torrents = torrents.Where(t => Previous(t).Any(NeedsFreshInspection)).ToList();
+                torrents = torrents.OrderBy(t => _trackerInspections.GetValueOrDefault(id + "|" + t.Hash).At)
+                    .ThenByDescending(t => Previous(t).Any(d => d.DeadlineRisk != "none"))
                     .ThenByDescending(t => cfg.Maintenance.ErrorRecovery.States.Contains(t.State, StringComparer.OrdinalIgnoreCase)).ToList();
                 var cachePrefix = id + "|";
                 foreach (var key in _trackerInspections.Keys)
@@ -133,8 +135,8 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 {
                     torrent.ClientInstanceId = id;
                     var key = id + "|" + torrent.Hash;
-                    var fresh = TrackerRules.ForTorrent(_config, torrent).Any(t => t.Protection != null) || cfg.Maintenance.ErrorRecovery.States.Contains(torrent.State, StringComparer.OrdinalIgnoreCase)
-                        || _protection.Values.SelectMany(decisions => decisions).Any(d => d.ClientInstanceId == id && d.TorrentHash == torrent.Hash && NeedsFreshInspection(d));
+                    var fresh = seeding?.HasConfiguredProtection(torrent) == true || cfg.Maintenance.ErrorRecovery.States.Contains(torrent.State, StringComparer.OrdinalIgnoreCase)
+                        || Previous(torrent).Any(NeedsFreshInspection);
                     await budget.WaitAsync(inspectionCt);
                     try
                     {
@@ -168,12 +170,17 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                             if (seeding != null)
                             {
                                 if (_config.Revision != _config.LatestRevision) throw new OperationCanceledException("Configuration changed during inspection.");
-                                await seeding.ReconcileProtectionLimitsAsync(torrent, trackers, inspectionCt);
-                            }
-                            if (seeding != null)
-                            {
+
                                 await seeding.ObserveTrackerIssueAsync(torrent, trackers, inspectionCt);
                                 var decisions = seeding.GetProtectionDecisions(torrent, trackers, observe: true);
+                                await seeding.ReconcileProtectionLimitsFromDecisionsAsync(torrent, decisions, inspectionCt);
+                                if (torrent.RatioLimit == -1 && torrent.SeedingTimeLimit == -1
+                                    && torrent.InactiveSeedingTimeLimit is null or -1)
+                                    foreach (var decision in decisions.Where(d => d.NativeStopLimitRisk))
+                                    {
+                                        decision.NativeStopLimitRisk = false;
+                                        decision.Reason = decision.Reason.Replace(" Native stop limits may interrupt seeding; changes require verification.", "");
+                                    }
                                 foreach (var decision in decisions)
                                 {
                                     if (decision.State != "eligible" && (torrent.IsStopped || torrent.State.Contains("paused", StringComparison.OrdinalIgnoreCase)))
@@ -197,8 +204,9 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 _inspectionErrors.TryRemove(id, out _);
                 var interval = TimeSpan.FromSeconds(cfg.TorrentScanIntervalSeconds);
                 var elapsed = Clock.GetUtcNow() - inspectionStarted;
-                _nextInspection[id] = inspectionStarted + interval * (elapsed.Ticks / interval.Ticks + 1);
-                _nextFullInspection[id] = _nextInspection[id];
+                if (full) _nextFullInspection[id] = inspectionStarted + interval * (elapsed.Ticks / interval.Ticks + 1);
+                var nextUrgent = inspectionStarted.AddMinutes(1);
+                _nextInspection[id] = urgent && nextUrgent < _nextFullInspection[id] ? nextUrgent : _nextFullInspection[id];
                 _logger.LogInformation("Protection inspection completed: full={Full}; inventory={InventoryCount}; inspected={InspectedCount}; urgent={Urgent}; elapsed={ElapsedMs:F1}ms; nextAttempt={NextAttempt:O}",
                     full, allHashes.Count, torrents.Count, urgent, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds, _nextInspection[id]);
             }

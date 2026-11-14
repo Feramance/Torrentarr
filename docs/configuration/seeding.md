@@ -6,7 +6,9 @@ or unknown tracker obligation. Client counters are estimates and cannot guarante
 tracker-side credit or uninterrupted service.
 
 Every torrent removal and referenced-file cleanup must pass all applicable protections.
-`RemoveTorrent = -1` (Never remove) blocks cleanup as well as ordinary seeding removal.
+An explicit `RemoveTorrent = -1` (Never remove) at any applicable client, category,
+Arr, or matching tracker scope blocks cleanup as well as ordinary seeding removal.
+Omitting the setting inherits. Cleanup also stays disabled when no applicable rule enables removal.
 Completed torrents must satisfy the effective ratio/time removal policy, including its
 configured AND/OR combination and any legacy minimum seeding requirements. Incomplete
 torrents must pass minimum age and stalled grace: `StalledDelay = -1` holds them indefinitely,
@@ -96,13 +98,14 @@ Each tracker row may have a Protection table. New tracker policies use the follo
 | FulfillmentHours | absent means no deadline for custom/TorrentLeech; OnlyEncodes defaults to an unconfirmed 168-hour warning window |
 | DeadlineStart | `added`; optional `completed` for a configured custom deadline |
 | AdditionalSeedHours | Six additional observed hours after the mandatory minimum |
-| AccountingGraceMinutes | 60 minutes of healthy accounting evidence after requirements are met |
+| AccountingGraceMinutes | 60 minutes of consecutive healthy accounting evidence after requirements are met |
 | RecoveryReserveHours | Six hours reserved before the fulfillment boundary for recovery |
 
 Duration/ratio values must be finite and non-negative; a fulfillment window must be
 positive. Zero extra margin, accounting grace or reserve disables that allowance.
 Minimum time, extra seed margin, accounting grace, recovery reserve, cleanup delay,
-and fulfillment deadline are different controls. Grace alone does not prove acceptance.
+and fulfillment deadline are different controls. Zero accounting grace still requires two distinct qualifying observations. Grace resets after
+an unhealthy observation or a gap longer than twice the configured scan interval.
 Extra seeding after fulfillment is permitted.
 
 ### Local observations and uncertainty
@@ -185,8 +188,7 @@ Ordinary tracker handling preserves and reports failures. Maintenance recovery m
 Tracker-message matching for ordinary tracker handling. Removing a configured
 tracker remains subject to fresh protection checks. Private torrents keep the
 configured tracker URL and their last remaining announce URL even when a message
-matches; removing either would destroy the only way to re-announce. Explicit
-`RemoveIfExists` actions are unchanged.
+matches; removing either would destroy the only way to re-announce. The same protections apply to explicit `RemoveIfExists` actions.
 
 ## Per-tracker configuration
 
@@ -199,17 +201,26 @@ rather than choosing the highest-priority clearance rule.
 ### Tracker fields
 
 Name is a display label. URI identifies the tracker host. Priority selects ordinary
-handling precedence; it is not permission to discard another tracker obligation.
+handling precedence, with configuration order breaking ties; it is not permission to discard another tracker obligation.
 MaximumETA is an ordinary slow-download threshold. DownloadRateLimit/UploadRateLimit
 are per-torrent KiB/s. MaxUploadRatio/MaxSeedingTime override ordinary limits.
 AddTrackerIfMissing, RemoveIfExists, SuperSeedMode and AddTags remain explicit
-tracker actions. Their capability/prerequisite checks still apply.
+tracker actions. `SortTorrents` applies only to managed torrents matching an enabled
+rule by announce host or configured tag. The tracker editor leaves optional overrides
+inherited until configured.
 
 ### HitAndRunMode
 
-Legacy `and`, `or`, or `disabled`. `and` requires configured ratio and time;
-`or` permits either. Existing explicit buffers and settings are retained. New
-Protection presets are recommended for mandatory completion-based requirements.
+- `and` requires every configured ratio and time condition.
+- `or` accepts either configured condition.
+- `ratio` requires a positive ratio target and uses the partial-download ratio for incomplete torrents.
+- `time` requires a positive seed-time target. Incomplete torrents above the download threshold stay protected until completion.
+- `disabled` turns off the Hit & Run rule.
+
+Enabled rules confirm qualifying client readings with healthy tracker observations
+and accounting grace. The default grace is 60 minutes. A tracker using the
+Hit & Run thresholds can configure its own grace. The time condition uses
+client-reported seeding time minus the tracker update buffer.
 
 ### MinSeedRatio
 

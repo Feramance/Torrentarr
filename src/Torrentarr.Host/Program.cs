@@ -2604,7 +2604,7 @@ class ProcessOrchestratorService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var seeding = scope.ServiceProvider.GetRequiredService<ISeedingService>();
         await PreSortTrackerTagSyncAsync(seeding, managedCategories, clientIds, cancellationToken);
-        await SortManagedTorrentsByTrackerPriorityAsync(seeding, managedCategories, clientIds, cancellationToken);
+        await SortManagedTorrentsByTrackerPriorityAsync(managedCategories, clientIds, cancellationToken);
     }
 
     /// <summary>
@@ -2661,7 +2661,6 @@ class ProcessOrchestratorService : BackgroundService
     /// qBitrr <c>Arr._sort_torrents_by_tracker_priority</c> when <c>categories</c> is set (TorrentPolicyManager).
     /// </summary>
     private async Task SortManagedTorrentsByTrackerPriorityAsync(
-        ISeedingService seeding,
         HashSet<string> managedCategories,
         IReadOnlySet<string> clientIds, CancellationToken cancellationToken)
     {
@@ -2686,16 +2685,20 @@ class ProcessOrchestratorService : BackgroundService
                 foreach (var t in torrentList)
                     t.QBitInstanceName = instanceName;
 
-                torrentList = torrentList.Where(t => TrackerRules.ForTorrent(_config, t).Any(rule => rule.SortTorrents)).ToList();
-                if (torrentList.Count <= 1)
-                    continue;
-
                 var sortPriorities = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                foreach (var t in torrentList)
+                foreach (var torrent in torrentList)
                 {
-                    var tagToPriority = TorrentPolicyHelper.MergeTrackerTagPriorities(TrackerRules.ForTorrent(_config, t));
-                    sortPriorities[t.Hash] = await seeding.GetTorrentQueueSortPriorityAsync(t, tagToPriority, cancellationToken);
+                    var rules = TrackerRules.ForTorrent(_config, torrent).Where(rule => rule.SortTorrents).ToList();
+                    if (rules.Count == 0) continue;
+                    var announces = await client.GetTorrentTrackersAsync(torrent.Hash, cancellationToken);
+                    var tags = torrent.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var priorities = rules.Where(rule => SeedingService.MatchesTracker(rule, announces) ||
+                        rule.AddTags.Any(tag => tags.Contains(tag.Trim()))).Select(rule => rule.Priority).ToList();
+                    if (priorities.Count != 0) sortPriorities[torrent.Hash] = priorities.Max();
                 }
+                torrentList = torrentList.Where(torrent => sortPriorities.ContainsKey(torrent.Hash)).ToList();
+                if (torrentList.Count <= 1) continue;
 
                 var sortedTorrents = torrentList
                     .OrderBy(t => -sortPriorities.GetValueOrDefault(t.Hash, -100))

@@ -585,11 +585,11 @@ public class TorrentProcessor : ITorrentProcessor
         // PRE-STEP 0: Tracker actions — runs for EVERY torrent BEFORE the state machine
         // (qBitrr: _process_single_torrent_trackers — arss.py:6070)
         // TorrentPolicyManager owns this when global SortTorrents is enabled (arss.py:6615-6628).
-        if (_seedingService != null
-            && !(TorrentPolicyHelper.PolicyManagerOwnsTrackerSync(_config)
-                 && TorrentPolicyHelper.IsMonitoredPolicyCategory(_config, torrent.Category)))
+        if (_seedingService != null)
         {
-            await _seedingService.ApplyTrackerActionsForTorrentAsync(torrent, ct);
+            if (!(TorrentPolicyHelper.PolicyManagerOwnsTrackerSync(_config)
+                  && TorrentPolicyHelper.IsMonitoredPolicyCategory(_config, torrent.Category)))
+                await _seedingService.ApplyTrackerActionsForTorrentAsync(torrent, ct);
             await _seedingService.ApplySeedingLimitsAsync(torrent, ct);
         }
 
@@ -1444,7 +1444,7 @@ public class TorrentProcessor : ITorrentProcessor
         var qbitCfg = _config.GetTorrentClient(torrent.QBitInstanceName);
         var category = SeedingService.ApplyCategoryOverride(
             qbitCfg?.CategorySeeding ?? new CategorySeedingConfig(), torrent.Category, qbitCfg?.MatchSubcategories ?? false);
-        return SeedingLimitMerge.Merge(category, arrCfg?.Torrent.SeedingMode, null).RemoveTorrent;
+        return SeedingLimitMerge.Merge(category, arrCfg?.Torrent.SeedingMode, null).RemoveTorrent ?? -1;
     }
 
     private async Task<bool> TryFinalizeImportedTorrentAsync(TorrentInfo torrent, TorrentLibrary entry,

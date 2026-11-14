@@ -7141,6 +7141,30 @@ select,
   grid-column: auto;
 }
 
+.tracker-assignments,
+.tracker-assignment-scopes {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.tracker-assignments {
+  justify-content: space-between;
+  overflow-wrap: anywhere;
+  padding-block: 8px;
+}
+
+.tracker-assignment-dialog {
+  width: min(460px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+}
+
+.tracker-assignment-dialog .tracker-scope-options label {
+  min-height: 44px;
+}
+
 .tracker-scope-options {
   min-width: 0;
   margin: 4px 0 0;

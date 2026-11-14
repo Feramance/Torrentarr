@@ -16,6 +16,20 @@ public static class TrackerRules
 {
     private static readonly StringComparer IdComparer = StringComparer.OrdinalIgnoreCase;
 
+    public static string Host(string? value)
+    {
+        var address = value?.Trim();
+        if (string.IsNullOrEmpty(address)) return "";
+        if (!address.Contains("://", StringComparison.Ordinal)) address = "https://" + address;
+        if (!Uri.TryCreate(address, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https" or "udp")) return "";
+        var host = uri.IdnHost.TrimEnd('.').ToLowerInvariant();
+        return host == "tleechreload.org" || host.EndsWith(".tleechreload.org", StringComparison.Ordinal)
+            ? host[..^"tleechreload.org".Length] + "torrentleech.org" : host;
+    }
+
+    public static bool HostMatches(string host, string configuredHost) =>
+        configuredHost.Length > 0 && (host == configuredHost || host.EndsWith("." + configuredHost, StringComparison.Ordinal));
+
     public static List<ScopedTrackerConfig> ReadJson(JToken? value)
     {
         if (value is null) return [];
@@ -52,8 +66,38 @@ public static class TrackerRules
             foreach (var id in ids)
                 if (!configured.Contains(id))
                     return $"{label} references unknown instance '{id}'. Reassign or remove the reference in Trackers.";
+            if (Host(rule.Uri).Length == 0) return $"{label}: URI must identify an HTTP, HTTPS, or UDP tracker host.";
+            if (rule.AddTrackerIfMissing && (!Uri.TryCreate(rule.Uri, UriKind.Absolute, out var announce) ||
+                announce.AbsolutePath.Length <= 1))
+                return $"{label}: URI must be a complete announce URL to add a tracker.";
+            if (rule.AddTrackerIfMissing && rule.RemoveIfExists)
+                return $"{label}: AddTrackerIfMissing conflicts with RemoveIfExists.";
+            if (rule.DownloadRateLimit is < -1 or > int.MaxValue / 1024 ||
+                rule.UploadRateLimit is < -1 or > int.MaxValue / 1024 ||
+                rule.MaxUploadRatio is { } ratio && (!double.IsFinite(ratio) || ratio < -1) ||
+                rule.MaxSeedingTime is < -1 || rule.MaxETA is < -1 || rule.Priority < 0)
+                return $"{label}: invalid priority, rate, ratio, seeding time, or ETA.";
             if (TrackerProtectionValidation.Validate(rule.Protection) is { } error)
                 return $"{label}: {error}";
+        }
+        for (var i = 0; i < config.Trackers.Count; i++)
+        {
+            var rule = config.Trackers[i];
+            if (!rule.AddTrackerIfMissing && !rule.RemoveIfExists) continue;
+            foreach (var other in config.Trackers.Take(i))
+            {
+                if (!(rule.AddTrackerIfMissing && other.RemoveIfExists || rule.RemoveIfExists && other.AddTrackerIfMissing))
+                    continue;
+                var host = Host(rule.Uri);
+                var otherHost = Host(other.Uri);
+                if (!HostMatches(host, otherHost) && !HostMatches(otherHost, host)) continue;
+                var overlaps = rule.ClientIds != null && other.ClientIds != null
+                    ? rule.ClientIds.Intersect(other.ClientIds, IdComparer).Any()
+                    : rule.ArrInstances != null && other.ArrInstances != null
+                        ? rule.ArrInstances.Intersect(other.ArrInstances, IdComparer).Any()
+                        : true;
+                if (overlaps) return $"Tracker rule {i + 1}: AddTrackerIfMissing and RemoveIfExists conflict with an overlapping rule.";
+            }
         }
         return null;
     }

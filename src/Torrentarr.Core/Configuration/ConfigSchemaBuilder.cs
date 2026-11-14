@@ -54,6 +54,13 @@ public static class ConfigSchemaBuilder
 
     private static ConfigSchemaField ClarifyTrackerMessages(ConfigSchemaField field)
     {
+        if (field.path.LastOrDefault() == "HitAndRunMode")
+            return field with
+            {
+                options = ["and", "or", "ratio", "time", "disabled"],
+                description = "Choose the conditions that qualify for Hit & Run clearance. Healthy tracker observations confirm clearance.",
+                comments = new[] { "Enabled Hit & Run rules use healthy observations to confirm clearance." }
+            };
         var description = field.path.LastOrDefault() switch
         {
             "RemoveDeadTrackers" => "Legacy compatibility setting: true preserves and reports matching tracker failures instead of directly deleting torrents. Tracker rejection never authorizes torrent removal.",
@@ -68,6 +75,17 @@ public static class ConfigSchemaBuilder
         .. Qbitrr5146ConfigSchema.qBit
             .Where(field => field.key is not ("Disabled" or "Host" or "Port" or "UserName" or "Password" or "DownloadPath"))
             .Select(ClarifyTrackerMessages).Select(field => field with { section = "TorrentClient", applyLive = true, requiresRestart = false }),
+        Field("CategorySeeding.Categories", "collection", "Category overrides", Array.Empty<object>()) with
+        {
+            description = "Override Hit & Run for individual torrent categories. Blank values inherit client defaults.",
+            itemFields =
+            [
+                Field("Name", "text", "Category", "") with { required = true },
+                Field("HitAndRunMode", "select", "Hit & Run mode", null, options: ["and", "or", "ratio", "time", "disabled"]),
+                Field("MinSeedRatio", "number", "Minimum seed ratio", null, minimum: 0),
+                Field("MinSeedingTimeDays", "number", "Minimum seed days", null, minimum: 0)
+            ]
+        },
         Field("Type", "text", "Client Type", "qbittorrent"),
         Field("Disabled", "checkbox", "Disabled", false),
         Field("Host", "text", "Host", "CHANGE_ME"),
@@ -188,6 +206,7 @@ public static class ConfigSchemaBuilder
         Field("MinimumSeedHours", "number", "Minimum completed seed time (hours)", 48, minimum: 0, maximum: 876000),
         Field("MinimumRatio", "number", "Minimum ratio", 1.0, minimum: 0),
         Field("AllowClientRatioClearance", "checkbox", "Allow client-estimated ratio clearance", false) with { description = "Off by default: a client ratio does not prove tracker credit. OnlyEncodes never clears on ratio." },
+        Field("RequireLegacyClearance", "checkbox", "Use Hit & Run thresholds", false) with { description = "Apply the Hit & Run mode with this accounting grace period." },
         Field("PartialPolicy", "select", "Partial download policy", "preserve", options: ["preserve", "ratio"]),
         Field("DownloadThresholdPercent", "number", "Download obligation threshold (%)", 10, minimum: 0, maximum: 100),
         Field("ThresholdInclusive", "checkbox", "Include threshold boundary", true),

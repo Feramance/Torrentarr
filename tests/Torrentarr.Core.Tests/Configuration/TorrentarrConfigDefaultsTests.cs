@@ -82,8 +82,8 @@ public class TorrentarrConfigDefaultsTests
         // Verify SeedingModeConfig has seeding limits but no HnR fields
         seedingMode.MaxUploadRatio.Should().Be(-1);
         seedingMode.MaxSeedingTime.Should().Be(-1);
-        seedingMode.RemoveTorrent.Should().Be(-1);
-        seedingMode.RemoveDeadTrackers.Should().BeFalse();
+        seedingMode.RemoveTorrent.Should().BeNull();
+        seedingMode.RemoveDeadTrackers.Should().BeNull();
     }
 
     [Fact]

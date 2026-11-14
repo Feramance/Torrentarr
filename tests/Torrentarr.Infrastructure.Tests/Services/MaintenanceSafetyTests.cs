@@ -109,7 +109,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _inventory = new(_registry.Object, _config, paths, NullLogger<TorrentInventoryService>.Instance);
         _db = new(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite("Data Source=:memory:").Options);
         _db.Database.OpenConnection(); _db.Database.EnsureCreated();
-        _seeding = new(NullLogger<SeedingService>.Instance, _db, _config, _registry.Object);
+        _seeding = new(NullLogger<SeedingService>.Instance, _db, _config, _registry.Object, clock: _hnrClock);
         _services = new ServiceCollection().AddLogging().AddSingleton(_db).AddScoped<ISeedingService>(_ => _seeding).BuildServiceProvider();
         _deletion = new(_registry.Object, _inventory, paths, _config, NullLogger<SafeDeletionService>.Instance, _services.GetRequiredService<IServiceScopeFactory>());
         _maintenance = new(_config, _registry.Object, _inventory, paths, Mock.Of<IHardlinkInspector>(), _deletion,
@@ -287,13 +287,27 @@ public sealed class MaintenanceSafetyTests : IDisposable
         MaintenanceRecovery.CanRecycle(MaintenanceRecovery.Read(_db, torrent, "ErrorRecovery"), cfg, now.AddMinutes(1500)).Should().BeFalse();
     }
 
+    private readonly AdjustableTimeProvider _hnrClock = new();
+
+    private void ObserveHnrThroughGrace(TorrentInfo torrent, List<TorrentTracker> trackers)
+    {
+        _seeding.GetProtectionDecisions(torrent, trackers, observe: true);
+        for (var scan = 0; scan < 120; scan++)
+        {
+            _hnrClock.Now = _hnrClock.Now.AddSeconds(30);
+            _seeding.GetProtectionDecisions(torrent, trackers, observe: true);
+        }
+    }
+
     [Fact]
     public void EveryApplicableTrackerCanBlockClearance()
     {
         var torrent = AddTorrent(); torrent.IsPrivate = true;
         ClientConfig.Trackers = [new() { Uri = "https://first.example", HitAndRunMode = "or", MinSeedRatio = 1, Priority = 100 },
             new() { Uri = "https://second.example", Protection = new() { Policy = "onlyencodes" }, Priority = 1 }];
-        _seeding.GetProtectionDecisions(torrent, [new() { Url = "https://first.example/announce", Status = 2 }, new() { Url = "https://second.example/announce", Status = 2 }])
+        List<TorrentTracker> trackers = [new() { Url = "https://first.example/announce", Status = 2 }, new() { Url = "https://second.example/announce", Status = 2 }];
+        ObserveHnrThroughGrace(torrent, trackers);
+        _seeding.GetProtectionDecisions(torrent, trackers)
             .Should().Contain(d => d.State == "eligible").And.Contain(d => d.State == "protected");
     }
 
@@ -852,7 +866,9 @@ public sealed class MaintenanceSafetyTests : IDisposable
         ClientConfig.CategorySeeding.HitAndRunMode = mode;
         ClientConfig.CategorySeeding.MinSeedRatio = 1;
         ClientConfig.CategorySeeding.MinSeedingTimeDays = (int)(time / 86400);
-        _seeding.HnrAllowsDelete(torrent, [new() { Url = "https://tracker.example/announce", Status = 2 }]).Should().Be(allowed);
+        List<TorrentTracker> trackers = [new() { Url = "https://tracker.example/announce", Status = 2 }];
+        if (allowed) ObserveHnrThroughGrace(torrent, trackers);
+        _seeding.HnrAllowsDelete(torrent, trackers).Should().Be(allowed);
     }
 
     [Fact]
@@ -1679,6 +1695,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
         };
         _seeding.GetProtectionDecisions(torrent, trackers).Should().ContainSingle();
         MaintenanceRecovery.HealthyTracker(trackers).Should().Be(realTrackerHealthy);
+        if (realTrackerHealthy) ObserveHnrThroughGrace(torrent, trackers);
         _seeding.HnrAllowsDelete(torrent, trackers).Should().Be(realTrackerHealthy);
         trackers.Add(new() { Url = "https://unmatched.example/announce", Tier = 1, Status = 2 });
         _seeding.HnrAllowsDelete(torrent, trackers).Should().BeFalse();
@@ -1837,7 +1854,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
     {
         var torrent = AddTorrent(); torrent.IsPrivate = null; torrent.Ratio = 0;
         torrent.RatioLimit = -1; torrent.SeedingTimeLimit = -1;
-        ClientConfig.Trackers = [new() { Uri = "tracker.example", HitAndRunMode = "or", MinSeedRatio = 1 }];
+        ClientConfig.Trackers = [new() { Uri = "tracker.example", HitAndRunMode = "disabled" }];
         _client.Setup(c => c.GetTorrentPropertiesAsync(torrent.Hash, It.IsAny<CancellationToken>())).ReturnsAsync(new TorrentPropertiesRecord { IsPrivate = true });
         _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>())).ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
         using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
@@ -1896,6 +1913,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
         decisions.Should().Contain(d => d.State == "protected");
         _seeding.HnrAllowsDelete(torrent, trackers).Should().BeFalse();
         torrent.Ratio = 2;
+        if (alias) ObserveHnrThroughGrace(torrent, trackers);
         _seeding.HnrAllowsDelete(torrent, trackers).Should().Be(alias);
     }
 
@@ -2013,7 +2031,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
         using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
         await Inspect(automation, default);
         var status = automation.GetStatus();
-        status.Protection.Should().HaveCount(2).And.Contain(d => d.State == "eligible").And.Contain(d => d.State == "protected" && d.DeadlineRisk != "none");
+        status.Protection.Should().HaveCount(2).And.OnlyContain(d => d.State == "protected").And.Contain(d => d.DeadlineRisk != "none");
         status.Inspections.Single().NextAttempt.Should().BeBefore(DateTimeOffset.UtcNow.AddMinutes(2));
         var next = (System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset>)typeof(TorrentAutomationService)
             .GetField("_nextInspection", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(automation)!;
@@ -2079,7 +2097,8 @@ public sealed class MaintenanceSafetyTests : IDisposable
             CompletionOn = torrent.CompletionOn,
             ClientSeedSeconds = torrent.SeedingTime,
             SeedSeconds = torrent.SeedingTime,
-            EligibleSince = DateTimeOffset.UtcNow.AddHours(-2),
+            EligibleSince = _hnrClock.Now.AddHours(-2),
+            LastObserved = _hnrClock.Now,
             PolicyFingerprint = fingerprint
         });
         (await _seeding.CanDeleteTorrentAsync(torrent, "test")).Should().BeTrue();
@@ -2338,7 +2357,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
     {
         var torrent = AddTorrent();
         torrent.Ratio = 0;
-        torrent.SeedingTime = 10;
+        torrent.SeedingTime = 1209600;
         ClientConfig.CategorySeeding.MaxSeedingTime = 1209600;
         ClientConfig.CategorySeeding.RemoveTorrent = 2;
         var path = Path.Combine(_root, "movie.mkv");
@@ -2375,9 +2394,46 @@ public sealed class MaintenanceSafetyTests : IDisposable
         var torrent = AddTorrent(); torrent.IsPrivate = true; torrent.Ratio = allowed ? 1 : .000249; torrent.Progress = .5416; torrent.LastActivity = 1;
         ClientConfig.Trackers = [new() { Uri = "https://tracker.example", HitAndRunMode = "and", MinSeedRatio = 1, HitAndRunPartialSeedRatio = 1 }];
         _client.Setup(c => c.GetTorrentTrackersAsync("abc", It.IsAny<CancellationToken>())).ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
+        if (allowed) ObserveHnrThroughGrace(torrent, [new() { Url = "https://tracker.example/announce", Status = 2 }]);
         var path = Path.Combine(_root, "movie.mkv");
         (await _deletion.DeleteOwnedFileAsync("one", "abc", path)).Should().Be(allowed);
         File.Exists(path).Should().Be(!allowed);
+    }
+
+    [Theory]
+    [InlineData("client")]
+    [InlineData("category")]
+    [InlineData("integration")]
+    [InlineData("tracker")]
+    public async Task ExplicitNeverRemoveBlocksRejectionAndOwnedFileCleanup(string scope)
+    {
+        var torrent = AddTorrent();
+        _config.ArrInstances["Radarr-Movies"] = new() { Category = "movies", Type = "radarr" };
+        switch (scope)
+        {
+            case "client":
+                ClientConfig.CategorySeeding.RemoveTorrent = -1;
+                ClientConfig.CategorySeeding.Categories = [new() { Name = "movies", RemoveTorrent = 1 }];
+                break;
+            case "category":
+                ClientConfig.CategorySeeding.Categories = [new() { Name = "movies", RemoveTorrent = -1 }];
+                break;
+            case "integration":
+                _config.ArrInstances["Radarr-Movies"].Torrent.SeedingMode = new() { RemoveTorrent = -1 };
+                break;
+            case "tracker":
+                ClientConfig.Trackers = [new() { Uri = "tracker.example", Priority = 1, RemoveTorrent = 1 },
+                    new() { Uri = "tracker.example", RemoveTorrent = -1 }];
+                _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+                    .ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
+                break;
+        }
+        foreach (var intent in new[] { TorrentRemovalIntent.RejectedByAllowlist, TorrentRemovalIntent.RejectedByCustomFormat })
+            (await _deletion.RemoveTorrentForIntentAsync("one", torrent.Hash, true, intent)).Success.Should().BeFalse();
+        var path = Path.Combine(_root, "movie.mkv");
+        (await _deletion.DeleteOwnedFileAsync("one", torrent.Hash, path)).Should().BeFalse();
+        File.Exists(path).Should().BeTrue();
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never());
     }
 
     [Theory]
@@ -2425,6 +2481,8 @@ public sealed class MaintenanceSafetyTests : IDisposable
     public async Task LegacyTrackerMinimumsRemainMandatoryForCleanup()
     {
         var torrent = AddTorrent(); torrent.Tracker = "https://tracker.example/announce";
+        _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = torrent.Tracker, Status = 2 }]);
         _config.Settings.TrackerRules = [new() { TrackerUrl = "tracker.example", MinimumRatio = 3, MinimumSeedingTime = 120 }];
         (await _seeding.CanDeleteTorrentAsync(torrent, "cleanup")).Should().BeFalse();
         torrent.Ratio = 3; torrent.SeedingTime = 7200;

@@ -13,7 +13,7 @@ export function parseFieldValue(field: FieldDefinition, raw: unknown): unknown {
     return null;
   if (field.type === "tags" && Array.isArray(raw)) return raw;
   const parsed = field.parse?.(raw as string | boolean);
-  if (parsed != null) return parsed;
+  if (parsed !== undefined) return parsed;
   if (field.type === "number")
     return Number.isFinite(Number(raw)) ? Number(raw) : raw;
   return field.type === "checkbox" ? Boolean(raw) : raw;
@@ -327,25 +327,8 @@ export function ensureArrDefaults(type: string): ConfigDocument {
  *
  * Omits MaxSeedingTime / MaxUploadRatio / MaximumETA so new trackers inherit
  * parent SeedingMode / Torrent limits (tracker -1 must not clear a positive limit).
- * Rate limits still default to -1 (unlimited bandwidth).
+ * Optional tracker overrides inherit until configured.
  */
 export function createDefaultTrackerEntry(): ConfigDocument {
-  return {
-    Name: "",
-    URI: "",
-    Priority: 0,
-    SortTorrents: false,
-    DownloadRateLimit: -1,
-    UploadRateLimit: -1,
-    AddTrackerIfMissing: false,
-    RemoveIfExists: false,
-    SuperSeedMode: false,
-    AddTags: [],
-    HitAndRunMode: "disabled",
-    MinSeedRatio: 1.0,
-    MinSeedingTimeDays: 0,
-    HitAndRunMinimumDownloadPercent: 10,
-    HitAndRunPartialSeedRatio: 1.0,
-    TrackerUpdateBuffer: 0,
-  };
+  return { Name: "", URI: "" };
 }

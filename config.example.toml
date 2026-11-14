@@ -8,7 +8,7 @@
 
 [Settings]
 # Internal config schema version - managed automatically
-ConfigVersion = "6.20.4"
+ConfigVersion = "6.20.5"
 
 # Logging level: CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
 ConsoleLevel = "INFO"
@@ -133,6 +133,7 @@ MaxUploadRatio = 2.0
 MaxSeedingTime = 604800
 
 # Remove mode: -1=Never, 1=Ratio, 2=Time, 3=OR, 4=AND
+# An explicit -1 vetoes cleanup at every matching scope. Omit to inherit.
 RemoveTorrent = -1
 
 # Enable Hit & Run protection

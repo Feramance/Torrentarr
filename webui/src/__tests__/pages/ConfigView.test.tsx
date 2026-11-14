@@ -1887,47 +1887,49 @@ it("edits tracker scopes with the keyboard and saves only the chosen scope", asy
   await user.click(await screen.findByRole("button", { name: "Add Tracker" }));
   const section = screen.getByRole("region", { name: "Tracker rules" });
   const tracker = within(section);
-  const selectClients = tracker.getByRole("button", {
-    name: "Select torrent clients",
-  });
-  selectClients.focus();
+  const edit = tracker.getByRole("button", { name: "Edit assignments" });
+  edit.focus();
   await user.keyboard("{Enter}");
-  await user.tab();
+  const dialog = () =>
+    within(screen.getByRole("dialog", { name: "Tracker assignments" }));
+  expect(dialog().getByRole("button", { name: "Apply" })).toBeDisabled();
+  dialog().getByRole("checkbox", { name: "qBit", exact: true }).focus();
+  await user.keyboard(" ");
   expect(
-    tracker.getByRole("checkbox", { name: "qBit", exact: true }),
-  ).toHaveFocus();
-  await user.keyboard(" ");
-  await user.tab();
-  expect(tracker.getByRole("checkbox", { name: "qBit-1" })).toHaveFocus();
-  await user.keyboard(" {Escape}");
-  expect(tracker.getByRole("button", { name: "qBit, qBit-1" })).toHaveFocus();
-  expect(tracker.getByRole("button", { name: "qBit, qBit-1" })).toHaveAttribute(
-    "aria-expanded",
-    "false",
+    dialog().getByRole("checkbox", { name: "qBit", exact: true }),
+  ).toBeChecked();
+  expect(dialog().getByRole("checkbox", { name: "qBit-1" })).toBeVisible();
+  fireEvent(
+    screen.getByRole("dialog", { name: "Tracker assignments" }),
+    new Event("cancel", { cancelable: true }),
   );
+  expect(edit).toHaveFocus();
+  expect(tracker.getAllByText("None selected")).toHaveLength(2);
 
-  await user.selectOptions(
-    tracker.getByLabelText("Applies to"),
-    "ArrInstances",
-  );
-  const selectIntegrations = tracker.getByRole("button", {
-    name: "Select arr integrations",
-  });
-  selectIntegrations.focus();
-  await user.tab();
-  expect(tracker.getByRole("checkbox", { name: "Radarr-1080" })).toHaveFocus();
-  await user.keyboard(" ");
-  await user.tab();
-  await user.keyboard(" {Escape}");
+  await user.click(edit);
+  expect(
+    dialog().getByRole("checkbox", { name: "qBit", exact: true }),
+  ).not.toBeChecked();
+  await user.click(dialog().getByRole("button", { name: "Arr integrations" }));
+  await user.click(dialog().getByRole("checkbox", { name: "Radarr-1080" }));
+  await user.click(dialog().getByRole("checkbox", { name: "Sonarr-TV" }));
+  await user.click(dialog().getByRole("button", { name: "Apply" }));
+  expect(edit).toHaveFocus();
   await user.type(
     tracker.getByRole("textbox", { name: "URI" }),
     "https://tracker.example",
   );
+  await user.click(tracker.getByRole("combobox", { name: "Hit and Run Mode" }));
+  expect(
+    screen.getByRole("option", { name: "Seeding time only" }),
+  ).toBeVisible();
+  await user.click(screen.getByRole("option", { name: "Ratio only" }));
   await user.click(tracker.getByRole("button", { name: "Save Trackers" }));
   await waitFor(() =>
     expect(savedRules).toEqual([
       expect.objectContaining({
         ArrInstances: ["Radarr-1080", "Sonarr-TV"],
+        HitAndRunMode: "ratio",
         URI: "https://tracker.example",
       }),
     ]),
@@ -1935,7 +1937,9 @@ it("edits tracker scopes with the keyboard and saves only the chosen scope", asy
   expect(savedRules).not.toEqual([
     expect.objectContaining({ ClientIds: expect.anything() }),
   ]);
-  expect(tracker.getByText(/Legacy Hit & Run is off/)).toBeInTheDocument();
+  expect(
+    tracker.getByText(/Healthy observations must confirm clearance/),
+  ).toBeInTheDocument();
 });
 
 it("opens one tracker at a time and returns to an invalid draft on save", async () => {

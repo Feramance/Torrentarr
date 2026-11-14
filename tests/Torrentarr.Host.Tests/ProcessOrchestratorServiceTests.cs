@@ -16,6 +16,44 @@ namespace Torrentarr.Host.Tests;
 public class ProcessOrchestratorServiceTests
 {
     [Fact]
+    public async Task TrackerSort_OnlyMovesTorrentsMatchingAnEnabledRule()
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["one"] = new()
+        {
+            Trackers =
+            [
+                new() { Uri = "low.example", SortTorrents = true, Priority = 1 },
+                new() { Uri = "high.example", SortTorrents = true, Priority = 2, AddTags = ["high"] },
+                new() { Uri = "disabled.example", Priority = 100 }
+            ]
+        };
+        var client = new Mock<ITorrentClient>();
+        client.Setup(c => c.GetTorrentsAsync(null, "priority", It.IsAny<CancellationToken>())).ReturnsAsync(
+        [
+            new() { Hash = "low", Category = "movies", Priority = 1 },
+            new() { Hash = "unmatched", Category = "movies", Priority = 2 },
+            new() { Hash = "high", Category = "movies", Priority = 3, Tags = "high" }
+        ]);
+        client.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string hash, CancellationToken _) =>
+                [new() { Url = $"https://{(hash == "low" ? "low" : "disabled")}.example/announce" }]);
+        var moved = new List<string>();
+        client.Setup(c => c.SetTopPriorityAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, CancellationToken>((hash, _) => moved.Add(hash)).ReturnsAsync(true);
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["one"] = client.Object });
+        using var provider = new ServiceCollection().BuildServiceProvider();
+        using var service = new ProcessOrchestratorService(NullLogger<ProcessOrchestratorService>.Instance, config, registry.Object,
+            provider.GetRequiredService<IServiceScopeFactory>(), new ProcessStateManager(), Mock.Of<ISafeDeletionService>());
+        var method = typeof(ProcessOrchestratorService).GetMethod("SortManagedTorrentsByTrackerPriorityAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        await (Task)method.Invoke(service, [new HashSet<string> { "movies" }, new HashSet<string> { "one" }, CancellationToken.None])!;
+
+        moved.Should().Equal("low", "high");
+    }
+
+    [Fact]
     public async Task TrackerSort_ShutdownCancellationPropagatesWithoutErrorOrFallback()
     {
         using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
@@ -34,7 +72,7 @@ public class ProcessOrchestratorServiceTests
         var method = typeof(ProcessOrchestratorService).GetMethod("SortManagedTorrentsByTrackerPriorityAsync",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         await FluentActions.Awaiting(() => (Task)method.Invoke(service,
-            [Mock.Of<ISeedingService>(), new HashSet<string> { "movies" }, new HashSet<string> { "one" }, cancellation.Token])!)
+            [new HashSet<string> { "movies" }, new HashSet<string> { "one" }, cancellation.Token])!)
             .Should().ThrowAsync<OperationCanceledException>();
         client.Verify(c => c.GetTorrentsAsync(null, "added_on", It.IsAny<CancellationToken>()), Times.Never());
         entries.Invocations.Where(i => i.Method.Name == "Log").Should().NotContain(i =>

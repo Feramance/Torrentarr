@@ -98,7 +98,7 @@ public sealed class TrackerMessagePreservationTests
     }
 
     [Fact]
-    public async Task PrivateTrailingAnnounceUrl_IsPreservedAfterExtraRemoved()
+    public async Task UnmatchedPrivateAnnouncesRemainProtected()
     {
         var (service, client) = Create(configureTracker: false, removeDeadTrackers: false);
         var torrent = Torrent(isPrivate: true);
@@ -111,7 +111,7 @@ public sealed class TrackerMessagePreservationTests
             new TorrentTracker { Url = "https://extra.example/announce", Status = 4, Tier = 0, Msg = Message },
             new TorrentTracker { Url = "https://last.example/announce", Status = 4, Tier = 0, Msg = Message });
 
-        removed.Should().Equal("https://extra.example/announce");
+        removed.Should().BeEmpty();
     }
 
     [Fact]

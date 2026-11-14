@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { ConfigDocument } from "../../api/types";
 import { getTrackerSummary } from "../../config/torrentHandlingSummary";
+import { ShellDialog } from "../../components/ShellDialog";
 import { TrackerCard } from "./configFieldComponents";
 import { getSchemaDefaults } from "./configFields";
 import {
@@ -34,7 +35,11 @@ export function TrackerSettings({
     index: number;
     error?: ValidationError;
   } | null>(null);
-  const [scopeOpen, setScopeOpen] = useState(false);
+  const [assignment, setAssignment] = useState<{
+    key: "ClientIds" | "ArrInstances";
+    ClientIds: string[];
+    ArrInstances: string[];
+  } | null>(null);
   const editor = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const addButton = useRef<HTMLButtonElement>(null);
@@ -43,7 +48,6 @@ export function TrackerSettings({
   const { key, ids } = trackerScope(rule ?? {});
   const scopeLabel =
     key === "ClientIds" ? "Torrent clients" : "Arr integrations";
-  const options = key === "ClientIds" ? clientIds : integrationIds;
 
   useEffect(() => {
     const panel = editor.current;
@@ -53,7 +57,7 @@ export function TrackerSettings({
   }, [selection]);
 
   const select = (index: number, error?: ValidationError) => {
-    setScopeOpen(false);
+    setAssignment(null);
     setSelection({ index, error });
   };
 
@@ -64,7 +68,7 @@ export function TrackerSettings({
         : addButton.current
       : list.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]');
     target?.focus();
-    setScopeOpen(false);
+    setAssignment(null);
     setSelection(null);
   };
 
@@ -177,61 +181,71 @@ export function TrackerSettings({
             }}
           >
             <ReactMarkdown>{getTrackerSummary(rule)}</ReactMarkdown>
-            <div className="field">
-              <label htmlFor={`tracker-scope-${index}`}>Applies to</label>
-              <select
-                id={`tracker-scope-${index}`}
-                value={key}
-                onChange={(event) => {
-                  replaceScope(
-                    index,
-                    event.target.value === "ArrInstances"
-                      ? "ArrInstances"
-                      : "ClientIds",
-                    [],
-                  );
-                  setScopeOpen(true);
-                }}
+            <div
+              className="tracker-assignments"
+              data-field-path={`Trackers.${index}.${key}`}
+            >
+              <div>
+                <strong>{scopeLabel}</strong>
+                <div>{ids.join(", ") || "None selected"}</div>
+              </div>
+              <button
+                type="button"
+                className="btn"
+                aria-haspopup="dialog"
+                onClick={() =>
+                  setAssignment({
+                    key,
+                    ClientIds: key === "ClientIds" ? ids : [],
+                    ArrInstances: key === "ArrInstances" ? ids : [],
+                  })
+                }
               >
-                <option value="ClientIds">Torrent clients</option>
-                <option value="ArrInstances">Arr integrations</option>
-              </select>
-              <div
-                data-field-path={`Trackers.${index}.${key}`}
-                onBlur={(event) => {
-                  if (!event.currentTarget.contains(event.relatedTarget))
-                    setScopeOpen(false);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape" && scopeOpen) {
-                    event.stopPropagation();
-                    setScopeOpen(false);
-                    event.currentTarget.querySelector("button")?.focus();
-                  }
-                }}
+                Edit assignments
+              </button>
+            </div>
+            {assignment && (
+              <ShellDialog
+                title="Tracker assignments"
+                className="tracker-assignment-dialog"
+                onClose={() => setAssignment(null)}
               >
-                <button
-                  className="btn"
-                  type="button"
-                  aria-expanded={scopeOpen}
-                  aria-controls={`tracker-scope-options-${index}`}
-                  onClick={() => setScopeOpen(!scopeOpen)}
+                <div
+                  role="group"
+                  aria-label="Assignment scope"
+                  className="tracker-assignment-scopes"
                 >
-                  {ids.length
-                    ? ids.join(", ")
-                    : `Select ${scopeLabel.toLowerCase()}`}
-                </button>
+                  {(["ClientIds", "ArrInstances"] as const).map((scope) => (
+                    <button
+                      key={scope}
+                      className={`btn${assignment.key === scope ? " primary" : ""}`}
+                      type="button"
+                      aria-pressed={assignment.key === scope}
+                      onClick={() =>
+                        setAssignment({ ...assignment, key: scope })
+                      }
+                    >
+                      {scope === "ClientIds"
+                        ? "Torrent clients"
+                        : "Arr integrations"}
+                    </button>
+                  ))}
+                </div>
+                {assignment.key === "ArrInstances" && (
+                  <p className="hint">
+                    Each integration uses its own torrent-client scope.
+                  </p>
+                )}
                 <fieldset
                   className="tracker-scope-options"
-                  id={`tracker-scope-options-${index}`}
-                  hidden={!scopeOpen}
+                  aria-label="Instances"
                 >
-                  <legend>{scopeLabel}</legend>
-                  {options.length === 0 && (
-                    <p className="hint">No instances configured.</p>
-                  )}
-                  {options.map((id) => {
-                    const selected = ids.some(
+                  {(assignment.key === "ClientIds"
+                    ? clientIds
+                    : integrationIds
+                  ).map((id) => {
+                    const scope = assignment.key;
+                    const selected = assignment[scope].some(
                       (value) => value.toLowerCase() === id.toLowerCase(),
                     );
                     return (
@@ -240,30 +254,52 @@ export function TrackerSettings({
                           type="checkbox"
                           checked={selected}
                           onChange={() =>
-                            replaceScope(
-                              index,
-                              key,
-                              selected
-                                ? ids.filter(
+                            setAssignment({
+                              ...assignment,
+                              [scope]: selected
+                                ? assignment[scope].filter(
                                     (value) =>
                                       value.toLowerCase() !== id.toLowerCase(),
                                   )
-                                : [...ids, id],
-                            )
+                                : [...assignment[scope], id],
+                            })
                           }
                         />
                         {id}
                       </label>
                     );
                   })}
+                  {(assignment.key === "ClientIds" ? clientIds : integrationIds)
+                    .length === 0 && (
+                    <p className="hint">No instances configured.</p>
+                  )}
                 </fieldset>
-              </div>
-              {key === "ArrInstances" && (
-                <p className="hint">
-                  Each integration uses its own torrent-client scope.
-                </p>
-              )}
-            </div>
+                <div className="config-actions">
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={() => setAssignment(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="btn primary"
+                    type="button"
+                    disabled={assignment[assignment.key].length === 0}
+                    onClick={() => {
+                      replaceScope(
+                        index,
+                        assignment.key,
+                        assignment[assignment.key],
+                      );
+                      setAssignment(null);
+                    }}
+                  >
+                    Apply
+                  </button>
+                </div>
+              </ShellDialog>
+            )}
             <label className="tracker-protection-toggle">
               <input
                 type="checkbox"
@@ -278,7 +314,7 @@ export function TrackerSettings({
                   )
                 }
               />
-              Enable tracker protection policy
+              Use observation-based protection
             </label>
           </TrackerCard>
         </div>

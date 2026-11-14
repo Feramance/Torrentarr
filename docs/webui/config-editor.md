@@ -51,8 +51,9 @@ use the password control to explicitly replace a credential.
 
 ## Trackers
 
-Choose **Torrent clients** or **Arr integrations** on each rule, then select one
-or more instances in the checkbox dropdown. Arr rules follow the client scope
+Open **Edit assignments** on a tracker rule. Choose **Torrent clients** or
+**Arr integrations**, select one or more instances, and click **Apply**.
+Use **Save Trackers** to publish the changes. Arr rules follow the client scope
 of each selected integration. Each card summarizes the rule’s Hit & Run and
 queue sorting settings. Existing rules appear here automatically after upgrade.
 
