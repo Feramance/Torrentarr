@@ -1,3 +1,4 @@
+import { useStatisticsUpdates } from "../../hooks/useStatisticsUpdates";
 import type { AppColumnDef as LegacyColumnDef } from "../../tableCore";
 import {
   useCallback,
@@ -15,6 +16,7 @@ import type {
   SonarrSeriesEntry,
   SonarrSeriesResponse,
 } from "../../api/types";
+import { arrTypeLabel } from "../../config/arrSections";
 import { ArrMiniProgress } from "../../components/arr/ArrMiniProgress";
 import {
   ArrListProgressCell,
@@ -406,6 +408,14 @@ function useSonarrInstancePipeline(
     },
   );
 
+  useStatisticsUpdates(active && !!selection, () => {
+    if (selection)
+      return fetchInstanceRef.current(selection, page, query, {
+        showLoading: false,
+        missingOnly: filtersRef.current.onlyMissing,
+      });
+  });
+
   // Background polling.
   useInterval(
     () => {
@@ -616,8 +626,6 @@ export const SONARR_DEFINITION: ArrCatalogDefinition<
 > = {
   kind: "sonarr",
   arrType: "sonarr",
-  cardTitle: "Sonarr",
-  allInstancesLabel: "All Sonarr",
   searchPlaceholder: "Filter series or episodes",
   initialFilters: { onlyMissing: false, reasonFilter: "all" },
   filterControls: createStandardArrFilters<SonarrFilters>("All Episodes"),
@@ -850,7 +858,7 @@ function SonarrAggregateBody({
       summaryLine={summaryLine}
       onRefresh={onRefresh}
       loading={effectiveLoading}
-      loadingHint="Loading Sonarr library…"
+      loadingHint={`Loading ${arrTypeLabel("sonarr")} library…`}
       emptyOrder="syncFirst"
       showCatalogEmptyHint={showCatalogEmptyHint}
       hasRows={total > 0}

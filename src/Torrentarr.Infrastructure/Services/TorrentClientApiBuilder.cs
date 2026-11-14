@@ -25,12 +25,12 @@ public static class TorrentClientApiBuilder
                 }
                 catch (Exception) when (!ct.IsCancellationRequested) { alive = false; }
             }
-            instances[id] = new { alive, host = cfg.Host, port = cfg.Port, version };
+            instances[id] = new { alive, host = cfg.Host, port = cfg.Port, version, scanIntervalSeconds = cfg.TorrentScanIntervalSeconds };
         }
         return instances;
     }
 
-    public static async Task<List<object>> CategoriesAsync(TorrentarrConfig config, ITorrentClientRegistry registry, bool extendedPolicy = false, CancellationToken ct = default)
+    public static async Task<List<object>> CategoriesAsync(TorrentarrConfig config, ITorrentClientRegistry registry, bool extendedPolicy = false, CancellationToken ct = default, TorrentStatisticsSnapshots? snapshots = null)
     {
         var categories = new List<object>();
         Exception? failure = null;
@@ -41,22 +41,30 @@ public static class TorrentClientApiBuilder
         {
             if (cfg.Disabled || string.IsNullOrWhiteSpace(cfg.Host) || cfg.Host == "CHANGE_ME") continue;
             var client = registry.GetClient(id);
-            if (client == null) continue;
+            if (client == null && snapshots == null) continue;
             List<TorrentInfo> torrents;
+            TorrentStatisticsSnapshots.Snapshot? snapshot = null;
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeout.CancelAfter(TimeSpan.FromSeconds(5));
-                torrents = await client.GetTorrentsAsync(cancellationToken: timeout.Token);
+                if (snapshots != null)
+                {
+                    snapshot = client == null ? snapshots.Unavailable(id, config) : await snapshots.GetAsync(id, config, client, ct);
+                    if (snapshot.ObservedAt == null) { failure = new IOException(snapshot.Error); continue; }
+                    torrents = snapshot.Torrents.ToList();
+                }
+                else torrents = await client!.GetTorrentsAsync(cancellationToken: timeout.Token);
                 inspected++;
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             { failure = new TimeoutException("Torrent-client category inspection timed out."); continue; }
             catch (Exception ex) when (ex is not OperationCanceledException)
             { failure = ex; continue; }
+            var byOwner = torrents.ToLookup(t => CategoryOwnershipHelper.ResolveOwningCategory(config, t.Category, id) ?? "", StringComparer.OrdinalIgnoreCase);
             foreach (var category in cfg.ManagedCategories.Union(arrCategories, StringComparer.OrdinalIgnoreCase))
             {
-                var inCategory = CategorySeedingApiResolver.SelectAggregateTorrents(torrents, category, cfg.MatchSubcategories);
+                var inCategory = byOwner[CategoryPathHelper.NormalizeCategory(category)].ToList();
                 var seeding = inCategory.Where(t => t.IsSeeding).ToList();
                 var row = new Dictionary<string, object?>
                 {
@@ -64,6 +72,10 @@ public static class TorrentClientApiBuilder
                     ["instance"] = id,
                     ["managedBy"] = arrCategories.Contains(category) ? "arr" : "qbit",
                     ["torrentCount"] = inCategory.Count,
+                    ["downloadingCount"] = inCategory.Count(t => TorrentPolicyHelper.IsActiveDownloadingStateForFreeSpace(t.State)),
+                    ["observedAt"] = snapshot?.ObservedAt,
+                    ["observationError"] = snapshot?.Error,
+                    ["scanIntervalSeconds"] = cfg.TorrentScanIntervalSeconds,
                     ["seedingCount"] = seeding.Count,
                     ["totalSize"] = inCategory.Sum(t => t.Size),
                     ["avgRatio"] = inCategory.Count > 0 ? inCategory.Average(t => t.Ratio) : 0.0,
@@ -76,7 +88,7 @@ public static class TorrentClientApiBuilder
                 categories.Add(row);
             }
         }
-        if (inspected == 0 && failure != null) throw failure;
+        if (inspected == 0 && failure != null && snapshots == null) throw failure;
         return categories;
     }
 }

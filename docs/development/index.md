@@ -204,6 +204,16 @@ docker build -t torrentarr:test .
 docker run -d --name torrentarr-test -p 6969:6969 -v $(pwd)/config:/config torrentarr:test
 ```
 
+### Local development versions
+
+Source builds, PR images, and nightly images append the first 12 characters of the checked-out commit to the project version. Official releases use the numeric version managed by `bump2version`.
+
+```bash
+bash scripts/build-compose.sh
+# Direct Docker build
+docker build --build-arg VERSION="$(bash scripts/build-version.sh)" -t torrentarr:test .
+```
+
 ## Documentation
 
 ### Writing Documentation

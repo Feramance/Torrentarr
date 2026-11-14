@@ -121,7 +121,7 @@ Why is this change needed? What problem does it solve?
 ## Testing
 How was this tested?
 - [ ] Tested with qBittorrent v4.6.0
-- [ ] Tested with Radarr v5.0.0
+- [ ] Tested with Radarr v7.0.2
 - [ ] Tested in Docker
 - [ ] Tested native install
 

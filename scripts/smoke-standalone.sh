@@ -120,7 +120,8 @@ curl --fail --silent -H 'Authorization: Bearer standalone-smoke-token' \
 status_file="$work_dir/workers/Radarr-Smoke.json"
 wait_for_worker() {
   for _ in $(seq 1 60); do
-    if node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1])); if(!s.torrent?.lastSuccess || !s.search?.lastSuccess) process.exit(1)' "$status_file" 2>/dev/null; then return 0; fi
+    # No torrent client is configured, so the torrent loop stays idle and lastSuccess remains unset by design.
+    if node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1])); if(!s.torrent || !s.search?.lastSuccess) process.exit(1)' "$status_file" 2>/dev/null; then return 0; fi
     sleep 0.5
   done
   echo "Worker did not complete both processing loops" >&2

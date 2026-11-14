@@ -7,7 +7,7 @@ namespace Torrentarr.Infrastructure.ApiClients.Arr;
 /// <summary>
 /// Readarr API client using RestSharp. Author → book (no track layer).
 /// </summary>
-public class ReadarrClient
+public partial class ReadarrClient : IArrActivityClient
 {
     private readonly RestClient _client;
     private readonly string _apiKey;

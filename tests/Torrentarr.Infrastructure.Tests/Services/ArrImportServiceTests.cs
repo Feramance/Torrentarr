@@ -157,33 +157,33 @@ public class ArrImportServiceTests
     // ── IsImportedAsync ───────────────────────────────────────────────────────
 
     [Fact]
-    public async Task IsImportedAsync_NoArrInstances_ReturnsTrue()
+    public async Task IsImportedAsync_NoArrInstances_ReturnsFalse()
     {
-        // With no Arr instances to check, no queue is polled → treated as imported.
         var svc = CreateService();
 
-        var result = await svc.IsImportedAsync("abc123");
+        var result = await svc.IsImportedAsync("abc123", "radarr-hd", DateTimeOffset.UtcNow);
 
-        result.Should().BeTrue();
+        result.Should().BeFalse();
     }
 
     [Fact]
-    public async Task IsImportedAsync_WithCancellationToken_DoesNotThrow()
+    public async Task IsImportedAsync_PreCancelledTokenPropagatesCancellation()
     {
         using var cts = new CancellationTokenSource();
+        cts.Cancel();
         var svc = CreateService();
 
-        var act = async () => await svc.IsImportedAsync("abc123", cts.Token);
+        var act = async () => await svc.IsImportedAsync("abc123", "radarr-hd", DateTimeOffset.UtcNow, cts.Token);
 
-        await act.Should().NotThrowAsync();
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     /// <summary>
-    /// Regression: Arr queue API failures must not be treated as "imported" (fail-open),
+    /// Regression: Arr history API failures must not be treated as "imported" (fail-open),
     /// which would prematurely mark DB rows and run AutoDelete while import is still queued.
     /// </summary>
     [Fact]
-    public async Task IsImportedAsync_QueueCheckFails_ReturnsFalse()
+    public async Task IsImportedAsync_HistoryCheckFails_ReturnsFalse()
     {
         var config = new TorrentarrConfig
         {
@@ -201,13 +201,13 @@ public class ArrImportServiceTests
 
         var svc = CreateService(config);
 
-        var result = await svc.IsImportedAsync("abc123def4567890123456789012345678901234");
+        var result = await svc.IsImportedAsync("abc123def4567890123456789012345678901234", "radarr-hd", DateTimeOffset.UtcNow);
 
-        result.Should().BeFalse("queue polling errors must fail closed, not assume import completed");
+        result.Should().BeFalse("history request errors must fail closed, not assume import completed");
     }
 
     [Fact]
-    public async Task IsImportedAsync_ReadarrQueueCheckFails_ReturnsFalse()
+    public async Task IsImportedAsync_ReadarrHistoryCheckFails_ReturnsFalse()
     {
         var config = new TorrentarrConfig
         {
@@ -225,9 +225,9 @@ public class ArrImportServiceTests
 
         var svc = CreateService(config);
 
-        var result = await svc.IsImportedAsync("abc123def4567890123456789012345678901234");
+        var result = await svc.IsImportedAsync("abc123def4567890123456789012345678901234", "readarr-books", DateTimeOffset.UtcNow);
 
-        result.Should().BeFalse("Readarr queue polling errors must fail closed");
+        result.Should().BeFalse("Readarr history request errors must fail closed");
     }
 
     // ── Custom format unmet DB lookup (regression: Arr API ids vs SQLite EntryId) ─

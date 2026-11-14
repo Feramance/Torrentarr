@@ -97,3 +97,15 @@ export const ARR_SECTION_PREFIX: Record<KnownArrType, string> = {
   lidarr: "Lidarr",
   readarr: "Readarr",
 };
+
+/** Display label for an Arr type. The only place type-level names are derived. */
+export function arrTypeLabel(type: string | null | undefined): string {
+  const key = String(type ?? "")
+    .trim()
+    .toLowerCase();
+  if (!key) return "";
+  if (key in ARR_SECTION_PREFIX) {
+    return ARR_SECTION_PREFIX[key as KnownArrType];
+  }
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}

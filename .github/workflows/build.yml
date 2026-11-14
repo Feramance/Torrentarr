@@ -134,7 +134,6 @@ jobs:
 
   docker-permissions:
     name: Docker permission smoke test
-    needs: build
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
 
@@ -151,9 +150,7 @@ jobs:
 
   docker-nightly:
     name: Build and push Docker image (nightly)
-    needs:
-    - build
-    - docker-permissions
+    needs: docker-permissions
     runs-on: ubuntu-latest
     if: >
       (
@@ -180,6 +177,12 @@ jobs:
       with:
         ref: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && format('refs/heads/{0}', github.event.repository.default_branch) || github.ref }}
         fetch-depth: 0
+
+    - name: Set build version
+      id: version
+      run: |
+        version=$(bash scripts/build-version.sh)
+        echo "value=$version" >> "$GITHUB_OUTPUT"
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v4
@@ -209,6 +212,8 @@ jobs:
           ghcr.io/${{ steps.repo.outputs.lowercase }}
         tags: |
           type=raw,value=nightly
+        labels: |
+          org.opencontainers.image.version=${{ steps.version.outputs.value }}
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v7
@@ -216,6 +221,8 @@ jobs:
         context: .
         platforms: linux/amd64,linux/arm64
         push: true
+        build-args: |
+          VERSION=${{ steps.version.outputs.value }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
@@ -223,9 +230,7 @@ jobs:
 
   docker-pr:
     name: Build and push Docker image (PR)
-    needs:
-    - build
-    - docker-permissions
+    needs: docker-permissions
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     permissions:
@@ -243,6 +248,12 @@ jobs:
       with:
         ref: ${{ github.event.pull_request.head.sha }}
         repository: ${{ github.event.pull_request.head.repo.full_name }}
+
+    - name: Set build version
+      id: version
+      run: |
+        version=$(bash scripts/build-version.sh)
+        echo "value=$version" >> "$GITHUB_OUTPUT"
 
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v4
@@ -264,6 +275,8 @@ jobs:
         images: ghcr.io/${{ steps.repo.outputs.lowercase }}
         tags: |
           type=raw,value=pr-${{ github.event.pull_request.number }}
+        labels: |
+          org.opencontainers.image.version=${{ steps.version.outputs.value }}
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v7
@@ -271,6 +284,8 @@ jobs:
         context: .
         platforms: linux/amd64,linux/arm64
         push: true
+        build-args: |
+          VERSION=${{ steps.version.outputs.value }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha

@@ -1,3 +1,5 @@
+import { useContext } from "react";
+import { ConfigFieldSearch } from "./ConfigFieldSearch";
 import { PathMappingsEditor } from "./PathMappingsEditor";
 import React, {
   useCallback,
@@ -22,13 +24,18 @@ import { getArrTorrentHandlingSummary } from "../../config/torrentHandlingSummar
 import { IconImage } from "../../components/IconImage";
 import { TagInput } from "../../components/TagInput";
 import { useWebUI } from "../../context/WebUIContext";
+import {
+  applyTheme,
+  isDarkTheme,
+  SAVED_THEME,
+  themeFromValue,
+} from "../../utils/theme";
 import AddIcon from "../../icons/plus.svg";
 import DeleteIcon from "../../icons/trash.svg";
 import RefreshIcon from "../../icons/refresh-arrow.svg";
 import VisibilityIcon from "../../icons/visibility.svg";
 import { extractTooltipSummary } from "./configFields";
 import {
-  createDefaultTrackerEntry,
   fieldErrorDataPath,
   findFieldErrorMessage,
   getValue,
@@ -52,11 +59,12 @@ function FieldErrorText({ message }: { message?: string }): JSX.Element | null {
 }
 
 function renderReloadHint(field: FieldDefinition): JSX.Element | null {
-  if (field.applyLive) {
-    return <div className="field-hint">Applies live without restart</div>;
-  }
   if (field.requiresRestart) {
-    return <div className="field-hint">Requires restart to take effect</div>;
+    return (
+      <div className="field-hint">
+        Requires restart: {field.restartComponent ?? "Torrentarr"}
+      </div>
+    );
   }
   return null;
 }
@@ -70,10 +78,8 @@ export interface FieldGroupProps {
   basePath: string[];
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
   onRenameSection?: (oldName: string, newName: string) => void;
-  defaultOpen?: boolean;
   qualityProfiles?: Array<{ id: number; name: string }>;
   sectionKey?: string;
-  qbitTrackers?: boolean;
   /** Full-path validation errors for the open config section/modal. */
   validationErrors?: ValidationError[];
 }
@@ -325,37 +331,18 @@ export function FieldGroup({
   basePath,
   onChange,
   onRenameSection,
-  defaultOpen = false,
   qualityProfiles = [],
   sectionKey,
-  qbitTrackers = false,
   validationErrors = [],
 }: FieldGroupProps): JSX.Element {
+  const search = useContext(ConfigFieldSearch).trim().toLowerCase();
   const { theme } = useWebUI();
   const selectStyles = useMemo(
-    () => getSelectStyles(theme === "dark"),
+    () => getSelectStyles(isDarkTheme(theme)),
     [theme],
   );
   const sectionName = sectionKey ?? basePath[0] ?? "";
   const errorOpts = { sectionKey, basePath };
-  const groupHasErrors = fields.some((field) => {
-    const pathSegments = field.path ?? [];
-    if (!pathSegments.length) {
-      return false;
-    }
-    const dataPath = fieldErrorDataPath(pathSegments, errorOpts);
-    return validationErrors.some(({ path }) => {
-      const errorPath = path.join(".");
-      return errorPath === dataPath || errorPath.startsWith(`${dataPath}.`);
-    });
-  });
-
-  const details = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    if ((defaultOpen || groupHasErrors) && details.current) {
-      details.current.open = true;
-    }
-  }, [defaultOpen, groupHasErrors]);
 
   if (title === "Quality Profile Mappings") {
     const mappings = (getValue(state as ConfigDocument, [
@@ -410,8 +397,8 @@ export function FieldGroup({
     };
 
     return (
-      <details className="config-section" ref={details}>
-        <summary>{title}</summary>
+      <section className="config-section">
+        <h3 className="config-section__heading">{title}</h3>
         <div className="config-section__body">
           <div className="field-description" style={{ marginBottom: "1rem" }}>
             Map main quality profile names to temporary profile names. Items
@@ -508,71 +495,18 @@ export function FieldGroup({
             </>
           )}
         </div>
-      </details>
-    );
-  }
-
-  if (title === "Trackers") {
-    const trackerPath = qbitTrackers ? ["Trackers"] : ["Torrent", "Trackers"];
-    const trackers = (getValue(state as ConfigDocument, trackerPath) ??
-      []) as ConfigDocument[];
-    const handleAddTracker = () => {
-      const nextTrackers = [...trackers, createDefaultTrackerEntry()];
-      onChange(
-        [...basePath, ...trackerPath],
-        {} as FieldDefinition,
-        nextTrackers,
-      );
-    };
-    const handleDeleteTracker = (index: number) => {
-      const nextTrackers = [...trackers];
-      nextTrackers.splice(index, 1);
-      onChange(
-        [...basePath, ...trackerPath],
-        {} as FieldDefinition,
-        nextTrackers,
-      );
-    };
-    return (
-      <details className="config-section" ref={details}>
-        <summary>{title}</summary>
-        <div className="config-section__body">
-          {qbitTrackers && (
-            <div className="alert info" style={{ marginBottom: "12px" }}>
-              Shared tracker configs inherited by all Arr instances on this qBit
-              instance.
-            </div>
-          )}
-          {!qbitTrackers && (
-            <div className="alert info" style={{ marginBottom: "12px" }}>
-              Trackers inherited from qBit instance. Add here only to override
-              specific settings.
-            </div>
-          )}
-          <div className="tracker-grid">
-            {trackers.map((tracker, index) => (
-              <TrackerCard
-                key={index}
-                fields={fields}
-                state={tracker}
-                basePath={[...basePath, ...trackerPath, String(index)]}
-                onChange={onChange}
-                onDelete={() => handleDeleteTracker(index)}
-              />
-            ))}
-          </div>
-          <div className="config-actions">
-            <button className="btn" type="button" onClick={handleAddTracker}>
-              <IconImage src={AddIcon} />
-              Add Tracker
-            </button>
-          </div>
-        </div>
-      </details>
+      </section>
     );
   }
 
   const renderedFields = fields.map((field) => {
+    if (
+      search &&
+      !`${title ?? ""} ${field.label} ${field.description ?? ""} ${field.path?.join(".") ?? ""}`
+        .toLowerCase()
+        .includes(search)
+    )
+      return null;
     if (field.sectionName) {
       if (!sectionName) {
         return null;
@@ -724,15 +658,7 @@ export function FieldGroup({
       // Normalize the formatted value for theme field (case-insensitive)
       let displayValue = formatted;
       if (isThemeField && typeof formatted === "string") {
-        const normalizedLower = formatted.toLowerCase();
-        if (normalizedLower === "light") {
-          displayValue = "Light";
-        } else if (normalizedLower === "dark") {
-          displayValue = "Dark";
-        } else {
-          // Default to Dark if invalid
-          displayValue = "Dark";
-        }
+        displayValue = SAVED_THEME[themeFromValue(formatted)];
       }
 
       const optionLabel = (value: string) =>
@@ -775,9 +701,9 @@ export function FieldGroup({
 
               // If this is the theme field, apply immediately
               if (isThemeField && typeof newValue === "string" && newValue) {
-                const theme = newValue.toLowerCase() as "light" | "dark";
-                document.documentElement.setAttribute("data-theme", theme);
-                localStorage.setItem("theme", theme);
+                const nextTheme = themeFromValue(newValue);
+                applyTheme(nextTheme);
+                localStorage.setItem("theme", nextTheme);
               }
             }}
             styles={selectStyles}
@@ -936,10 +862,17 @@ export function FieldGroup({
     );
   });
 
+  if (
+    title &&
+    search &&
+    renderedFields.every((field) => field == null) &&
+    !children
+  )
+    return <></>;
   if (title) {
     return (
-      <details className="config-section" ref={details}>
-        <summary>{title}</summary>
+      <section className="config-section">
+        <h3 className="config-section__heading">{title}</h3>
         <div className="config-section__body field-grid">
           {description && (
             <p className="field-description field--full-width">{description}</p>
@@ -947,7 +880,7 @@ export function FieldGroup({
           {renderedFields}
           {children}
         </div>
-      </details>
+      </section>
     );
   }
 
@@ -955,19 +888,24 @@ export function FieldGroup({
 }
 
 export function TrackerCard({
+  title,
+  onClose,
+  children,
   fields,
   state,
   basePath,
   onChange,
   onDelete,
 }: {
+  title: string;
+  onClose: () => void;
+  children?: React.ReactNode;
   fields: FieldDefinition[];
   state: ConfigDocument | null;
   basePath: string[];
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
   onDelete: () => void;
 }): JSX.Element {
-  const trackerName = (getValue(state, ["Name"]) as string) || "New Tracker";
   // state is the individual tracker object, so read with basePath=[]
   // but onChange needs the full basePath to update the correct location in formState
   const wrappedOnChange = useCallback(
@@ -977,23 +915,33 @@ export function TrackerCard({
     [basePath, onChange],
   );
   return (
-    <details className="card tracker-card" open>
-      <summary className="card-header">
-        <span>{trackerName}</span>
-        <button className="btn danger ghost" type="button" onClick={onDelete}>
+    <section className="card tracker-card">
+      <header className="card-header">
+        <h4>{title}</h4>
+        <button className="btn ghost" type="button" onClick={onClose}>
+          Close
+        </button>
+        <button
+          className="btn danger ghost"
+          type="button"
+          aria-label={`Remove ${title}`}
+          onClick={onDelete}
+        >
           <IconImage src={DeleteIcon} />
         </button>
-      </summary>
+      </header>
       <div className="card-body">
+        {children}
         <FieldGroup
           title={null}
           fields={fields}
           state={state}
           basePath={[]}
+          sectionKey={basePath.join(".")}
           onChange={wrappedOnChange}
         />
       </div>
-    </details>
+    </section>
   );
 }
 

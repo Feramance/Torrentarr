@@ -122,6 +122,7 @@ public static class ConfigValidationHelper
 
     public static (bool Ok, string? Error) ValidateAll(TorrentarrConfig config)
     {
+        if (TrackerRules.Validate(config) is { } trackerError) return (false, trackerError);
         if (ValidateCorsOrigins(config.WebUI) is { } corsError) return (false, corsError);
         if (config.WebUI.Port is < 1 or > 65535 || !System.Net.IPAddress.TryParse(config.WebUI.Host, out _))
             return (false, "WebUI requires an IP bind address and port between 1 and 65535.");

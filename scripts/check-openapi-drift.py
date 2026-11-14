@@ -7,12 +7,13 @@ import json
 import sys
 from copy import deepcopy
 from openapi_status import STATUS_SCHEMA
+from openapi_statistics import EXTENSION_PATHS as STATISTICS_PATHS, apply as apply_statistics
 from openapi_maintenance import EXTENSION_PATHS as MAINTENANCE_PATHS, apply as apply_maintenance
 from pathlib import Path
 from typing import Any
 
 HTTP_METHODS = {"get", "put", "post", "delete", "patch", "head", "options", "trace"}
-TORRENTARR_EXTENSIONS = MAINTENANCE_PATHS | {f"{prefix}/issues{suffix}" for prefix in ("/web", "/api") for suffix in ("", "/summary", "/{id}")} | {
+TORRENTARR_EXTENSIONS = STATISTICS_PATHS | MAINTENANCE_PATHS | {f"{prefix}/issues{suffix}" for prefix in ("/web", "/api") for suffix in ("", "/summary", "/{id}")} | {
     "/api/arr/{category}/open/{kind}/{entryId}",
     "/api/lidarr/{category}/tracks",
     "/api/qbit/categories",
@@ -168,6 +169,14 @@ def compare_content_schemas(
                      if key != "description"} == {"type": "string", "nullable": True}
                 and "warning" not in ta_schema.get("required", [])):
             ta_schema["properties"].pop("warning")  # Optional activation warning preserves the upstream payload.
+        if (context in {"response 200 on POST /api/config", "response 200 on POST /web/config"}
+                and media == "application/json" and "restartRequirements" not in qb_schema.get("properties", {})
+                and ta_schema.get("properties", {}).get("restartRequirements") == {
+                    "type": "array", "items": {"type": "object", "properties": {
+                        key: {"type": "string"} for key in ("component", "category", "kind")
+                    }, "required": ["category", "component", "kind"]}}
+                and "restartRequirements" not in ta_schema.get("required", [])):
+            ta_schema["properties"].pop("restartRequirements")
         if qb_schema != ta_schema:
             errors.append(f"{context} schema differs for {media}")
 
@@ -365,13 +374,21 @@ def maintenance_drift(document: dict) -> list[str]:
     return errors
 
 
+def statistics_drift(document: dict) -> list[str]:
+    expected = {"paths": {}}
+    apply_statistics(expected)
+    return [f"generated statistics operation differs: {path}"
+            for path, operations in expected['paths'].items()
+            if document.get('paths', {}).get(path) != operations]
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 3:
         print(f"usage: {argv[0]} TORRENTARR_SPEC QBITRR_SPEC", file=sys.stderr)
         return 2
     torrentarr = load(argv[1])
     qbitrr = load(argv[2])
-    errors = compare(torrentarr, qbitrr) + maintenance_drift(torrentarr)
+    errors = compare(torrentarr, qbitrr) + maintenance_drift(torrentarr) + statistics_drift(torrentarr)
     if errors:
         print(f"OpenAPI parity failed with {len(errors)} difference(s):")
         for error in errors:

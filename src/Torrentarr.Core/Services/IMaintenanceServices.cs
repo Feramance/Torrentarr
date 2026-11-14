@@ -16,9 +16,6 @@ public interface ITorrentInventoryService
 {
     Task<TorrentInventory> CollectAsync(IReadOnlyDictionary<string, InventoryRequirements> requirements, CancellationToken ct = default, string? candidateHash = null);
     Task<TorrentInventory> BuildAsync(IEnumerable<string>? instanceIds = null, CancellationToken ct = default);
-    /// <summary>Refreshes one torrent for eligibility checks; does not establish global file ownership.</summary>
-    Task<TorrentInventory> RefreshCandidateAsync(string instanceId, string hash, CancellationToken ct = default);
-    Task<TorrentInventory> RefreshAsync(TorrentInventory previous, string? candidateInstance = null, string? candidateHash = null, CancellationToken ct = default);
 }
 
 public interface IHardlinkInspector
@@ -43,7 +40,6 @@ public interface ISafeDeletionService
     IReadOnlyList<RecycleFileSnapshot> InspectRecycleFiles(RecycleEntry entry) => [];
     Task<long> PurgeRecycleEntryAsync(string clientInstanceId, string key, IReadOnlyList<RecycleFileSnapshot> files, CancellationToken ct = default) => throw new NotSupportedException();
     void RegisterLegacyRecycleEntry(string clientInstanceId, string path) => throw new NotSupportedException();
-    Task<int> CleanupExpiredAsync(string clientInstanceId, CancellationToken ct = default);
 }
 
 public sealed record SafeDeletionResult(bool Success, bool ContentPreserved, long BytesMoved, string? Error = null, bool Deferred = false);

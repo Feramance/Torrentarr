@@ -14,6 +14,24 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 public class WorkerLifecycleTests
 {
     [Fact]
+    public async Task StoppedWorker_RetainsStructuredLastObservation()
+    {
+        var config = Config();
+        using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance, Mock.Of<IMediaValidationService>());
+        var observations = (Dictionary<string, WorkerHeartbeat>)typeof(WorkerProcessSupervisor)
+            .GetField("_lastObservations", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(supervisor)!;
+        var heartbeat = new WorkerHeartbeat { Instance = "Radarr", SearchesTriggered = 0, ItemsSearched = 12, CategoryCount = 40, DownloadingCount = 3, ObservedAt = DateTimeOffset.UtcNow };
+        observations["Radarr"] = System.Text.Json.JsonSerializer.Deserialize<WorkerHeartbeat>(System.Text.Json.JsonSerializer.Serialize(heartbeat, WorkerHeartbeat.JsonOptions), WorkerHeartbeat.JsonOptions)!;
+        var status = (await supervisor.GetProcessStatusAsync())["Radarr"];
+        status.IsAlive.Should().BeFalse();
+        status.SearchesTriggered.Should().Be(0);
+        status.ItemsSearched.Should().Be(12);
+        status.CategoryCount.Should().Be(40);
+        status.DownloadingCount.Should().Be(3);
+        status.ObservationError.Should().Contain("last successful");
+    }
+
+    [Fact]
     public void Heartbeat_RejectsPriorProcessAndDetectsStuckLoopDespiteFreshPublisher()
     {
         var now = DateTimeOffset.UtcNow;
@@ -52,10 +70,10 @@ public class WorkerLifecycleTests
         (await supervisor.GetProcessStatusAsync())["Radarr"].LastFailure.Should().Contain("launch failed");
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task DisablingManagedWorker_StopsRunningProcessOnReconciliation()
     {
-        if (OperatingSystem.IsWindows()) return;
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
         var config = Config();
         config.Apply(config, 2);
         using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
@@ -134,10 +152,10 @@ public class WorkerLifecycleTests
         finally { await orchestrator.StopAsync(); }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ManualRestart_CancelsOldRetryWithoutChargingAllowance()
     {
-        if (OperatingSystem.IsWindows()) return;
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
         var attempts = 0;
         var config = Config();
         config.Settings.ProcessRestartDelay = 1;
@@ -160,10 +178,10 @@ public class WorkerLifecycleTests
         attempts.Should().Be(3);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ConcurrentManualRestarts_LeaveOnlyOneOwnedChild_AndShutdownWaitsForExit()
     {
-        if (OperatingSystem.IsWindows()) return;
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
         var children = new List<int>();
         var config = Config();
         using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
@@ -189,10 +207,10 @@ public class WorkerLifecycleTests
         }
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task ImmediateChildExit_CannotDisposeProcessDuringStatusRead()
     {
-        if (OperatingSystem.IsWindows()) return;
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
         var config = Config();
         config.Settings.AutoRestartProcesses = false;
         using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
@@ -208,7 +226,7 @@ public class WorkerLifecycleTests
             {
                 await supervisor.RestartProcessAsync("Radarr");
                 await supervisor.GetProcessStatusAsync();
-                supervisor.MonitorWorkers();
+                await supervisor.MonitorWorkersAsync();
             }
         }
         finally { await orchestrator.StopAsync(); }
@@ -236,10 +254,10 @@ public class WorkerLifecycleTests
         attempts.Should().Be(1);
     }
 
-    [Fact]
+    [SkippableFact]
     public async Task CrashedChild_UsesTheSameBoundedRetryPolicyAsLaunchFailure()
     {
-        if (OperatingSystem.IsWindows()) return;
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
         var attempts = 0;
         var config = Config();
         config.Settings.ProcessRestartDelay = 0;
@@ -258,12 +276,12 @@ public class WorkerLifecycleTests
     }
 
 
-    [Theory]
+    [SkippableTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task RemovedWorker_IsRetriedAfterAcknowledgment_UnlessRestored(bool restored)
     {
-        if (OperatingSystem.IsWindows()) return;
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
         var config = Config();
         config.Apply(config, 2);
         using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
@@ -289,6 +307,36 @@ public class WorkerLifecycleTests
             (await supervisor.GetProcessStatusAsync()).ContainsKey("Radarr").Should().Be(restored);
         }
         finally { await orchestrator.StopAsync(); File.Delete(status); }
+    }
+
+    [SkippableFact]
+    public async Task RequestedRestart_UsesGracefulShutdownBeforeTerminatingWorker()
+    {
+        Skip.If(OperatingSystem.IsWindows(), "Uses Unix child processes.");
+        var config = Config(); config.Settings.AutoRestartProcesses = false;
+        var evidence = Path.GetTempFileName(); var status = Path.GetTempFileName();
+        using var supervisor = new WorkerProcessSupervisor(config, NullLogger<WorkerProcessSupervisor>.Instance,
+            Mock.Of<IMediaValidationService>(), _ => new ProcessStartInfo("/bin/sh")
+            {
+                ArgumentList = { "-c", "read command; printf '%s' \"$command\" > \"$1\"", "worker", evidence },
+                UseShellExecute = false,
+                RedirectStandardInput = true
+            });
+        var orchestrator = (IProcessOrchestrator)supervisor;
+        try
+        {
+            await orchestrator.StartAsync();
+            var pid = (await supervisor.GetProcessStatusAsync())["Radarr"].ProcessId!.Value;
+            var files = (Dictionary<string, string>)typeof(WorkerProcessSupervisor)
+                .GetField("_statusFiles", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(supervisor)!;
+            files["Radarr"] = status;
+            await File.WriteAllTextAsync(status, System.Text.Json.JsonSerializer.Serialize(new WorkerHeartbeat
+            { Instance = "Radarr", Pid = pid, Heartbeat = DateTimeOffset.UtcNow, RestartRequested = true }, WorkerHeartbeat.JsonOptions));
+            await supervisor.MonitorWorkersAsync();
+            (await File.ReadAllTextAsync(evidence)).Should().Be("shutdown");
+            (await supervisor.GetProcessStatusAsync())["Radarr"].IsAlive.Should().BeFalse();
+        }
+        finally { await orchestrator.StopAsync(); File.Delete(evidence); File.Delete(status); }
     }
 
     private static TorrentarrConfig Config()

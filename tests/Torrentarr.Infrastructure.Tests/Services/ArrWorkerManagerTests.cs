@@ -518,7 +518,8 @@ public class ArrWorkerManagerTests
         public void Clear() { }
         public bool IsPathAlreadyScanned(string instanceId, string normalizedPath) => false;
         public bool IsHashAlreadyScanned(string instanceId, string hash) => false;
-        public void MarkScanned(string instanceId, string normalizedPath, string hash) { }
+        public DateTimeOffset? GetScanStartedAt(string instanceId, string hash) => null;
+        public void MarkScanned(string instanceId, string normalizedPath, string hash, DateTimeOffset? submittedAt = null) { }
         public void RemoveEmptyPathsUnder(string completedFolderRoot) { }
         public void ClearIfFolderEmpty(string completedFolderRoot) { }
     }

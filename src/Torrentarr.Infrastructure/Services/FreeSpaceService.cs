@@ -10,7 +10,7 @@ namespace Torrentarr.Infrastructure.Services;
 /// <summary>One coordinated allocation pass across every client's shared storage.</summary>
 public class FreeSpaceService(
     ILogger<FreeSpaceService> logger, TorrentarrConfig config,
-    ITorrentClientRegistry registry, TorrentarrDbContext db) : IFreeSpaceService
+    ITorrentClientRegistry registry, TorrentarrDbContext db, FreeSpaceObservations? observations = null) : IFreeSpaceService
 {
     private const string PausedTag = "qBitrr-free_space_paused";
     private readonly PathMappingService _paths = new();
@@ -37,7 +37,7 @@ public class FreeSpaceService(
         return new(IdentifyStorage(path), drive.TotalSize, drive.AvailableFreeSpace);
     }
 
-    private static string StorageIdentity(string path)
+    internal static string StorageIdentity(string path, bool distinguishMounts = false)
     {
         path = Path.GetFullPath(path);
         if (OperatingSystem.IsLinux())
@@ -52,7 +52,7 @@ public class FreeSpaceService(
                 .Where(parts => parts.Length > 4 && StorageConfigMigration.Contains(UnescapeMount(parts[4]), path))
                 .OrderByDescending(parts => UnescapeMount(parts[4]).Length).FirstOrDefault();
             if (mount == null) throw new IOException("Cannot identify monitor filesystem.");
-            return mount[2];
+            return mount[distinguishMounts ? 0 : 2];
         }
         if (OperatingSystem.IsWindows()) return path.StartsWith(@"\\", StringComparison.Ordinal)
             ? Path.GetPathRoot(path)!.ToUpperInvariant() : WindowsVolume(path);
@@ -115,11 +115,16 @@ public class FreeSpaceService(
         {
             var reserve = m.Space == null ? FreeSpaceThreshold.Parse(m.Config.Limit)
                 : monitors.Where(other => other.Space?.Identity == m.Space.Identity).Max(other => FreeSpaceThreshold.Parse(other.Config.Limit));
+            var allocation = observations?.Get(m.Client, m.Config.Path);
             return new FreeSpaceStats
             {
                 ClientInstanceId = m.Client,
                 Path = m.Config.Path,
                 Error = m.Error,
+                CommittedBytes = allocation?.CommittedBytes,
+                RemainingAllocationBytes = allocation?.RemainingBytes,
+                LastCompletedPass = allocation?.CompletedAt,
+                BlockedReason = allocation?.BlockedReason,
                 TotalBytes = m.Space?.TotalBytes ?? 0,
                 FreeBytes = m.Space?.FreeBytes ?? 0,
                 ThresholdBytes = reserve,
@@ -202,12 +207,19 @@ public class FreeSpaceService(
             // Saturate subtraction so very large torrent inventories cannot overflow into free space.
             long remaining = available >= reserve ? available - reserve : -1;
             void Reserve(long bytes) => remaining = bytes > remaining ? -1 : remaining - Math.Max(0, bytes);
-            bool Managed(FreeSpaceTorrent item) => managedCategories.Contains(item.Torrent.Category)
-                && rows.Any(m => m.Client.Equals(item.InstanceName, StringComparison.OrdinalIgnoreCase));
+            bool Managed(FreeSpaceTorrent item)
+            {
+                var owner = CategoryOwnershipHelper.ResolveOwningCategory(config, item.Torrent.Category, item.InstanceName);
+                return rows.Any(m => m.Client.Equals(item.InstanceName, StringComparison.OrdinalIgnoreCase))
+                    && (owner != null && managedCategories.Contains(owner)
+                        || string.IsNullOrEmpty(item.Torrent.Category) && managedCategories.Contains(""));
+            }
             foreach (var item in items.Where(i => !Managed(i) && TorrentPolicyHelper.IsFreeSpaceDownloadState(i.Torrent.State)
                 && !TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(i.Torrent.State))) Reserve(Math.Max(0, item.Torrent.AmountLeft));
 
             var safe = rows.All(m => m.Space != null) && allocationComplete;
+            var capacityBlocked = false;
+            var actionFailed = false;
             var resumes = new List<(FreeSpaceTorrent Item, Func<Task> Run)>();
             var ordered = items.Where(Managed)
                 .OrderBy(i => i.Torrent.AddedOn);
@@ -238,6 +250,7 @@ public class FreeSpaceService(
                     if (!stopped && marked) await SetMarker(item, false, cancellationToken);
                     var needed = Math.Max(0, torrent.AmountLeft);
                     var fits = rows[0].Space != null && remaining >= needed;
+                    if (!fits) capacityBlocked = true;
                     if (!fits && !stopped)
                     {
                         operation = "mark and pause torrent";
@@ -282,10 +295,20 @@ public class FreeSpaceService(
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         resumesWithheld = true;
+                        actionFailed = true;
                         logger.LogWarning(ex, "FreeSpace: [{Client}] Resume failed for torrent {Hash}; remaining shared-storage resumes withheld", resume.Item.InstanceName, resume.Item.Torrent.Hash);
                         break;
                     }
                 }
+            var reason = rows.Any(m => m.Space == null) ? "Storage is unavailable."
+                : !inventory.Complete ? "A torrent client's inventory is unavailable; resumes withheld."
+                : !allocationComplete ? "An active download's storage path could not be matched; resumes withheld."
+                : !safe || actionFailed ? "A client action or marker update failed; resumes withheld."
+                : capacityBlocked || remaining < 0 ? "Remaining downloads exceed the space available above the reserve."
+                : null;
+            foreach (var row in rows)
+                observations?.Set(row.Client, row.Config.Path, new(Math.Max(0, available - reserve - Math.Max(0, remaining)),
+                    Math.Max(0, remaining), DateTimeOffset.UtcNow, reason));
         }
         if (due != null) schedule!.Complete(due, intervals);
         var markedCount = 0;

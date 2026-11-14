@@ -6,8 +6,8 @@ namespace Torrentarr.Infrastructure.Services;
 public class DatabaseRestartCoordinator
 {
     private readonly object _lock = new();
-    private int _errorCount;
     private DateTime _firstErrorTime;
+    internal TimeProvider Clock { get; set; } = TimeProvider.System;
     private DateTime _lastErrorTime;
     private volatile bool _restartRequested;
     private long _restartVersion;
@@ -23,14 +23,9 @@ public class DatabaseRestartCoordinator
     {
         lock (_lock)
         {
-            var now = DateTime.UtcNow;
+            var now = Clock.GetUtcNow().UtcDateTime;
             if (now - _lastErrorTime > TimeSpan.FromMinutes(5))
-            {
-                _errorCount = 0;
                 _firstErrorTime = now;
-            }
-
-            _errorCount++;
             _lastErrorTime = now;
 
             if (now - _firstErrorTime > TimeSpan.FromMinutes(5))
@@ -45,7 +40,7 @@ public class DatabaseRestartCoordinator
     {
         lock (_lock)
         {
-            _errorCount = 0;
+            _lastErrorTime = default;
         }
     }
 

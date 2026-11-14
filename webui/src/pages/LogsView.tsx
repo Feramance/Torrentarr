@@ -19,6 +19,7 @@ import {
 import type { LogSearchMatch, LogTailPayload } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import { useWebUI } from "../context/WebUIContext";
+import { isDarkTheme } from "../utils/theme";
 import { useInterval } from "../hooks/useInterval";
 import { IconImage } from "../components/IconImage";
 import { CopyButton } from "../components/CopyButton";
@@ -133,7 +134,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
 
   const { push } = useToast();
   const { theme } = useWebUI();
-  const isDark = theme === "dark";
+  const isDark = isDarkTheme(theme);
   const selectStyles = useMemo(() => getSelectStyles(isDark), [isDark]);
   const [lazyLogEpoch, setLazyLogEpoch] = useState(0);
   const prevActiveRef = useRef(active);
@@ -663,8 +664,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
   );
 
   return (
-    <section className="card logs-view">
-      <div className="card-header">Logs</div>
+    <section className="card logs-view" aria-label="Logs">
       <div className="card-body logs-view__body">
         <div className="logs-toolbar">
           <div className="logs-toolbar__file field">
@@ -951,8 +951,6 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
                 onScroll={handleScroll}
                 style={{
                   height: "100%",
-                  backgroundColor: isDark ? "#0a0e14" : "#fafafa",
-                  color: isDark ? "#e5e5e5" : "#1d1d1f",
                   fontFamily:
                     '"Cascadia Code", "Fira Code", "Consolas", "Monaco", monospace',
                   fontSize: "13px",

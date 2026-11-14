@@ -17,6 +17,16 @@ def document(paths, components=None):
 
 
 class OpenApiDriftTests(unittest.TestCase):
+    def test_statistics_generation_documents_coverage_and_detects_drift(self):
+        contract = json.loads((SCRIPT.parents[1] / "docs/assets/openapi.json").read_text())
+        self.assertEqual(module.statistics_drift(contract), [])
+        schema = contract['paths']['/web/statistics/transfers']['get']['responses']['200']['content']['application/json']['schema']
+        bucket = schema['properties']['series']['items']['properties']['points']['items']
+        self.assertTrue(bucket['properties']['downloadRate']['nullable'])
+        self.assertIn('expectedSamples', bucket['properties'])
+        del contract['paths']['/web/statistics/transfers']
+        self.assertTrue(module.statistics_drift(contract))
+
     def test_checked_in_contract_documents_native_cleanup_and_inspection_failure(self):
         contract = json.loads((SCRIPT.parents[1] / "docs/assets/openapi.json").read_text())
         self.assertEqual(module.maintenance_drift(contract), [])
@@ -50,6 +60,23 @@ class OpenApiDriftTests(unittest.TestCase):
             self.assertTrue(module.compare(local, upstream, set()))
             schema["properties"]["status"] = {"type": "string"}
             schema["properties"]["warning"] = "malformed"
+            self.assertTrue(module.compare(local, upstream, set()))
+
+    def test_restart_requirements_are_optional_and_cannot_hide_other_drift(self):
+        for route in ("/web/config", "/api/config"):
+            upstream = document({route: {"post": {"responses": {"200": {"content": {"application/json": {"schema": {
+                "type": "object", "properties": {"status": {"type": "string"}}, "required": ["status"]
+            }}}}}}}})
+            local = deepcopy(upstream)
+            schema = local["paths"][route]["post"]["responses"]["200"]["content"]["application/json"]["schema"]
+            schema["properties"]["restartRequirements"] = {"type": "array", "items": {
+                "type": "object", "properties": {key: {"type": "string"} for key in ("component", "category", "kind")},
+                "required": ["component", "category", "kind"]}}
+            self.assertEqual(module.compare(local, upstream, set()), [])
+            schema["required"].append("restartRequirements")
+            self.assertTrue(module.compare(local, upstream, set()))
+            schema["required"].remove("restartRequirements")
+            schema["properties"]["status"] = {"type": "integer"}
             self.assertTrue(module.compare(local, upstream, set()))
 
     def test_accepts_only_the_declared_named_client_status_contract(self):

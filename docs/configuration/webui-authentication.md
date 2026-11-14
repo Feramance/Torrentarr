@@ -81,7 +81,7 @@ BCrypt hash of the local-auth password. Never store a plain password in config.
 
 **Setting the password:**
 
-- **First-time:** Leave **PasswordHash** empty. Open the login page and use "Set password," or send username and password to `POST /web/auth/set-password`. Torrentarr hashes the password and writes it to config; if **AuthDisabled** was true, it will also set **AuthDisabled** = false and **LocalAuthEnabled** = true. **Note:** When **PasswordHash** is empty, anyone who can reach `POST /web/auth/set-password` can set the admin password (“first hit wins”). For deployments where the app is network-reachable before the admin visits (e.g. Docker with a published port), use network isolation or a reverse proxy that restricts access until setup is complete.
+- **First-time:** Leave **PasswordHash** empty and use "Set password" on the login page. For `POST /web/auth/set-password`, send the username and password in JSON and provide the setup credential in the JSON `setupToken` field. Use `TORRENTARR_SETUP_TOKEN` or the configured `WebUI.Token` for bootstrap. Scripts that pass the API token in the URL must move it to the `Authorization: Bearer <token>` header. Setting a password enables local authentication.
 - **Reset:** Set the environment variable **TORRENTARR_SETUP_TOKEN** to a secret value. Call `POST /web/auth/set-password` with the same value in the `setupToken` field along with the new username and password. Torrentarr will update the hash in config.
 
 ---
@@ -209,7 +209,7 @@ RequireHttpsMetadata = true
 
 ## Deployment and security
 
-- **CORS:** Set `WebUI.CorsAllowedOrigins` to exact HTTP(S) origins, such as `["https://torrentarr.example.com", "http://localhost:5173"]`. Do not include paths, trailing slashes, wildcards, or credentials. Only listed origins receive cross-origin access with credentials; an omitted or empty list preserves access from any origin without credentials. The setting appears under Web Settings → API access and applies live in both Host and standalone WebUI. Authentication still applies; CORS does not restrict non-browser clients.
+- **CORS:** Set `WebUI.CorsAllowedOrigins` to exact HTTP(S) origins, such as `["https://torrentarr.example.com", "http://localhost:5173"]`. Do not include paths, trailing slashes, wildcards, or credentials. Only listed origins receive cross-origin access with credentials; an omitted or empty list preserves access from any origin without credentials. The setting appears under Settings → Interface & Access → API access and applies live in both Host and standalone WebUI. Authentication still applies; CORS does not restrict non-browser clients.
 - **HTTPS:** In production, serve Torrentarr over HTTPS (e.g. behind a reverse proxy with TLS). Session cookies use `SecurePolicy=SameAsRequest`, so they are only sent over HTTPS when the request is HTTPS.
 - **Disabling authentication:** The configuration editor asks for confirmation before changing `AuthDisabled` to true. Confirming edits the draft; save the section to apply it.
 

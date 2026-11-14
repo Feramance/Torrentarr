@@ -1,9 +1,11 @@
+import { useStatisticsUpdates } from "../../hooks/useStatisticsUpdates";
 import { PersistentDetails } from "../PersistentDetails";
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { getReadarrOpenAuthorUrl } from "../../api/client";
 import { getReadarrAuthorDetail } from "../../api/client";
 import type { ReadarrAuthorDetailResponse } from "../../api/types";
+import { arrTypeLabel } from "../../config/arrSections";
 import { readarrAuthorThumbnailUrl } from "../../utils/arrThumbnailUrl";
 import { ArrExternalLink, ArrInstanceHint } from "./ArrExternalLink";
 import { ArrPosterImage } from "./ArrPosterImage";
@@ -23,13 +25,22 @@ export function ReadarrAuthorDetailBody({
   const [payload, setPayload] = useState<ReadarrAuthorDetailResponse | null>(
     null,
   );
+  const [revision, setRevision] = useState(0);
+  const [observedAt, setObservedAt] = useState<string | null>(null);
+  useStatisticsUpdates(true, () => {
+    setRevision((value) => value + 1);
+  });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void getReadarrAuthorDetail(category, authorId).then(
       (data) => {
-        if (!cancelled) setPayload(data);
+        if (!cancelled) {
+          setPayload(data);
+          setError(null);
+          setObservedAt(new Date().toLocaleString());
+        }
       },
       (e: unknown) => {
         if (!cancelled) {
@@ -40,9 +51,9 @@ export function ReadarrAuthorDetailBody({
     return () => {
       cancelled = true;
     };
-  }, [category, authorId]);
+  }, [category, authorId, revision]);
 
-  if (error) {
+  if (error && !payload) {
     return <p className="hint">{error}</p>;
   }
 
@@ -74,7 +85,15 @@ export function ReadarrAuthorDetailBody({
 
   return (
     <div className="arr-detail-radarr">
-      <ArrExternalLink href={openUrl} arrName="Readarr" />
+      {error && (
+        <p className="observation-stale">
+          {error} · Showing data from {observedAt}
+        </p>
+      )}
+      <ArrExternalLink
+        href={openUrl}
+        instanceLabel={hintLabel ?? arrTypeLabel("readarr")}
+      />
       <ArrInstanceHint
         instanceLabel={hintLabel}
         qualityProfileName={profileName}

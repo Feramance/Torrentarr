@@ -11,7 +11,7 @@ export const CONFIG_SCHEMA = {
         "key": "ConfigVersion",
         "label": "Config Version",
         "kind": "text",
-        "default": "6.20.3",
+        "default": "6.20.4",
         "comments": [
           "Internal config schema version - DO NOT MODIFY",
           "This is managed automatically by qBitrr for config migrations"
@@ -19,8 +19,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": false,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "Settings",
@@ -60,8 +60,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "Settings",
@@ -128,8 +128,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "Settings",
@@ -144,8 +144,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "Settings",
@@ -160,8 +160,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "Settings",
@@ -307,8 +307,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "Settings",
@@ -326,8 +326,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true,
+        "applyLive": true,
+        "requiresRestart": false,
         "minimum": 1
       },
       {
@@ -346,8 +346,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true,
+        "applyLive": true,
+        "requiresRestart": false,
         "nativeUnit": "seconds"
       },
       {
@@ -363,8 +363,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true,
+        "applyLive": true,
+        "requiresRestart": false,
         "nativeUnit": "seconds"
       }
     ],
@@ -382,8 +382,8 @@ export const CONFIG_SCHEMA = {
         "required": true,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "WebUI",
@@ -398,8 +398,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true,
+        "applyLive": true,
+        "requiresRestart": false,
         "minimum": 1,
         "maximum": 65535
       },
@@ -420,8 +420,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": true,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "WebUI",
@@ -441,8 +441,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true,
+        "applyLive": true,
+        "requiresRestart": false,
         "description": "Disable login requirement. Opens the full admin API when true (default false for new installs; missing key = disabled for legacy configs)."
       },
       {
@@ -463,8 +463,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true,
+        "applyLive": true,
+        "requiresRestart": false,
         "description": "Acknowledge AuthDisabled on a public bind (0.0.0.0/::). Required when both are set; missing key = warn-only for legacy configs."
       },
       {
@@ -483,8 +483,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true,
+        "applyLive": true,
+        "requiresRestart": false,
         "description": "Allow ?token= auth (insecure). Prefer Authorization: Bearer header."
       },
       {
@@ -504,8 +504,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true,
+        "applyLive": true,
+        "requiresRestart": false,
         "description": "Set when the WebUI is reached over HTTPS (e.g. reverse proxy). Enables Secure cookies."
       },
       {
@@ -524,8 +524,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true,
+        "applyLive": true,
+        "requiresRestart": false,
         "description": "Public path prefix when behind a reverse proxy (e.g. /qbitrr). Leave empty for site root.",
         "placeholder": "/qbitrr"
       },
@@ -542,8 +542,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "WebUI",
@@ -558,8 +558,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "WebUI",
@@ -574,7 +574,7 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
+        "applyLive": true,
         "requiresRestart": false,
         "description": "Username for local auth login"
       },
@@ -591,8 +591,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": false,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "WebUI",
@@ -608,8 +608,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "WebUI",
@@ -625,8 +625,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "WebUI",
@@ -642,8 +642,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": true,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "WebUI",
@@ -659,8 +659,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "WebUI",
@@ -676,8 +676,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "WebUI",
@@ -693,8 +693,8 @@ export const CONFIG_SCHEMA = {
         "required": false,
         "secure": false,
         "uiExpose": true,
-        "applyLive": false,
-        "requiresRestart": true
+        "applyLive": true,
+        "requiresRestart": false
       },
       {
         "section": "WebUI",
@@ -720,17 +720,20 @@ export const CONFIG_SCHEMA = {
         "key": "Theme",
         "label": "Theme",
         "kind": "select",
-        "default": "Dark",
-        "comments": "WebUI theme (Light or Dark)",
+        "default": "System",
+        "comments": "WebUI theme (System, Light, Dark, or Midnight)",
         "required": false,
         "secure": false,
         "uiExpose": false,
         "applyLive": true,
         "requiresRestart": false,
         "options": [
+          "System",
           "Light",
-          "Dark"
-        ]
+          "Dark",
+          "Midnight"
+        ],
+        "description": "System follows the operating system. Midnight uses a black background."
       },
       {
         "section": "WebUI",
@@ -767,7 +770,7 @@ export const CONFIG_SCHEMA = {
         "uiExpose": true,
         "applyLive": true,
         "requiresRestart": false,
-        "description": "HTTP(S) origins without trailing slashes. Empty allows any origin without credentials; a list permits credentials only for those origins. Changes apply live."
+        "description": "HTTP(S) origins without trailing slashes. Empty allows any origin without credentials; a list permits credentials only for those origins."
       }
     ],
     "qBit": [
@@ -1971,7 +1974,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "qBit",
@@ -2114,7 +2117,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "qBit",
@@ -2257,7 +2260,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "qBit",
@@ -2400,7 +2403,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "qBit",
@@ -2543,7 +2546,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "qBit",
@@ -2686,7 +2689,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "qBit",
@@ -2829,7 +2832,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "qBit",
@@ -2972,7 +2975,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "qBit",
@@ -3115,7 +3118,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "qBit",
@@ -3258,7 +3261,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "qBit",
@@ -5176,7 +5179,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "TorrentClient",
@@ -5319,7 +5322,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "TorrentClient",
@@ -5462,7 +5465,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "TorrentClient",
@@ -5605,7 +5608,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "TorrentClient",
@@ -5748,7 +5751,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "TorrentClient",
@@ -5891,7 +5894,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "TorrentClient",
@@ -6034,7 +6037,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "TorrentClient",
@@ -6177,7 +6180,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "TorrentClient",
@@ -6320,7 +6323,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "TorrentClient",
@@ -6463,7 +6466,7 @@ export const CONFIG_SCHEMA = {
           "manual",
           "automatic"
         ],
-        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required."
+        "description": "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart."
       },
       {
         "section": "TorrentClient",

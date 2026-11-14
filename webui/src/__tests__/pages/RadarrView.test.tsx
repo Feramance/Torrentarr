@@ -22,6 +22,7 @@ import { ArrCatalogView } from "../../pages/ArrCatalogView";
 import { ToastProvider } from "../../context/ToastContext";
 import { WebUIProvider } from "../../context/WebUIContext";
 import { SearchProvider } from "../../context/SearchContext";
+import { STATISTICS_UPDATED } from "../../hooks/useStatisticsUpdates";
 
 vi.mock("../../utils/sharedIntersectionObserver", () => ({
   observePosterVisibility: () => () => {},
@@ -109,7 +110,7 @@ function renderView(active = true) {
 // ── Card header ───────────────────────────────────────────────────────────────
 
 describe("Radarr catalog – card header", () => {
-  it("renders the Radarr card header", async () => {
+  it("renders the Radarr catalog region", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -118,7 +119,7 @@ describe("Radarr catalog – card header", () => {
 
     renderView();
 
-    await screen.findByText("Radarr");
+    await screen.findByRole("region", { name: "Radarr" });
   });
 });
 
@@ -157,10 +158,10 @@ describe("Radarr catalog – empty state", () => {
   });
 });
 
-// ── Single instance sidebar ───────────────────────────────────────────────────
+// ── Single centralized instance selection ───────────────────────────────────────────────────
 
-describe("Radarr catalog – instance sidebar", () => {
-  it("shows instance button in sidebar when one radarr instance is configured", async () => {
+describe("Radarr catalog – centralized instance selection", () => {
+  it("does not duplicate navigation when one radarr instance is configured", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -177,12 +178,10 @@ describe("Radarr catalog – instance sidebar", () => {
     // content matching (not ARIA traversal) and is much faster. The sidebar
     // <button>Radarr HD</button> appears as soon as /web/arr responds (before
     // movies are fetched), so we don't need to wait for movie data here.
-    const btn = await screen.findByText(
-      /radarr hd/i,
-      { selector: "button" },
-      { timeout: 4500 },
-    );
-    expect(btn).toBeInTheDocument();
+    await screen.findByText("Total:", { exact: true });
+    expect(
+      screen.queryByRole("button", { name: /radarr hd/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows movies table columns when movies are returned", async () => {
@@ -224,16 +223,21 @@ describe("Radarr catalog – instance sidebar", () => {
 
 it("paginates, searches, filters missing movies, and opens details in the active catalog", async () => {
   const requests: URL[] = [];
+  let releaseSearch!: () => void;
+  const searchResponse = new Promise<void>((resolve) => {
+    releaseSearch = resolve;
+  });
   server.use(
     http.get("/web/meta", minimalMeta),
     http.get("/web/config", () => HttpResponse.json(minimalConfig)),
     http.post("/web/config", () => HttpResponse.json({})),
     http.get("/web/arr", () => HttpResponse.json(radarrArrList)),
-    http.get("/web/radarr/Radarr%20HD/movies", ({ request }) => {
+    http.get("/web/radarr/Radarr%20HD/movies", async ({ request }) => {
       const url = new URL(request.url);
       requests.push(url);
       const page = Number(url.searchParams.get("page"));
       const query = url.searchParams.get("q");
+      if (query === "Wanted") await searchResponse;
       const all = Array.from({ length: 51 }, (_, i) => ({
         id: i + 1,
         title: i === 0 ? "First page" : i === 50 ? "Second page" : `Movie ${i}`,
@@ -296,6 +300,14 @@ it("paginates, searches, filters missing movies, and opens details in the active
   fireEvent.change(screen.getByLabelText("Search"), {
     target: { value: "Wanted" },
   });
+  try {
+    await waitFor(() =>
+      expect(requests.at(-1)?.searchParams.get("q")).toBe("Wanted"),
+    );
+    fireEvent(window, new Event(STATISTICS_UPDATED));
+  } finally {
+    releaseSearch();
+  }
   await screen.findByText("Wanted");
   expect(requests.at(-1)?.searchParams.get("page")).toBe("0");
   expect(requests.at(-1)?.searchParams.get("q")).toBe("Wanted");
@@ -306,6 +318,9 @@ it("paginates, searches, filters missing movies, and opens details in the active
   fireEvent.click(screen.getByText("Wanted").closest("tr")!);
   const dialog = await screen.findByRole("dialog");
   expect(within(dialog).getByText("Wanted")).toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("link", { name: "Open in Radarr HD" }),
+  ).toBeInTheDocument();
   fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Search"), {
@@ -329,6 +344,6 @@ describe("Radarr catalog – inactive", () => {
     renderView(false);
 
     // Card header still renders even when inactive
-    await screen.findByText("Radarr");
+    await screen.findByRole("region", { name: "Radarr" });
   });
 });

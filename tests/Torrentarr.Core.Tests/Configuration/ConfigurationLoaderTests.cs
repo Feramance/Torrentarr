@@ -301,7 +301,7 @@ public class ConfigurationLoaderTests : IDisposable
 
         // WebUI defaults when [WebUI] omitted
         config.WebUI.Port.Should().Be(6969);
-        config.WebUI.Theme.Should().Be("Dark");
+        config.WebUI.Theme.Should().Be("System");
         config.WebUI.LiveArr.Should().BeTrue();
     }
 
@@ -454,9 +454,9 @@ public class ConfigurationLoaderTests : IDisposable
 
         var config = new ConfigurationLoader(_tempFilePath).Load();
 
-        // Tracker should be promoted to qBit.Trackers
-        config.QBitInstances["qBit"].Trackers.Should().NotBeEmpty();
-        config.QBitInstances["qBit"].Trackers[0].Uri.Should().Be("https://tracker1.example.com/announce");
+        // Historical promotion supplies a shared rule scoped to qBit.
+        config.Trackers.Should().NotBeEmpty();
+        config.Trackers.Should().Contain(t => t.Uri == "https://tracker1.example.com/announce" && t.ClientIds!.Contains("qBit"));
     }
 
     // --- Migration 6: HitAndRunClearMode Consolidation ---
@@ -531,7 +531,7 @@ public class ConfigurationLoaderTests : IDisposable
 
         var config = new ConfigurationLoader(_tempFilePath).Load();
 
-        config.ArrInstances["Radarr-Movies"].Torrent.Trackers[0].HitAndRunMode.Should().Be("and");
+        config.Trackers.Single(t => t.ArrInstances != null).HitAndRunMode.Should().Be("and");
     }
 
     // --- ValidateAndFillConfig ---
@@ -567,7 +567,7 @@ public class ConfigurationLoaderTests : IDisposable
 
         config.WebUI.Host.Should().Be("0.0.0.0");
         config.WebUI.Port.Should().Be(6969);
-        config.WebUI.Theme.Should().Be("Dark");
+        config.WebUI.Theme.Should().Be("System");
         config.WebUI.ViewDensity.Should().Be("Comfortable");
         config.WebUI.LiveArr.Should().BeTrue();
         // Filled WebUI auth defaults must match GenerateDefaultConfig / qBitrr: auth on, local login opt-in.
@@ -604,6 +604,24 @@ public class ConfigurationLoaderTests : IDisposable
 
         config.WebUI.Theme.Should().Be("Light");
         config.WebUI.ViewDensity.Should().Be("Comfortable");
+    }
+
+    [Fact]
+    public void Load_ValidateAndFill_NormalizesSystemAndMidnightThemes()
+    {
+        WriteToml("""
+            [WebUI]
+            Theme = "system"
+            """);
+
+        new ConfigurationLoader(_tempFilePath).Load().WebUI.Theme.Should().Be("System");
+
+        WriteToml("""
+            [WebUI]
+            Theme = "MIDNIGHT"
+            """);
+
+        new ConfigurationLoader(_tempFilePath).Load().WebUI.Theme.Should().Be("Midnight");
     }
 
     [Fact]
@@ -884,9 +902,9 @@ public class ConfigurationLoaderTests : IDisposable
 
         var config = new ConfigurationLoader(_tempFilePath).Load();
 
-        config.QBitInstances["qBit"].Trackers.Should().ContainSingle();
-        config.QBitInstances["qBit"].Trackers[0].SortTorrents.Should().BeTrue();
-        config.QBitInstances["qBit"].Trackers[0].Priority.Should().Be(10);
+        config.Trackers.Should().ContainSingle();
+        config.Trackers[0].SortTorrents.Should().BeTrue();
+        config.Trackers[0].Priority.Should().Be(10);
     }
 
     [Theory]
@@ -935,17 +953,17 @@ public class ConfigurationLoaderTests : IDisposable
         loader.SaveConfig(config);
 
         var reloaded = new ConfigurationLoader(_tempFilePath).Load();
-        reloaded.QBitInstances["qBit"].Trackers.Should().ContainSingle();
-        reloaded.QBitInstances["qBit"].Trackers[0].Uri.Should().Be("https://tracker.example.com/announce");
-        reloaded.QBitInstances["qBit"].Trackers[0].SortTorrents.Should().BeTrue();
-        reloaded.QBitInstances["qBit"].Trackers[0].Priority.Should().Be(10);
-        reloaded.QBitInstances["qBit"].Trackers[0].HitAndRunMode.Should().Be("and");
-        reloaded.QBitInstances["qBit"].Trackers[0].MinSeedRatio.Should().Be(2.0);
+        reloaded.Trackers.Should().ContainSingle();
+        reloaded.Trackers[0].Uri.Should().Be("https://tracker.example.com/announce");
+        reloaded.Trackers[0].SortTorrents.Should().BeTrue();
+        reloaded.Trackers[0].Priority.Should().Be(10);
+        reloaded.Trackers[0].HitAndRunMode.Should().Be("and");
+        reloaded.Trackers[0].MinSeedRatio.Should().Be(2.0);
         reloaded.Settings.LoopSleepTimer.Should().Be(10);
     }
 
     [Fact]
-    public void SaveConfig_WritesTrackerMinSeedingTimeAlias()
+    public void SaveConfig_WritesTrackerMinSeedingTimeDays()
     {
         WriteToml("""
             [Settings]
@@ -964,9 +982,9 @@ public class ConfigurationLoaderTests : IDisposable
         loader.SaveConfig(config);
 
         var content = File.ReadAllText(_tempFilePath);
-        content.Should().Contain("MinSeedingTime = 2");
+        content.Should().Contain("MinSeedingTimeDays = 2");
         new ConfigurationLoader(_tempFilePath).Load()
-            .QBitInstances["qBit"].Trackers[0].MinSeedingTimeDays.Should().Be(2);
+            .Trackers[0].MinSeedingTimeDays.Should().Be(2);
     }
 
     [Fact]
@@ -1448,7 +1466,7 @@ public class ConfigurationLoaderTests : IDisposable
             """);
 
         var config = new ConfigurationLoader(_tempFilePath).Load();
-        config.QBitInstances["qBit"].Trackers[0].MinSeedingTimeDays.Should().Be(4);
+        config.Trackers[0].MinSeedingTimeDays.Should().Be(4);
     }
 
     [Fact]
@@ -1467,7 +1485,7 @@ public class ConfigurationLoaderTests : IDisposable
             """);
 
         var config = new ConfigurationLoader(_tempFilePath).Load();
-        config.QBitInstances["qBit"].Trackers[0].MinSeedingTimeDays.Should().Be(2);
+        config.Trackers[0].MinSeedingTimeDays.Should().Be(2);
     }
 
     [Fact]

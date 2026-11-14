@@ -1,3 +1,7 @@
+import {
+  configSections,
+  type ConfigSection,
+} from "../../config/settingsSections";
 import React from "react";
 import {
   describe,
@@ -85,9 +89,103 @@ function Wrapper({ children }: { children: ReactNode }) {
   );
 }
 
-function renderConfig() {
-  return render(<ConfigView />, { wrapper: Wrapper });
+function ConfigHarness(props: React.ComponentProps<typeof ConfigView>) {
+  const [section, setSection] = React.useState<ConfigSection>("general");
+  return (
+    <>
+      <nav aria-label="Configuration sections">
+        {(Object.keys(configSections) as ConfigSection[]).map((key) => (
+          <button key={key} onClick={() => setSection(key)}>
+            {configSections[key]}
+          </button>
+        ))}
+      </nav>
+      <ConfigView {...props} section={section} onSectionChange={setSection} />
+    </>
+  );
 }
+
+function renderConfig() {
+  return render(<ConfigHarness />, { wrapper: Wrapper });
+}
+
+async function openSection(name: string): Promise<void> {
+  await waitFor(() =>
+    expect(
+      screen.queryByText("Loading configuration…"),
+    ).not.toBeInTheDocument(),
+  );
+  if (
+    [
+      "General",
+      "Interface & Access",
+      "Authentication",
+      "Integrations",
+    ].includes(name)
+  ) {
+    await userEvent.click(
+      screen.getByRole("button", { name: new RegExp(`^${name}(?: •)?$`) }),
+    );
+    return;
+  }
+  await userEvent.click(
+    screen.getByRole("button", { name: "Torrent Clients", exact: true }),
+  );
+  let button = screen.queryByRole("button", {
+    name: `Configure ${name}`,
+    exact: true,
+  });
+  if (!button) {
+    await userEvent.click(
+      screen.getByRole("button", { name: "Integrations", exact: true }),
+    );
+    button = screen.getByRole("button", {
+      name: `Configure ${name}`,
+      exact: true,
+    });
+  }
+  await userEvent.click(button);
+}
+
+it("saves the explicit choice to keep protection off for an unchanged monitor list", async () => {
+  const config = {
+    ...configQbitOnly,
+    qBit: {
+      ...configQbitOnly.qBit,
+      FreeSpace: [],
+      Migration: {
+        Notices: [
+          "no unambiguous local monitor path; free-space protection remains disabled until configured",
+        ],
+      },
+    },
+  };
+  const save = vi.fn();
+  server.use(
+    http.get("/web/config", () => HttpResponse.json(config)),
+    http.post("/web/config", async ({ request }) => {
+      save(await request.json());
+      config.qBit.Migration.Notices = [];
+      return HttpResponse.json(okUpdateResponse);
+    }),
+  );
+  renderConfig();
+  await openSection("qBit");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Keep free-space protection off" }),
+  );
+  await waitFor(() =>
+    expect(save).toHaveBeenCalledWith({
+      changes: { "qBit.FreeSpace": [] },
+      keepFreeSpaceProtectionOff: "qBit.FreeSpace",
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Keep free-space protection off" }),
+    ).not.toBeInTheDocument(),
+  );
+});
 
 it("requires confirmation before changing the draft to disable authentication", async () => {
   server.use(
@@ -100,33 +198,26 @@ it("requires confirmation before changing the draft to disable authentication", 
   );
   const user = userEvent.setup();
   renderConfig();
-  const card = (await screen.findByText("Authentication")).closest(".card")!;
-  await user.click(
-    within(card as HTMLElement).getByRole("button", { name: "Configure" }),
-  );
-  const accessControls = screen
-    .getByText("Access controls")
-    .closest("details")!;
-  await user.click(within(accessControls).getByText("Access controls"));
+  await openSection("Authentication");
   const authDisabled = screen.getByLabelText("Auth Disabled");
   await user.click(authDisabled);
   const warning = screen.getByRole("dialog", {
     name: "Disable authentication?",
   });
   await user.click(within(warning).getByRole("button", { name: "Cancel" }));
-  expect(accessControls).toHaveAttribute("open");
+  expect(authDisabled).toBeVisible();
   expect(authDisabled).toHaveFocus();
   expect(authDisabled).not.toBeChecked();
   await user.click(authDisabled);
   await user.keyboard("{Escape}");
-  expect(accessControls).toHaveAttribute("open");
+  expect(authDisabled).toBeVisible();
   expect(authDisabled).toHaveFocus();
   expect(authDisabled).not.toBeChecked();
   await user.click(authDisabled);
   await user.click(
     screen.getByRole("button", { name: "Disable authentication" }),
   );
-  expect(accessControls).toHaveAttribute("open");
+  expect(authDisabled).toBeVisible();
   expect(authDisabled).toHaveFocus();
   expect(authDisabled).toBeChecked();
 });
@@ -148,50 +239,28 @@ it("lists every client together by name with the same controls and shared settin
       }),
     ),
   );
-  const user = userEvent.setup();
   renderConfig();
-  const section = (await screen.findByText("Torrent Clients")).closest(
-    "section",
-  )!;
-  expect(screen.queryByText("qBittorrent Instances")).not.toBeInTheDocument();
+  await openSection("a-transmission");
   expect(
-    screen.queryByText("Additional Torrent Clients"),
-  ).not.toBeInTheDocument();
-  expect(section.querySelector(".config-arr-group__count")).toHaveTextContent(
-    "3",
-  );
+    screen.getByRole("navigation", { name: "Configuration sections" }),
+  ).toBeInTheDocument();
   expect(
-    Array.from(
-      section.querySelectorAll(".card-header"),
-      (header) => header.textContent,
-    ),
-  ).toEqual(["a-transmission", "qBit", "z-qbit"]);
-  expect(
-    within(section).getAllByRole("button", { name: "Add Instance" }),
-  ).toHaveLength(1);
-  for (const card of section.querySelectorAll<HTMLElement>(
-    ".config-arr-card",
-  )) {
-    expect(within(card).getAllByRole("button")).toHaveLength(1);
-    expect(within(card).getByText("Host")).toBeInTheDocument();
-    expect(within(card).getByText("Status")).toBeInTheDocument();
-    await user.click(within(card).getByRole("button", { name: "Configure" }));
-    const dialog = screen.getByRole("dialog");
+    screen.getByRole("button", { name: "Add Instance" }),
+  ).toBeInTheDocument();
+  for (const name of ["a-transmission", "qBit", "z-qbit"]) {
+    await openSection(name);
+    const editor = screen.getByRole("region", {
+      name: /^(Configure |General|Interface & Access|Authentication)/,
+    });
     expect(
-      within(dialog).getByText("Managed Categories", { exact: true }),
+      within(editor).getByText("Managed Categories", { exact: true }),
     ).toBeInTheDocument();
     expect(
-      within(dialog).getByText("Hit and Run Mode", { exact: true }),
+      within(editor).getByRole("button", { name: "Open Shared Settings" }),
     ).toBeInTheDocument();
     expect(
-      within(dialog).getByRole("button", { name: "Open Manage" }),
+      within(editor).getByRole("button", { name: "Delete", exact: true }),
     ).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole("button", { name: "Delete", exact: true }),
-    ).toBeInTheDocument();
-    await user.click(
-      within(dialog).getByRole("button", { name: "Close", exact: true }),
-    );
   }
 });
 
@@ -207,15 +276,13 @@ describe("ConfigView – delete button rendering", () => {
     renderConfig();
 
     // Wait for config to load by checking for a known card header
-    await screen.findByText("qBit");
-    // Find the card that contains "qBit" and confirm its delete button
-    const qbitHeader = screen.getByText("qBit");
-    const card = qbitHeader.closest(".card")!;
-    await userEvent.click(
-      within(card).getByRole("button", { name: /configure/i }),
-    );
+    await openSection("qBit");
     expect(
-      within(screen.getByRole("dialog")).getByRole("button", {
+      within(
+        screen.getByRole("region", {
+          name: /^(Configure |General|Interface & Access|Authentication)/,
+        }),
+      ).getByRole("button", {
         name: /delete/i,
       }),
     ).toBeInTheDocument();
@@ -229,14 +296,13 @@ describe("ConfigView – delete button rendering", () => {
 
     renderConfig();
 
-    await screen.findByText("qBit-1");
-    const qbit1Header = screen.getByText("qBit-1");
-    const card = qbit1Header.closest(".card")!;
-    await userEvent.click(
-      within(card).getByRole("button", { name: /configure/i }),
-    );
+    await openSection("qBit-1");
     expect(
-      within(screen.getByRole("dialog")).getByRole("button", {
+      within(
+        screen.getByRole("region", {
+          name: /^(Configure |General|Interface & Access|Authentication)/,
+        }),
+      ).getByRole("button", {
         name: /delete/i,
       }),
     ).toBeInTheDocument();
@@ -250,14 +316,13 @@ describe("ConfigView – delete button rendering", () => {
 
     renderConfig();
 
-    await screen.findByText("Radarr-1080");
-    const arrHeader = screen.getByText("Radarr-1080");
-    const card = arrHeader.closest(".card")!;
-    await userEvent.click(
-      within(card).getByRole("button", { name: /configure/i }),
-    );
+    await openSection("Radarr-1080");
     expect(
-      within(screen.getByRole("dialog")).getByRole("button", {
+      within(
+        screen.getByRole("region", {
+          name: /^(Configure |General|Interface & Access|Authentication)/,
+        }),
+      ).getByRole("button", {
         name: /delete/i,
       }),
     ).toBeInTheDocument();
@@ -284,10 +349,13 @@ describe("ConfigView – section deletion", () => {
     );
     const user = userEvent.setup();
     renderConfig();
-    const card = (await screen.findByText("qBit")).closest(".card")!;
-    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    await openSection("qBit");
     await user.click(
-      within(screen.getByRole("dialog")).getByRole("button", {
+      within(
+        screen.getByRole("region", {
+          name: /^(Configure |General|Interface & Access|Authentication)/,
+        }),
+      ).getByRole("button", {
         name: /delete/i,
       }),
     );
@@ -309,10 +377,13 @@ describe("ConfigView – section deletion", () => {
     );
     const user = userEvent.setup();
     renderConfig();
-    const card = (await screen.findByText("qBit-1")).closest(".card")!;
-    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    await openSection("qBit-1");
     await user.click(
-      within(screen.getByRole("dialog")).getByRole("button", {
+      within(
+        screen.getByRole("region", {
+          name: /^(Configure |General|Interface & Access|Authentication)/,
+        }),
+      ).getByRole("button", {
         name: /delete/i,
       }),
     );
@@ -393,28 +464,34 @@ describe("ConfigView – equal client names", () => {
       );
       const user = userEvent.setup();
       renderConfig();
-      const header = await screen.findByText("qBit");
+      await openSection("qBit");
       expect(screen.queryByText("(Default)")).not.toBeInTheDocument();
-      await user.click(
-        within(header.closest(".card")!).getByRole("button", {
-          name: /configure/i,
-        }),
-      );
-      const dialog = screen.getByRole("dialog");
+
+      const dialog = screen.getByRole("region", {
+        name: /^(Configure |General|Interface & Access|Authentication)/,
+      });
       for (const newName of names) {
         const name = within(dialog).getByPlaceholderText("qBit-seedbox");
         await user.clear(name);
         await user.type(name, `${newName}{Enter}`);
       }
       await user.click(
-        within(screen.getByRole("dialog")).getByRole("button", {
+        within(
+          screen.getByRole("region", {
+            name: /^(Configure |General|Interface & Access|Authentication)/,
+          }),
+        ).getByRole("button", {
           name: /^save$/i,
         }),
       );
       if (outcome === "retry") {
         await screen.findByText(/configuration is busy/i);
         await user.click(
-          within(screen.getByRole("dialog")).getByRole("button", {
+          within(
+            screen.getByRole("region", {
+              name: /^(Configure |General|Interface & Access|Authentication)/,
+            }),
+          ).getByRole("button", {
             name: /^save$/i,
           }),
         );
@@ -458,16 +535,13 @@ describe("ConfigView – addQbitInstance behaviour", () => {
 
     renderConfig();
 
-    await screen.findByText("qBit");
+    await openSection("qBit");
     expect(screen.queryByText("client-1")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Add Instance" }),
+    ).toHaveLength(1);
 
-    // Scope the shared add button to the torrent client section.
-    // Arr groups (Radarr/Sonarr/Lidarr) each have their own "Add Instance" button,
-    // so we must scope the query to avoid ambiguity.
-    const qbitSection = screen.getByText("Torrent Clients").closest("section")!;
-    const addBtn = within(qbitSection).getByRole("button", {
-      name: /add instance/i,
-    });
+    const addBtn = screen.getByRole("button", { name: "Add Instance" });
     await user.click(addBtn);
 
     // findAllByText: the card header AND the modal title both contain "client-1"
@@ -484,14 +558,11 @@ describe("ConfigView – addQbitInstance behaviour", () => {
 
     renderConfig();
 
-    await screen.findByText("qBit");
+    await openSection("qBit");
 
     // Click once → creates client-1 and opens its configure modal
     const getAddBtn = () =>
-      within(screen.getByText("Torrent Clients").closest("section")!).getByRole(
-        "button",
-        { name: /add instance/i },
-      );
+      screen.getByRole("button", { name: /add instance/i });
 
     await user.click(getAddBtn());
     // Card header + modal title both show "client-1"
@@ -557,15 +628,9 @@ describe("ConfigView – UrlBase field", () => {
       ),
     );
 
-    const user = userEvent.setup();
     renderConfig();
 
-    const webSettingsCard = (await screen.findByText("Web Settings")).closest(
-      ".card",
-    )!;
-    await user.click(
-      within(webSettingsCard).getByRole("button", { name: /configure/i }),
-    );
+    await openSection("Interface & Access");
 
     expect(
       await screen.findByLabelText("Allow Insecure Exposure"),
@@ -573,20 +638,15 @@ describe("ConfigView – UrlBase field", () => {
     expect(screen.queryByText("Hidden Schema Field")).not.toBeInTheDocument();
   });
 
-  it("renders Url Base field in Web Settings modal", async () => {
+  it("renders Url Base field in Interface & Access modal", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configQbitOnly)),
       http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
     );
 
-    const user = userEvent.setup();
     renderConfig();
 
-    await screen.findByText("Web Settings");
-    const webSettingsCard = screen.getByText("Web Settings").closest(".card")!;
-    await user.click(
-      within(webSettingsCard).getByRole("button", { name: /configure/i }),
-    );
+    await openSection("Interface & Access");
     expect(await screen.findByText("Url Base")).toBeInTheDocument();
   });
 
@@ -604,8 +664,7 @@ describe("ConfigView – UrlBase field", () => {
     const user = userEvent.setup();
     renderConfig();
 
-    const card = (await screen.findByText("Web Settings")).closest(".card")!;
-    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    await openSection("Interface & Access");
     await user.click(screen.getByRole("button", { name: "Save", exact: true }));
 
     expect(
@@ -622,11 +681,7 @@ describe("ConfigView – UrlBase field", () => {
     const user = userEvent.setup();
     renderConfig();
 
-    await screen.findByText("Web Settings");
-    const webSettingsCard = screen.getByText("Web Settings").closest(".card")!;
-    await user.click(
-      within(webSettingsCard).getByRole("button", { name: /configure/i }),
-    );
+    await openSection("Interface & Access");
     await screen.findByText("Url Base");
     const urlBaseField = screen.getByText("Url Base").closest(".field")!;
     const urlBaseInput = within(urlBaseField).getByRole("textbox");
@@ -656,13 +711,9 @@ describe("ConfigView – Arr Import Mode and Entry Search", () => {
       http.post("/web/config", () => HttpResponse.json(okUpdateResponse)),
     );
 
-    const user = userEvent.setup();
     renderConfig();
 
-    await screen.findByText("Radarr-1080");
-    const arrHeader = screen.getByText("Radarr-1080");
-    const card = arrHeader.closest(".card")!;
-    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    await openSection("Radarr-1080");
 
     expect(await screen.findByText("Import Mode")).toBeInTheDocument();
     const importModeField = screen.getByText("Import Mode").closest(".field")!;
@@ -697,13 +748,9 @@ describe("ConfigView – Arr Entry Search and Import Mode", () => {
       ),
     );
 
-    const user = userEvent.setup();
     renderConfig();
 
-    await screen.findByText("Radarr-1080");
-    const arrHeader = screen.getByText("Radarr-1080");
-    const card = arrHeader.closest(".card")!;
-    await user.click(within(card).getByRole("button", { name: /configure/i }));
+    await openSection("Radarr-1080");
 
     await screen.findByText("Import Mode");
     const importModeField = screen.getByText("Import Mode").closest(".field")!;
@@ -748,34 +795,46 @@ describe("ConfigView – section persistence", () => {
     );
     const user = userEvent.setup();
     renderConfig();
-    const web = (await screen.findByText("Web Settings")).closest(".card")!;
-    await user.click(within(web).getByRole("button", { name: /configure/i }));
+    await openSection("Interface & Access");
     await user.type(
-      within(screen.getByRole("dialog")).getByRole("textbox", {
+      within(
+        screen.getByRole("region", {
+          name: /^(Configure |General|Interface & Access|Authentication)/,
+        }),
+      ).getByRole("textbox", {
         name: "Url Base",
       }),
       "/draft",
     );
-    await user.click(
-      within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }),
-    );
-    const qbit = screen.getByText("qBit").closest(".card")!;
-    await user.click(within(qbit).getByRole("button", { name: /configure/i }));
-    const host = within(screen.getByRole("dialog")).getByRole("textbox", {
+
+    await openSection("qBit");
+    const host = within(
+      screen.getByRole("region", {
+        name: /^(Configure |General|Interface & Access|Authentication)/,
+      }),
+    ).getByRole("textbox", {
       name: "Host",
     });
     await user.clear(host);
     await user.type(host, "seedbox.local");
     await user.click(
-      within(screen.getByRole("dialog")).getByRole("button", {
+      within(
+        screen.getByRole("region", {
+          name: /^(Configure |General|Interface & Access|Authentication)/,
+        }),
+      ).getByRole("button", {
         name: /^Save$/,
       }),
     );
     await screen.findByText("Configuration saved");
     expect(saved!.changes).toEqual({ "qBit.Host": "seedbox.local" });
-    await user.click(within(web).getByRole("button", { name: /configure/i }));
+    await openSection("Interface & Access");
     expect(
-      within(screen.getByRole("dialog")).getByRole("textbox", {
+      within(
+        screen.getByRole("region", {
+          name: /^(Configure |General|Interface & Access|Authentication)/,
+        }),
+      ).getByRole("textbox", {
         name: "Url Base",
       }),
     ).toHaveValue("/draft");
@@ -803,45 +862,70 @@ describe("ConfigView – section persistence", () => {
     );
     const user = userEvent.setup();
     renderConfig();
-    const card = (await screen.findByText("qBit")).closest(".card")!;
-    await user.click(within(card).getByRole("button", { name: /configure/i }));
-    const host = within(screen.getByRole("dialog")).getByRole("textbox", {
+    await openSection("qBit");
+    const host = within(
+      screen.getByRole("region", {
+        name: /^(Configure |General|Interface & Access|Authentication)/,
+      }),
+    ).getByRole("textbox", {
       name: "Host",
     });
     await user.clear(host);
     await user.type(host, "keep-this.local");
     await user.click(
-      within(screen.getByRole("dialog")).getByRole("button", {
+      within(
+        screen.getByRole("region", {
+          name: /^(Configure |General|Interface & Access|Authentication)/,
+        }),
+      ).getByRole("button", {
         name: /^Save$/,
       }),
     );
     await screen.findByText("disk unavailable");
     expect(host).toHaveValue("keep-this.local");
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", {
+        name: /^(Configure |General|Interface & Access|Authentication)/,
+      }),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/Configuration saved/)).not.toBeInTheDocument();
   });
 });
 
-it.each(["Web Settings", "Radarr-1080"])(
+it.each(["Interface & Access", "Radarr-1080"])(
   "releases the %s modal and scroll lock while Config is inactive",
   async (section) => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(configWithInstances)),
     );
-    const user = userEvent.setup();
     const { rerender } = renderConfig();
-    const card = (await screen.findByText(section)).closest(".card")!;
-    await user.click(within(card).getByRole("button", { name: /configure/i }));
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(document.body.style.overflow).toBe("hidden");
-    rerender(<ConfigView active={false} />);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await openSection(section);
+    expect(
+      screen.getByRole("region", {
+        name: /^(Configure |General|Interface & Access|Authentication)/,
+      }),
+    ).toBeInTheDocument();
     expect(document.body.style.overflow).toBe("");
-    rerender(<ConfigView active />);
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(document.body.style.overflow).toBe("hidden");
+    rerender(<ConfigHarness active={false} />);
+    expect(
+      screen.queryByRole("region", {
+        name: /^(Configure |General|Interface & Access|Authentication)/,
+      }),
+    ).not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("");
+    rerender(<ConfigHarness active />);
+    expect(
+      screen.getByRole("region", {
+        name: /^(Configure |General|Interface & Access|Authentication)/,
+      }),
+    ).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("");
     fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("region", {
+        name: /^(Configure |General|Interface & Access|Authentication)/,
+      }),
+    ).toBeInTheDocument();
     expect(document.body.style.overflow).toBe("");
   },
 );
@@ -875,13 +959,16 @@ it("uses the shared client dialog and saves only the selected torrent client", a
   );
   const user = userEvent.setup();
   renderConfig();
-  const card = (await screen.findByText("seedbox")).closest(".card")!;
-  await user.click(within(card).getByRole("button", { name: "Configure" }));
+  await openSection("seedbox");
   expect(
     screen.getByRole("textbox", { name: "Client Type", exact: true }),
   ).toHaveValue("transmission");
-  expect(screen.queryByText("Path mappings")).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Open Manage" })).toBeEnabled();
+  expect(
+    screen.getByText("Path mappings", { selector: "h4" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Open Shared Settings" }),
+  ).toBeEnabled();
   const host = screen.getByRole("textbox", { name: "Host", exact: true });
   await user.clear(host);
   await user.type(host, "new-host");
@@ -952,17 +1039,12 @@ it.each([false, true])(
     );
     const user = userEvent.setup();
     render(
-      <MaintenanceView requestedClientId={canonical ? "seedbox" : "qBit"} />,
+      <MaintenanceView
+        requestedClient={{ id: canonical ? "seedbox" : "qBit" }}
+      />,
       { wrapper: Wrapper },
     );
-    const open = async () => {
-      const shared = await screen.findByText(/Shared settings ·/);
-      if (!shared.closest("details")!.open) await user.click(shared);
-      const mappings = screen.getByText("Path mappings", {
-        selector: "summary",
-      });
-      if (!mappings.closest("details")!.open) await user.click(mappings);
-    };
+    const open = () => screen.findByRole("heading", { name: "Path mappings" });
     const save = async () => {
       await user.click(screen.getByRole("button", { name: "Save settings" }));
       await waitFor(() =>
@@ -1047,7 +1129,16 @@ it.each([false, true])(
         detail: { ...application, state: "applied" },
       }),
     );
-    await screen.findByText("Configuration applied live");
+    await waitFor(() =>
+      expect(
+        screen.queryByText(
+          "Configuration saved; waiting for active operations to finish",
+        ),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText(/Configuration applied live/i),
+    ).not.toBeInTheDocument();
     window.dispatchEvent(
       new CustomEvent("torrentarr:configuration", {
         detail: { ...application, acceptedRevision: 19 },
@@ -1095,13 +1186,13 @@ it.each([false, true])(
     );
     const user = userEvent.setup();
     render(
-      <MaintenanceView requestedClientId={canonical ? "seedbox" : "qBit"} />,
+      <MaintenanceView
+        section="Storage"
+        requestedClient={{ id: canonical ? "seedbox" : "qBit" }}
+      />,
       { wrapper: Wrapper },
     );
-    await screen.findByText(/Shared settings ·/);
-    await user.click(
-      screen.getByText("Orphan-file cleanup", { selector: "strong" }),
-    );
+    await screen.findByRole("heading", { name: "Orphan-file cleanup" });
     fireEvent.change(
       screen.getByLabelText("Minimum orphan file age (minutes)"),
       { target: { value: "120" } },
@@ -1129,15 +1220,14 @@ it("opens Manage for the saved client without losing its pending connection edit
   try {
     const user = userEvent.setup();
     renderConfig();
-    const card = (await screen.findByText("qBit", { exact: true })).closest(
-      ".card",
-    )!;
-    await user.click(within(card).getByRole("button", { name: "Configure" }));
+    await openSection("qBit");
     fireEvent.change(
       screen.getByRole("textbox", { name: "Host", exact: true }),
       { target: { value: "pending.local" } },
     );
-    await user.click(screen.getByRole("button", { name: "Open Manage" }));
+    await user.click(
+      screen.getByRole("button", { name: "Open Shared Settings" }),
+    );
     expect(navigate.mock.calls[0][0].detail).toEqual({
       tab: "maintenance",
       manageClientId: "qBit",
@@ -1149,4 +1239,761 @@ it("opens Manage for the saved client without losing its pending connection edit
   } finally {
     window.removeEventListener(NAVIGATE_TAB_EVENT, navigate);
   }
+});
+
+it("filters inline setting fields without locking page scrolling or losing drafts", async () => {
+  server.use(http.get("/web/config", () => HttpResponse.json(configQbitOnly)));
+  const user = userEvent.setup();
+  renderConfig();
+  await user.click(
+    await screen.findByRole("button", { name: "Interface & Access" }),
+  );
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(document.body.style.overflow).toBe("");
+  const search = screen.getByRole("searchbox", {
+    name: "Find a setting in this section",
+  });
+  await user.type(search, "Url Base");
+  const url = screen.getByRole("textbox", { name: "Url Base" });
+  await user.type(url, "/draft");
+  await openSection("qBit");
+  await user.click(screen.getByRole("button", { name: /Interface & Access/ }));
+  expect(screen.getByRole("textbox", { name: "Url Base" })).toHaveValue(
+    "/draft",
+  );
+});
+
+it("shows grouped Arr application summaries and opens the selected inline editor", async () => {
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configWithInstances,
+        "Radarr-1080": {
+          ...configWithInstances["Radarr-1080"],
+          URI: "http://user:secret@radarr:7878/base?apikey=hidden",
+        },
+        "Sonarr-TV": {
+          Managed: false,
+          URI: "http://sonarr:8989",
+          Category: "tv",
+          SearchOnly: true,
+        },
+      }),
+    ),
+  );
+  renderConfig();
+  await screen.findByRole("region", { name: "General" });
+  await userEvent.click(
+    screen.getByRole("button", { name: "Integrations", exact: true }),
+  );
+  expect(screen.queryByLabelText("Library instance")).not.toBeInTheDocument();
+  const radarr = screen.getByRole("button", {
+    name: "Configure Radarr-1080",
+    exact: true,
+  });
+  expect(radarr).toHaveTextContent("radarr:7878/base");
+  expect(radarr).toHaveTextContent("Search + torrents");
+  expect(radarr).not.toHaveTextContent("secret");
+  expect(radarr).not.toHaveTextContent("hidden");
+  expect(radarr).toHaveAttribute("aria-pressed", "false");
+  expect(
+    screen.queryByRole("region", { name: /^Configure / }),
+  ).not.toBeInTheDocument();
+  const sonarr = screen.getByRole("button", {
+    name: "Configure Sonarr-TV",
+    exact: true,
+  });
+  expect(sonarr).toHaveTextContent("tv");
+  expect(sonarr).toHaveTextContent("Search only");
+  expect(sonarr).toHaveTextContent("Disabled");
+  await userEvent.click(sonarr);
+  expect(sonarr).toHaveAttribute("aria-pressed", "true");
+  expect(
+    screen.getByRole("heading", { name: /Sonarr-TV/ }),
+  ).toBeInTheDocument();
+});
+
+it("shows empty type sections and creates integrations from the top-level picker while retaining drafts", async () => {
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({ Settings: {}, WebUI: {} }),
+    ),
+  );
+  renderConfig();
+  await openSection("Integrations");
+  expect(screen.queryByLabelText("Integration type")).not.toBeInTheDocument();
+  for (const type of ["Radarr", "Sonarr", "Lidarr", "Readarr"]) {
+    const section = screen.getByRole("region", { name: `${type} Instances` });
+    expect(within(section).getByText("0 instances")).toBeInTheDocument();
+    expect(
+      within(section).queryByRole("button", { name: "Add Instance" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Add Instance" }));
+    const picker = screen.getByRole("dialog", { name: "Add integration" });
+    await userEvent.click(
+      within(picker).getByRole("button", { name: type, exact: true }),
+    );
+    expect(
+      screen.getByRole("region", { name: `Configure ${type}-1` }),
+    ).toBeInTheDocument();
+  }
+  await userEvent.click(screen.getByRole("button", { name: "Add Instance" }));
+  await userEvent.click(
+    within(screen.getByRole("dialog", { name: "Add integration" })).getByRole(
+      "button",
+      { name: "Radarr", exact: true },
+    ),
+  );
+  expect(
+    screen.getByRole("button", { name: "Configure Radarr-1" }),
+  ).toHaveTextContent("Unsaved");
+  expect(
+    screen.getByRole("region", { name: "Configure Radarr-2" }),
+  ).toBeInTheDocument();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Torrent Clients", exact: true }),
+  );
+  const group = screen.getByRole("region", { name: "qBittorrent Instances" });
+  expect(within(group).getByText("0 instances")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Torrent client")).not.toBeInTheDocument();
+});
+
+it("groups mixed client storage by normalized type without conflating identities", async () => {
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configQbitOnly,
+        TorrentClient: {
+          qBit: {
+            Type: "QBITTORRENT",
+            Host: "canonical",
+            Port: 8080,
+            ManagedCategories: ["movies"],
+            TorrentScanIntervalSeconds: 60,
+          },
+          custom: { Type: "Custom", Host: "custom", Port: 1234 },
+          transmission: { Type: "transmission", Host: "other", Port: 9091 },
+        },
+      }),
+    ),
+  );
+  renderConfig();
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Torrent Clients", exact: true }),
+  );
+  const group = screen.getByRole("region", { name: "qBittorrent Instances" });
+  expect(within(group).getByText("2 instances")).toBeInTheDocument();
+  expect(within(group).getByText("movies")).toBeInTheDocument();
+  expect(within(group).getByText("60 s")).toBeInTheDocument();
+  await userEvent.click(
+    within(group).getByRole("button", { name: "Configure qBit (legacy)" }),
+  );
+  expect(
+    screen.getByRole("textbox", { name: "Host", exact: true }),
+  ).toHaveValue("localhost");
+  await userEvent.click(
+    within(group).getByRole("button", {
+      name: "Configure qBit (TorrentClient)",
+    }),
+  );
+  expect(
+    screen.getByRole("textbox", { name: "Host", exact: true }),
+  ).toHaveValue("canonical");
+  const add = screen.getByRole("button", { name: "Add Instance" });
+  await userEvent.click(add);
+  const picker = screen.getByRole("dialog", { name: "Add torrent client" });
+  await userEvent.click(
+    within(picker).getByRole("button", { name: "Close Add torrent client" }),
+  );
+  expect(picker).not.toBeInTheDocument();
+  expect(add).toHaveFocus();
+  await userEvent.click(add);
+  await userEvent.click(
+    within(
+      screen.getByRole("dialog", { name: "Add torrent client" }),
+    ).getByRole("button", { name: "custom" }),
+  );
+  expect(
+    screen
+      .getByRole("region", { name: "Configure client-1" })
+      .closest(".config-workspace__editor"),
+  ).toHaveFocus();
+  expect(screen.getByRole("textbox", { name: "Client Type" })).toHaveValue(
+    "custom",
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Client Type" }), {
+    target: { value: "transmission" },
+  });
+  expect(
+    within(
+      screen.getByRole("region", { name: "transmission Instances" }),
+    ).getByText("2 instances"),
+  ).toBeInTheDocument();
+});
+
+it.each([
+  "ordinary",
+  "accept",
+  "defer",
+  "retry",
+  "empty target",
+  "failed save",
+])(
+  "handles %s save requirements independently of legacy reload labels",
+  async (scenario) => {
+    const requirements = [
+      { component: "Radarr search", category: "radarr", kind: "search" },
+      { component: "Sonarr torrents", category: "sonarr", kind: "torrent" },
+    ];
+    const current = {
+      ...structuredClone(configQbitOnly),
+      WebUI: { ...configQbitOnly.WebUI, Host: "127.0.0.1", UrlBase: "" },
+    };
+    const restarts: string[] = [];
+    let retry = scenario === "retry" || scenario === "empty target";
+    let saves = 0;
+    server.use(
+      http.get("/web/config", () => HttpResponse.json(current)),
+      http.post("/web/config", async ({ request }) => {
+        saves++;
+        const { changes } = (await request.json()) as {
+          changes: Record<string, unknown>;
+        };
+        if (scenario === "failed save")
+          return HttpResponse.json({ error: "save failed" }, { status: 500 });
+        current.WebUI.UrlBase = String(changes["WebUI.UrlBase"]);
+        return HttpResponse.json({
+          ...okUpdateResponse,
+          reloadType: "full",
+          configReloaded: true,
+          restartRequirements: scenario === "ordinary" ? [] : requirements,
+        });
+      }),
+      http.post("/web/processes/:category/:kind/restart", ({ params }) => {
+        expect(saves).toBe(1);
+        restarts.push(`${params.category}/${params.kind}`);
+        if (
+          retry &&
+          params.category === "radarr" &&
+          scenario === "empty target"
+        )
+          return HttpResponse.json({ status: "restarted", restarted: [] });
+        if (retry && params.category === "radarr")
+          return HttpResponse.json(
+            { error: "restart failed" },
+            { status: 500 },
+          );
+        return HttpResponse.json({ status: "restarted" });
+      }),
+    );
+    renderConfig();
+    await openSection("Interface & Access");
+    expect(
+      screen.queryByText(/Applies live|No restart required/),
+    ).not.toBeInTheDocument();
+    const save = screen.getByRole("button", { name: "Save", exact: true });
+    expect(
+      screen.queryByRole("dialog", { name: "Restart required" }),
+    ).not.toBeInTheDocument();
+    if (scenario === "ordinary") {
+      await userEvent.click(save);
+      await screen.findByText("No changes detected for WebUI");
+      expect(saves).toBe(0);
+    }
+    fireEvent.change(screen.getByRole("textbox", { name: "Url Base" }), {
+      target: { value: "/new" },
+    });
+    await userEvent.click(save);
+    if (scenario === "failed save") {
+      await screen.findByText("save failed");
+      expect(
+        screen.queryByRole("dialog", { name: "Restart required" }),
+      ).not.toBeInTheDocument();
+    } else if (scenario === "ordinary") {
+      await screen.findByText("Configuration saved");
+      expect(
+        screen.queryByRole("dialog", { name: "Restart required" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/reloaded|Applied live|without restart/i),
+      ).not.toBeInTheDocument();
+    } else {
+      const dialog = await screen.findByRole("dialog", {
+        name: "Restart required",
+      });
+      expect(dialog).toHaveTextContent("Radarr search, Sonarr torrents");
+      expect(
+        within(dialog).getByRole("button", { name: "Close" }),
+      ).toHaveFocus();
+      await userEvent.tab({ shift: true });
+      expect(
+        within(dialog).getByRole("button", { name: "Restart now" }),
+      ).toHaveFocus();
+      if (scenario === "defer") {
+        await userEvent.click(
+          within(dialog).getByRole("button", { name: "Later" }),
+        );
+        expect(screen.getByText(/Pending restart:/)).toHaveTextContent(
+          "Radarr search, Sonarr torrents",
+        );
+        expect(current.WebUI.UrlBase).toBe("/new");
+      } else {
+        await userEvent.click(
+          within(dialog).getByRole("button", { name: "Restart now" }),
+        );
+        await waitFor(() => expect(restarts).toHaveLength(2));
+        if (scenario === "retry" || scenario === "empty target") {
+          await screen.findByText(
+            scenario === "retry"
+              ? "restart failed"
+              : "Radarr search did not restart",
+          );
+          expect(screen.getByText(/Pending restart:/)).toHaveTextContent(
+            "Radarr search",
+          );
+          expect(screen.getByText(/Pending restart:/)).not.toHaveTextContent(
+            "Sonarr torrents",
+          );
+          retry = false;
+          await userEvent.click(
+            await screen.findByRole("button", { name: "Retry restart" }),
+          );
+          await userEvent.click(
+            screen.getByRole("button", { name: "Restart now" }),
+          );
+          await waitFor(() => expect(restarts).toHaveLength(3));
+        }
+        await waitFor(() =>
+          expect(
+            screen.queryByText(/Pending restart:/),
+          ).not.toBeInTheDocument(),
+        );
+      }
+    }
+    if (["ordinary", "defer", "failed save"].includes(scenario))
+      expect(restarts).toEqual([]);
+  },
+);
+
+it.each([
+  {
+    tab: "Integrations",
+    name: "Radarr-1080",
+    field: "URI",
+    draft: "http://draft:7878",
+  },
+  { tab: "Torrent Clients", name: "qBit", field: "Host", draft: "draft.local" },
+  {
+    tab: "Torrent Clients",
+    name: "seedbox",
+    field: "Host",
+    draft: "draft.local",
+  },
+])(
+  "opens $name only on selection and retains its draft when returning to the overview",
+  async ({ tab, name, field, draft }) => {
+    server.use(
+      http.get("/web/config", () =>
+        HttpResponse.json({
+          ...configWithInstances,
+          TorrentClient: {
+            seedbox: {
+              Type: "qbittorrent",
+              Host: "canonical.local",
+              Port: 8080,
+            },
+          },
+        }),
+      ),
+    );
+    renderConfig();
+    const tabs = await screen.findByRole("navigation", {
+      name: "Configuration sections",
+    });
+    const openTab = () =>
+      userEvent.click(
+        within(tabs).getByRole("button", { name: tab, exact: true }),
+      );
+    await openTab();
+    expect(
+      screen.queryByRole("region", { name: /^Configure / }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    const row = () =>
+      screen.getByRole("button", { name: `Configure ${name}`, exact: true });
+    await userEvent.click(row());
+    expect(
+      screen.getByRole("region", { name: `Configure ${name}`, exact: true }),
+    ).toBeInTheDocument();
+    expect(
+      screen
+        .getByRole("region", { name: `Configure ${name}`, exact: true })
+        .closest(".config-inline-backdrop"),
+    ).toBeInTheDocument();
+    expect(document.querySelector(".modal-backdrop")).not.toBeInTheDocument();
+    const actions = document.querySelector(".config-inline-actions")!;
+    expect(actions).toContainElement(
+      screen.getByRole("button", { name: "Save", exact: true }),
+    );
+    const note = document.querySelector(".modal-footer-note");
+    if (note) expect(actions).toContainElement(note);
+    const input = screen.getByRole("textbox", { name: field, exact: true });
+    fireEvent.change(input, { target: { value: draft } });
+    expect(screen.getByRole("searchbox")).toBeInTheDocument();
+    await userEvent.click(
+      within(tabs).getByRole("button", { name: "General", exact: true }),
+    );
+    await openTab();
+    expect(
+      screen.queryByRole("region", { name: /^Configure / }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    expect(row()).toHaveTextContent("Unsaved");
+    await userEvent.click(row());
+    expect(
+      screen.getByRole("textbox", { name: field, exact: true }),
+    ).toHaveValue(draft);
+  },
+);
+
+it("focuses and scrolls after the requested editor mounts, without jumping on ordinary updates", async () => {
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configWithInstances,
+        TorrentClient: {
+          seedbox: { Type: "qbittorrent", Host: "canonical.local", Port: 8080 },
+        },
+      }),
+    ),
+  );
+  const previous = HTMLElement.prototype.scrollIntoView;
+  const header = document.createElement("header");
+  header.className = "appbar";
+  vi.spyOn(header, "getBoundingClientRect").mockReturnValue({
+    height: 72,
+  } as DOMRect);
+  document.body.append(header);
+  const titles: string[] = [];
+  const scroll = vi.fn(function (this: HTMLElement) {
+    titles.push(this.querySelector("h2")?.textContent ?? "");
+    expect(this).toHaveFocus();
+    expect(this.style.scrollMarginTop).toBe("84px");
+  });
+  HTMLElement.prototype.scrollIntoView = scroll;
+  try {
+    renderConfig();
+    const tabs = await screen.findByRole("navigation", {
+      name: "Configuration sections",
+    });
+    expect(scroll).not.toHaveBeenCalled();
+    for (const name of ["qBit", "seedbox", "Radarr-1080"]) {
+      await openSection(name);
+      expect(titles.at(-1)).toBe(`Configure ${name}`);
+      const calls = scroll.mock.calls.length;
+      const field = screen.getByRole("textbox", {
+        name: name.startsWith("Radarr") ? "URI" : "Host",
+        exact: true,
+      });
+      fireEvent.change(field, { target: { value: "" } });
+      expect(scroll).toHaveBeenCalledTimes(calls);
+      await userEvent.type(screen.getByRole("searchbox"), "Connection");
+      expect(scroll).toHaveBeenCalledTimes(calls);
+      fireEvent.change(screen.getByRole("searchbox"), {
+        target: { value: "" },
+      });
+      fireEvent(
+        window,
+        new CustomEvent("torrentarr:configuration", {
+          detail: { acceptedRevision: 42, state: "applied", components: {} },
+        }),
+      );
+      expect(scroll).toHaveBeenCalledTimes(calls);
+      // Selecting the same row is still an explicit navigation request.
+      await userEvent.click(
+        screen.getByRole("button", { name: `Configure ${name}`, exact: true }),
+      );
+      expect(scroll).toHaveBeenCalledTimes(calls + 1);
+    }
+    await userEvent.click(
+      within(tabs).getByRole("button", {
+        name: "Torrent Clients",
+        exact: true,
+      }),
+    );
+    const calls = scroll.mock.calls.length;
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Add Instance" }));
+    expect(titles.at(-1)).toBe("Configure client-1");
+    expect(scroll).toHaveBeenCalledTimes(calls + 1);
+    await userEvent.click(
+      within(tabs).getByRole("button", { name: "Integrations", exact: true }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Add Instance" }));
+    await userEvent.click(
+      within(screen.getByRole("dialog", { name: "Add integration" })).getByRole(
+        "button",
+        { name: "Readarr", exact: true },
+      ),
+    );
+    expect(titles.at(-1)).toBe("Configure Readarr-1");
+    expect(scroll).toHaveBeenCalledTimes(calls + 2);
+    expect(scroll).toHaveBeenLastCalledWith({
+      block: "start",
+      behavior: "instant",
+    });
+  } finally {
+    HTMLElement.prototype.scrollIntoView = previous;
+    header.remove();
+  }
+}, 15_000);
+
+it("focuses the affected free-space monitor and preserves edits on fallback", async () => {
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configQbitOnly,
+        qBit: {
+          ...configQbitOnly.qBit,
+          FreeSpace: [
+            { Path: "/first", Limit: "10G", Enabled: true },
+            { Path: "/second", Limit: "20G", Enabled: true },
+          ],
+        },
+      }),
+    ),
+  );
+  const { rerender } = renderConfig();
+  await openSection("qBit");
+  fireEvent.change(screen.getByRole("textbox", { name: "Host", exact: true }), {
+    target: { value: "draft-host" },
+  });
+
+  rerender(
+    <ConfigHarness
+      destination={{
+        client: "qBit",
+        field: "FreeSpace",
+        monitorPath: "/second",
+      }}
+    />,
+  );
+  const second = await screen.findByRole("group", {
+    name: "Free-space monitor 2",
+  });
+  await waitFor(() =>
+    expect(second.contains(document.activeElement)).toBe(true),
+  );
+
+  rerender(
+    <ConfigHarness
+      destination={{
+        client: "qBit",
+        field: "FreeSpace",
+        monitorPath: "/removed",
+      }}
+    />,
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByText("Free-space monitors", { selector: "h4" }),
+    ).toHaveFocus(),
+  );
+  expect(
+    screen.getByRole("textbox", { name: "Host", exact: true }),
+  ).toHaveValue("draft-host");
+});
+
+it("edits General using the existing Settings keys", async () => {
+  let changes: Record<string, unknown> = {};
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configWithInstances,
+        Settings: {
+          ...configWithInstances.Settings,
+          ConsoleLevel: "INFO",
+          AutoUpdateCron: "0 3 * * 0",
+          AutoUpdateChannel: "latest",
+        },
+      }),
+    ),
+    http.post("/web/config", async ({ request }) => {
+      changes = ((await request.json()) as { changes: Record<string, unknown> })
+        .changes;
+      return HttpResponse.json(okUpdateResponse);
+    }),
+  );
+  renderConfig();
+  const general = await screen.findByRole("region", { name: "General" });
+  const category = within(general).getByRole("textbox", {
+    name: "Failed Category",
+  });
+  expect(category).toHaveValue("failed");
+  fireEvent.change(category, { target: { value: "failed-updated" } });
+  await userEvent.click(
+    within(general).getByRole("button", { name: "Save", exact: true }),
+  );
+  await waitFor(() =>
+    expect(changes).toEqual({ "Settings.FailedCategory": "failed-updated" }),
+  );
+});
+
+it("shows a loading error in the Settings workspace and retries", async () => {
+  let fail = true;
+  server.use(
+    http.get("/web/config", () =>
+      fail
+        ? HttpResponse.json(
+            { error: "Configuration unavailable" },
+            { status: 500 },
+          )
+        : HttpResponse.json(configWithInstances),
+    ),
+  );
+  renderConfig();
+  const workspace = screen.getByRole("region", { name: "Settings editor" });
+  expect(within(workspace).getByText("Loading configuration…")).toBeVisible();
+  expect(await within(workspace).findByRole("alert")).toBeVisible();
+  fail = false;
+  await userEvent.click(
+    within(workspace).getByRole("button", { name: "Retry" }),
+  );
+  expect(await screen.findByRole("region", { name: "General" })).toBeVisible();
+});
+
+it("edits tracker scopes with the keyboard and saves only the chosen scope", async () => {
+  let savedRules: unknown = [];
+  const user = userEvent.setup();
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configWithInstances,
+        "qBit-1": { ...configWithInstances["qBit-1"], Disabled: true },
+        "Sonarr-TV": { URI: "http://sonarr:8989", Category: "tv" },
+        Trackers: savedRules,
+      }),
+    ),
+    http.post("/web/config", async ({ request }) => {
+      const body = (await request.json()) as {
+        changes: Record<string, unknown>;
+      };
+      savedRules = body.changes.Trackers;
+      return HttpResponse.json(okUpdateResponse);
+    }),
+  );
+  renderConfig();
+  await user.click(screen.getByRole("button", { name: "Trackers" }));
+  await user.click(await screen.findByRole("button", { name: "Add Tracker" }));
+  const section = screen.getByRole("region", { name: "Tracker rules" });
+  const tracker = within(section);
+  const selectClients = tracker.getByRole("button", {
+    name: "Select torrent clients",
+  });
+  selectClients.focus();
+  await user.keyboard("{Enter}");
+  await user.tab();
+  expect(
+    tracker.getByRole("checkbox", { name: "qBit", exact: true }),
+  ).toHaveFocus();
+  await user.keyboard(" ");
+  await user.tab();
+  expect(tracker.getByRole("checkbox", { name: "qBit-1" })).toHaveFocus();
+  await user.keyboard(" {Escape}");
+  expect(tracker.getByRole("button", { name: "qBit, qBit-1" })).toHaveFocus();
+  expect(tracker.getByRole("button", { name: "qBit, qBit-1" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+
+  await user.selectOptions(
+    tracker.getByLabelText("Applies to"),
+    "ArrInstances",
+  );
+  const selectIntegrations = tracker.getByRole("button", {
+    name: "Select arr integrations",
+  });
+  selectIntegrations.focus();
+  await user.tab();
+  expect(tracker.getByRole("checkbox", { name: "Radarr-1080" })).toHaveFocus();
+  await user.keyboard(" ");
+  await user.tab();
+  await user.keyboard(" {Escape}");
+  await user.type(
+    tracker.getByRole("textbox", { name: "URI" }),
+    "https://tracker.example",
+  );
+  await user.click(tracker.getByRole("button", { name: "Save Trackers" }));
+  await waitFor(() =>
+    expect(savedRules).toEqual([
+      expect.objectContaining({
+        ArrInstances: ["Radarr-1080", "Sonarr-TV"],
+        URI: "https://tracker.example",
+      }),
+    ]),
+  );
+  expect(savedRules).not.toEqual([
+    expect.objectContaining({ ClientIds: expect.anything() }),
+  ]);
+  expect(tracker.getByText(/Legacy Hit & Run is off/)).toBeInTheDocument();
+});
+
+it("opens one tracker at a time and returns to an invalid draft on save", async () => {
+  const user = userEvent.setup();
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configWithInstances,
+        Trackers: [
+          { Name: "First", URI: "https://first.example", ClientIds: ["qBit"] },
+          {
+            Name: "Second",
+            URI: "https://second.example",
+            ClientIds: ["qBit"],
+          },
+        ],
+      }),
+    ),
+  );
+
+  renderConfig();
+  await user.click(screen.getByRole("button", { name: "Trackers" }));
+  const trackers = within(
+    await screen.findByRole("region", { name: "Tracker rules" }),
+  );
+  const first = trackers.getByRole("button", { name: /^First/ });
+  const second = trackers.getByRole("button", { name: /^Second/ });
+  const uri = () => trackers.getByRole("textbox", { name: "URI" });
+
+  expect(trackers.queryByRole("textbox", { name: "URI" })).toBeNull();
+  await user.click(first);
+  await user.clear(uri());
+  await user.type(uri(), "https://draft.example");
+  await user.click(second);
+  expect(uri()).toHaveValue("https://second.example");
+  await user.click(first);
+  expect(uri()).toHaveValue("https://draft.example");
+
+  await user.clear(uri());
+  await user.click(trackers.getByRole("button", { name: "Close" }));
+  expect(first).toHaveFocus();
+  expect(trackers.queryByRole("textbox", { name: "URI" })).toBeNull();
+  await user.click(second);
+  await user.click(trackers.getByRole("button", { name: "Save Trackers" }));
+  expect(first).toHaveAttribute("aria-pressed", "true");
+  expect(uri()).toHaveFocus();
+
+  await user.click(trackers.getByRole("button", { name: "Remove First" }));
+  expect(
+    trackers.getByRole("group", { name: "Configured trackers" }),
+  ).toHaveFocus();
+  await user.click(trackers.getByRole("button", { name: /^Second/ }));
+  expect(uri()).toHaveValue("https://second.example");
+
+  await user.click(trackers.getByRole("button", { name: "Add Tracker" }));
+  expect(trackers.getByRole("button", { name: /^Tracker 2/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(uri()).toHaveValue("");
 });

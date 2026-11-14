@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import {
   getArrTorrentHandlingSummary,
   getQbitTorrentHandlingSummary,
+  getTrackerSummary,
 } from "../../config/torrentHandlingSummary";
 it("describes completion fractions as percentages", () => {
   const summary = getArrTorrentHandlingSummary({
@@ -16,8 +17,13 @@ it("explains mandatory completion-based protection without claiming legacy-off c
     CategorySeeding: { HitAndRunMode: "disabled" },
     Trackers: [{ Name: "OnlyEncodes", Protection: { Policy: "onlyencodes" } }],
   });
-  expect(summary).toContain("48 mandatory completed seed hours");
-  expect(summary).toContain("Ratio never replaces mandatory time");
+  const tracker = getTrackerSummary({
+    Name: "OnlyEncodes",
+    Protection: { Policy: "onlyencodes" },
+  });
+  expect(tracker).toContain("48 mandatory completed seed hours");
+  expect(tracker).toContain("Ratio never replaces mandatory time");
+  expect(summary).not.toContain("OnlyEncodes");
   expect(summary).toContain("unknown private obligations are preserved");
   expect(summary).not.toContain("may be removed as soon as");
 });

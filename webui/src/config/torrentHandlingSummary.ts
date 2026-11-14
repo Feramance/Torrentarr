@@ -112,7 +112,7 @@ function listPreview(arr: unknown[], maxItems = 3, suffix = "\u2026"): string {
   return parts.join(", ") + rest;
 }
 
-/** Build human-readable summary for an Arr instance: lifetime narrative and per-tracker behaviour. */
+/** Build human-readable summary for an Arr instance: lifetime narrative. */
 export function getArrTorrentHandlingSummary(
   state: ConfigDocument | null,
 ): string {
@@ -259,57 +259,10 @@ export function getArrTorrentHandlingSummary(
   }
   blocks.push(seedParts.join(" "));
 
-  // 4. Per-tracker behaviour
-  const trackers = get(state, ["Torrent", "Trackers"]) as
-    | ConfigDocument[]
-    | undefined;
-  if (!Array.isArray(trackers) || trackers.length === 0) {
-    blocks.push(
-      "No per-tracker overrides; behaviour above applies to all trackers (using torrent client defaults).",
-    );
-  } else {
-    blocks.push("**Per-tracker behaviour**");
-    trackers.forEach((raw) => {
-      const t = raw as Record<string, unknown>;
-      const name = String(t.Name ?? "Tracker").trim() || "Tracker";
-      const protection = trackerProtectionSummary(t, name);
-      if (protection) {
-        blocks.push(protection);
-        return;
-      }
-      const mode = resolveHnrMode(t.HitAndRunMode);
-      const tMinRatio = Number(t.MinSeedRatio ?? 1);
-      const tMinDays = Number(t.MinSeedingTimeDays ?? 0);
-      const ratioStr = Number.isFinite(tMinRatio) ? tMinRatio : 1;
-      const daysVal = Number.isFinite(tMinDays) ? tMinDays : 0;
-      const daysLabel = plural(
-        daysVal === 1 ? 1 : Math.max(0, daysVal),
-        "day",
-        "days",
-      );
-      const sortNote = t.SortTorrents
-        ? " **Queue sort** uses this tracker's priority in the torrent client's download queue when queuing is enabled."
-        : "";
-      if (mode === "disabled") {
-        blocks.push(
-          `- **${name}** \u2014 Legacy HnR is off for this row. Removal still requires every applicable obligation to clear.${sortNote}`,
-        );
-      } else {
-        const both = mode === "and" ? "both required" : "either allows removal";
-        blocks.push(
-          `- **${name}** \u2014 HnR is on (${both}). The torrent will **not** be removed until it has reached ratio ${ratioStr} and been seeding for ${daysVal} ${daysLabel}. Until then, it is protected from removal even if stalled or if the global seeding limit would allow removal.${sortNote}`,
-        );
-      }
-    });
-    blocks.push(
-      "Other trackers use torrent client defaults and the seeding/stalled rules above.",
-    );
-  }
-
   return blocks.join("\n\n");
 }
 
-/** Build human-readable summary for a torrent client: lifetime narrative and per-tracker behaviour. */
+/** Build human-readable summary for a torrent client: lifetime narrative. */
 export function getQbitTorrentHandlingSummary(
   state: ConfigDocument | null,
 ): string {
@@ -438,52 +391,23 @@ export function getQbitTorrentHandlingSummary(
     );
   }
 
-  // 4. Per-tracker behaviour
-  const trackers = get(state, ["Trackers"]) as ConfigDocument[] | undefined;
-  if (!Array.isArray(trackers) || trackers.length === 0) {
-    blocks.push("No custom tracker rules configured.");
-  } else {
-    blocks.push("**Per-tracker behaviour**");
-    trackers.forEach((raw) => {
-      const t = raw as Record<string, unknown>;
-      const name = String(t.Name ?? "Tracker").trim() || "Tracker";
-      const protection = trackerProtectionSummary(t, name);
-      if (protection) {
-        blocks.push(protection);
-        return;
-      }
-      const mode = resolveHnrMode(t.HitAndRunMode);
-      const tMinRatio = Number(t.MinSeedRatio ?? 1);
-      const tMinDays = Number(t.MinSeedingTimeDays ?? 0);
-      const ratioStr = Number.isFinite(tMinRatio) ? tMinRatio : 1;
-      const daysVal = Number.isFinite(tMinDays) ? tMinDays : 0;
-      const daysLabel = plural(
-        daysVal === 1 ? 1 : Math.max(0, daysVal),
-        "day",
-        "days",
-      );
-      const sortNote = t.SortTorrents
-        ? " **Queue sort** uses this tracker's priority in the torrent client's download queue when queuing is enabled."
-        : "";
-      if (mode === "disabled") {
-        blocks.push(
-          `- **${name}** \u2014 Legacy HnR is off for this row. Removal still requires every applicable obligation to clear (e.g. after max time or when max ratio is reached).${sortNote}`,
-        );
-      } else {
-        const both = mode === "and" ? "both required" : "either allows removal";
-        const until =
-          mode === "and"
-            ? `until it has reached ratio ${ratioStr} and been seeding for ${daysVal} ${daysLabel}`
-            : `until it has reached ratio ${ratioStr} or been seeding for ${daysVal} ${daysLabel}`;
-        blocks.push(
-          `- **${name}** \u2014 HnR is on (${both}). The torrent will **not** be removed ${until}. Until then, it is protected from removal even if stalled or if the global seeding time would allow removal.${sortNote}`,
-        );
-      }
-    });
-    blocks.push(
-      "Other trackers use the category defaults and the seeding/stalled rules above.",
-    );
-  }
-
   return blocks.join("\n\n");
+}
+
+/** Describe the rule on its own card as settings change. */
+export function getTrackerSummary(tracker: ConfigDocument): string {
+  const name = String(tracker.Name ?? "").trim() || "Tracker";
+  const mode = resolveHnrMode(tracker.HitAndRunMode);
+  const ratio = Number(tracker.MinSeedRatio ?? 1);
+  const days = Number(tracker.MinSeedingTimeDays ?? 0);
+  const time = `${days} ${plural(days, "day", "days")} of seeding`;
+  const protection = trackerProtectionSummary(tracker, name);
+  const legacy =
+    mode === "disabled"
+      ? "Legacy Hit & Run is off. Removal still requires every applicable obligation to clear."
+      : `Legacy Hit & Run requires ratio ${ratio} ${mode === "and" ? "and" : "or"} ${time} before removal.`;
+  const sort = tracker.SortTorrents
+    ? " Queue sorting uses this rule’s priority when the client has queuing enabled."
+    : "";
+  return (protection ?? legacy) + sort;
 }

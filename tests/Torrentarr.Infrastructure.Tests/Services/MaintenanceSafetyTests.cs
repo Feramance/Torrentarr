@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,12 +12,14 @@ using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Services;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Torrentarr.Infrastructure.Tests.Services;
 
 [Collection(nameof(ConfigReloaderTests))]
 public sealed class MaintenanceSafetyTests : IDisposable
 {
+    private readonly ITestOutputHelper _output;
     private readonly string _root = Path.Combine(TestPaths.TempPath, "maintenance-test-" + Guid.NewGuid().ToString("N"));
     private readonly TorrentarrConfig _config = new();
     private readonly string? _previousDataDirectory;
@@ -72,8 +75,9 @@ public sealed class MaintenanceSafetyTests : IDisposable
         MaintenanceCoordinator.CanResolvePreviewIssue("maintenance.preview.orphan-prerequisite", "one", preview).Should().BeFalse();
     }
 
-    public MaintenanceSafetyTests()
+    public MaintenanceSafetyTests(ITestOutputHelper output)
     {
+        _output = output;
         Directory.CreateDirectory(_root);
         _previousDataDirectory = Environment.GetEnvironmentVariable("TORRENTARR_OVERRIDES_DATA_PATH");
         Environment.SetEnvironmentVariable("TORRENTARR_OVERRIDES_DATA_PATH", _root);
@@ -207,8 +211,15 @@ public sealed class MaintenanceSafetyTests : IDisposable
             _config, NullLogger<OperationalIssueMonitor>.Instance);
         await Inspect(automation, default);
         await monitor.InspectAsync(default);
-        var issue = await _db.OperationalIssues.SingleAsync(i => i.Code == "automation.protection");
-        issue.ResolvedAt.Should().BeNull();
+        var issue = await _db.OperationalIssues.SingleOrDefaultAsync(i => i.Code == "automation.protection");
+        if (accepted)
+        {
+            issue.Should().BeNull();
+            automation.GetStatus().Protection.Should().ContainSingle().Which.NativeStopLimitRisk.Should().BeFalse();
+            return;
+        }
+        issue.Should().NotBeNull();
+        issue!.ResolvedAt.Should().BeNull();
         torrent.RatioLimit = -1; torrent.SeedingTimeLimit = -1; torrent.InactiveSeedingTimeLimit = -1;
         AutomationField<System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset>>(automation, "_nextInspection").Clear();
         await Inspect(automation, default);
@@ -594,6 +605,111 @@ public sealed class MaintenanceSafetyTests : IDisposable
     }
 
     [Theory]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    public async Task Recycling_SkipsExpectedMissingFilesAndRejectsUnexpectedOnes(int priority, bool throughMaintenance)
+    {
+        var torrent = AddTorrent();
+        _files[torrent.Hash].Add(new() { Name = "extra.mkv", Size = 1, Priority = priority, Progress = 1 });
+        if (throughMaintenance)
+        {
+            ClientConfig.Maintenance.Unregistered.Enabled = true;
+            MaintenancePersistence.Write(_db, MaintenancePersistence.Key("one", torrent.Hash, "recovery:UnregisteredCleanup"), new RecoveryIncident
+            {
+                AddedOn = torrent.AddedOn,
+                Stage = "recurring",
+                Attempts = 1,
+                CompletedAt = DateTimeOffset.UtcNow.AddDays(-2),
+                FailureSince = DateTimeOffset.UtcNow.AddDays(-2),
+                LastObserved = DateTimeOffset.UtcNow
+            });
+            _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+                .ReturnsAsync([new() { Url = "https://tracker.example/announce", Msg = "unregistered torrent" }]);
+
+            var plan = await Preview(MaintenanceOperation.UnregisteredCleanup);
+            var action = plan.Actions.Should().ContainSingle().Subject;
+            action.Kind.Should().Be(MaintenanceActionKind.RecycleContent);
+            (action.BlockedReason == null).Should().Be(priority == 0);
+            (await Apply(plan)).Applied.Should().Be(priority == 0 ? 1 : 0);
+        }
+        else
+        {
+            var result = await _deletion.RemoveTorrentAsync("one", torrent.Hash, true);
+            result.Success.Should().Be(priority == 0);
+        }
+
+        File.Exists(Path.Combine(_root, "movie.mkv")).Should().Be(priority != 0);
+        _deletion.InspectRecycleEntries("one").Should().HaveCount(priority == 0 ? 1 : 0);
+    }
+
+    [Fact]
+    public async Task Recycling_IncludesExpectedMissingFileThatAppearsBeforeTheMove()
+    {
+        var torrent = AddTorrent();
+        _files[torrent.Hash].Add(new() { Name = "extra.mkv", Size = 1, Priority = 0, Progress = 1 });
+        var inventory = await _inventory.BuildAsync();
+        var extra = Path.Combine(_root, "extra.mkv.!qB");
+        File.WriteAllText(extra, "x");
+
+        var result = await _deletion.RemoveMaintenanceTorrentAsync("one", torrent.Hash, true, inventory);
+
+        result.Success.Should().BeTrue();
+        result.BytesMoved.Should().Be(5);
+        File.Exists(extra).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Recycling_BlocksDirectoryThatReplacesInspectedFileDuringPause()
+    {
+        var torrent = AddTorrent();
+        torrent.State = "uploading";
+        var path = Path.Combine(_root, "movie.mkv");
+        var child = Path.Combine(path, "unrelated.mkv");
+        _client.Setup(c => c.PauseTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                torrent.State = "pausedUP";
+                File.Delete(path);
+                Directory.CreateDirectory(path);
+                File.WriteAllText(child, "keep");
+                return true;
+            });
+
+        var result = await _deletion.RemoveTorrentAsync("one", torrent.Hash, true);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("Expected a file");
+        File.ReadAllText(child).Should().Be("keep");
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Fact]
+    public async Task Recycling_RestoresMovedFilesWhenSkippedFileAppearsDuringPause()
+    {
+        var torrent = AddTorrent();
+        torrent.State = "uploading";
+        _files[torrent.Hash].Add(new() { Name = "extra.mkv", Size = 1, Priority = 0, Progress = 1 });
+        var extra = Path.Combine(_root, "extra.mkv");
+        _client.Setup(c => c.PauseTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                torrent.State = "pausedUP";
+                File.WriteAllText(extra, "x");
+                return true;
+            });
+
+        var result = await _deletion.RemoveTorrentAsync("one", torrent.Hash, true);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("previously missing file appeared");
+        File.ReadAllText(Path.Combine(_root, "movie.mkv")).Should().Be("data");
+        File.ReadAllText(extra).Should().Be("x");
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task RecheckResult_DistinguishesDeferralFromClientRejection(bool busy)
@@ -800,8 +916,6 @@ public sealed class MaintenanceSafetyTests : IDisposable
             .ReturnsAsync(() => { torrent.State = "stoppedDL"; return true; });
         // A read-only parent permits copying its file but prevents unlinking it.
         var inventory = await _inventory.BuildAsync();
-        var item = inventory.Torrents.Single();
-        item.Files[0] = new() { File = item.Files[0].File, ClientPath = "/downloads/bundle", LocalPath = source };
         var originalMode = File.GetUnixFileMode(source);
         try
         {
@@ -946,6 +1060,42 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _client.Verify(c => c.ResumeTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RecycleLedgerWriteFailure_PreservesTheRemovalOutcome(bool accepted)
+    {
+        var torrent = AddTorrent();
+        _client.Setup(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>())).ReturnsAsync(accepted);
+        _db.Database.ExecuteSqlRaw("""
+            CREATE TRIGGER reject_recycle_updates BEFORE UPDATE ON torrentarr_maintenance_state
+            WHEN NEW.Key LIKE '%|recycle:%'
+            BEGIN SELECT RAISE(FAIL, 'fixture ledger failure'); END;
+            """);
+        var logger = new ActivityLogger<SafeDeletionService>();
+        var deletion = new SafeDeletionService(_registry.Object, _inventory, new PathMappingService(), _config, logger,
+            _services.GetRequiredService<IServiceScopeFactory>());
+
+        var result = await deletion.RemoveTorrentAsync("one", torrent.Hash, true);
+
+        result.Success.Should().Be(accepted);
+        result.BytesMoved.Should().Be(accepted ? 4 : 0);
+        if (!accepted) result.Error.Should().Contain("Torrent client rejected removal");
+        File.Exists(Path.Combine(_root, "movie.mkv")).Should().Be(!accepted);
+        logger.Messages.Should().Contain(message => message.Contains("Could not record recycle state"));
+        var entry = new RecycleLedger(_services.GetRequiredService<IServiceScopeFactory>()).Read().Should().ContainSingle().Subject;
+        entry.State.Should().Be("preparing");
+        deletion.GetRecoveryPaths().Should().Contain(entry.Destination);
+        if (accepted)
+        {
+            File.ReadAllText(entry.Destination).Should().Be("data");
+            ClientConfig.Maintenance.RecycleBin.RetentionEnabled = true;
+            _db.Database.ExecuteSqlRaw("DROP TRIGGER reject_recycle_updates");
+            MaintenancePersistence.Write(_db, entry.Key, entry with { RecycledAt = DateTimeOffset.UtcNow.AddYears(-1) });
+            (await Preview(MaintenanceOperation.RecycleRetention)).Actions.Should().BeEmpty();
+        }
+    }
+
     [Fact]
     public async Task Rollback_DoesNotOverwriteRecreatedSource()
     {
@@ -956,6 +1106,22 @@ public sealed class MaintenanceSafetyTests : IDisposable
         result.Error.Should().Contain("refusing to overwrite");
         File.ReadAllText(Path.Combine(_root, "movie.mkv")).Should().Be("new");
         Directory.EnumerateFiles(Path.Combine(_root, ".recycle"), "*", SearchOption.AllDirectories).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task RecyclingWithoutMappings_ExplainsClientPathAndDoesNotDeleteContent()
+    {
+        AddTorrent();
+        ClientConfig.Maintenance.PathMappings.Clear();
+        var result = await _deletion.RemoveTorrentAsync("one", "abc", true);
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("Recycling blocked").And.Contain("Client 'one'")
+            .And.Contain("/downloads/movie.mkv").And.Contain("Maintenance.PathMappings")
+            .And.Contain("mounted and accessible").And.Contain("Identical client/local paths");
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never());
+        File.Exists(Path.Combine(_root, "movie.mkv")).Should().BeTrue();
+        ClientConfig.Maintenance.PathMappings.Add(new() { ClientPath = "/downloads", LocalPath = _root });
+        (await _deletion.RemoveTorrentAsync("one", "abc", true)).Success.Should().BeTrue();
     }
 
     [Fact]
@@ -1052,19 +1218,98 @@ public sealed class MaintenanceSafetyTests : IDisposable
     }
 
     [Fact]
+    public async Task GlobalInventory_BatchesFileRequestsAndPreservesSequentialResults()
+    {
+        for (var index = 0; index < 12; index++)
+            AddTorrent($"item-{index}", $"movie-{index}.mkv");
+
+        var gate = new object();
+        var active = 0;
+        var peak = 0;
+        _client.Setup(c => c.GetTorrentFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(async (string hash, CancellationToken ct) =>
+            {
+                lock (gate) peak = Math.Max(peak, ++active);
+                try
+                {
+                    await Task.Delay(35, ct);
+                    return _files[hash];
+                }
+                finally
+                {
+                    lock (gate) active--;
+                }
+            });
+
+        var timer = Stopwatch.StartNew();
+        var sequential = await _inventory.CollectAsync(new Dictionary<string, InventoryRequirements>
+        {
+            ["one"] = InventoryRequirements.All & ~InventoryRequirements.GlobalOwnership
+        });
+        var sequentialMs = timer.ElapsedMilliseconds;
+        peak.Should().Be(1);
+
+        timer.Restart();
+        var batched = await _inventory.BuildAsync();
+        _output.WriteLine($"12 delayed file requests: sequential {sequentialMs} ms, batched {timer.ElapsedMilliseconds} ms");
+        peak.Should().Be(4);
+        batched.IsComplete.Should().BeTrue();
+        batched.Torrents.Should().BeEquivalentTo(sequential.Torrents, options => options.WithStrictOrdering());
+        batched.LocalPathReferences.Should().BeEquivalentTo(sequential.LocalPathReferences);
+        batched.Diagnostics.Should().BeEquivalentTo(sequential.Diagnostics, options => options.WithStrictOrdering());
+    }
+
+    [Fact]
+    public async Task GlobalInventory_CancelsPendingFileRequests()
+    {
+        AddTorrent();
+        using var cancellation = new CancellationTokenSource();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _client.Setup(c => c.GetTorrentFilesAsync("abc", It.IsAny<CancellationToken>()))
+            .Returns(async (string _, CancellationToken ct) =>
+            {
+                started.SetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return [];
+            });
+
+        var scan = _inventory.BuildAsync(ct: cancellation.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await cancellation.CancelAsync();
+        await FluentActions.Awaiting(() => scan.WaitAsync(TimeSpan.FromSeconds(5)))
+            .Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task Recycling_BlocksWhenAnotherTorrentsFileListFails()
+    {
+        AddTorrent();
+        AddTorrent("other", "other.mkv");
+        _client.Setup(c => c.GetTorrentFilesAsync("other", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("File list unavailable"));
+
+        var result = await _deletion.RemoveTorrentAsync("one", "abc", true);
+
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("ownership inventory is incomplete");
+        File.Exists(Path.Combine(_root, "movie.mkv")).Should().BeTrue();
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Fact]
     public async Task InventoryRefresh_ReenumeratesUnchangedMetadataAndNewOwners()
     {
         AddTorrent();
         var inventory = await _inventory.BuildAsync();
         _files["abc"] = [new() { Name = "renamed.mkv", Size = 4 }];
-        inventory = await _inventory.RefreshAsync(inventory);
+        inventory = await _inventory.BuildAsync();
         inventory.LocalPathReferences.Should().ContainKey(Path.Combine(_root, "renamed.mkv"));
         inventory.LocalPathReferences.Should().NotContainKey(Path.Combine(_root, "movie.mkv"));
         _client.Verify(c => c.GetTorrentFilesAsync("abc", It.IsAny<CancellationToken>()), Times.Exactly(2));
-        inventory = await _inventory.RefreshAsync(inventory, "one", "abc");
+        inventory = await _inventory.BuildAsync();
         _client.Verify(c => c.GetTorrentFilesAsync("abc", It.IsAny<CancellationToken>()), Times.Exactly(3));
         AddTorrent("new", "new.mkv");
-        inventory = await _inventory.RefreshAsync(inventory);
+        inventory = await _inventory.BuildAsync();
         inventory.LocalPathReferences.Should().ContainKey(Path.Combine(_root, "new.mkv"));
         _client.Verify(c => c.GetTorrentFilesAsync("new", It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -1075,13 +1320,74 @@ public sealed class MaintenanceSafetyTests : IDisposable
         var torrent = AddTorrent();
         var inventory = await _inventory.BuildAsync();
         torrent.SavePath = "/downloads/sub";
-        inventory = await _inventory.RefreshAsync(inventory);
+        inventory = await _inventory.BuildAsync();
         inventory.LocalPathReferences.Should().ContainKey(Path.Combine(_root, "sub", "movie.mkv"));
         _client.Verify(c => c.GetTorrentFilesAsync("abc", It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]
-    public async Task LargeInventory_ReenumeratesEveryOwnerBeforeApply()
+    public async Task OrphanPreviewAndApplyPreserveActiveConfiguration()
+    {
+        var previous = ConfigurationLoader.TestConfigPathOverride;
+        var configPath = Path.Combine(_root, "custom-config.toml");
+        var orphanPath = Path.Combine(_root, "orphan.txt");
+        File.WriteAllText(configPath, "[Settings]");
+        File.WriteAllText(orphanPath, "orphan");
+        File.SetLastWriteTimeUtc(configPath, DateTime.UtcNow.AddDays(-1));
+        File.SetLastWriteTimeUtc(orphanPath, DateTime.UtcNow.AddDays(-1));
+        ClientConfig.Maintenance.Orphans.Enabled = true;
+        ClientConfig.Maintenance.Orphans.MinimumAgeMinutes = 0;
+        ClientConfig.Maintenance.RecycleBin.Enabled = false;
+        try
+        {
+            ConfigurationLoader.TestConfigPathOverride = configPath;
+            var plan = await Preview(MaintenanceOperation.OrphanScan);
+            plan.Actions.Should().ContainSingle().Which.Path.Should().Be(orphanPath);
+            (await Apply(plan)).Applied.Should().Be(1);
+            File.Exists(orphanPath).Should().BeFalse();
+            File.ReadAllText(configPath).Should().Be("[Settings]");
+        }
+        finally { ConfigurationLoader.TestConfigPathOverride = previous; }
+    }
+
+    [Fact]
+    public async Task RecoveryClaimBlocksOnlyTheSameClient()
+    {
+        var torrent = AddTorrent();
+        var cfg = ClientConfig.Maintenance.ErrorRecovery;
+        _client.Setup(c => c.RecheckTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        (await MaintenanceRecovery.RequestWithResultAsync(_db, _client.Object, torrent, "ErrorRecovery", cfg, default)).Success.Should().BeTrue();
+        var other = new TorrentInfo { Hash = "second", ClientInstanceId = "one", AddedOn = torrent.AddedOn };
+        (await MaintenanceRecovery.RequestWithResultAsync(_db, _client.Object, other, "ErrorRecovery", cfg, default)).Deferred.Should().BeTrue();
+        other.ClientInstanceId = "two";
+        (await MaintenanceRecovery.RequestWithResultAsync(_db, _client.Object, other, "ErrorRecovery", cfg, default)).Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task OrphanApplyRefreshesOwnershipBetweenActions()
+    {
+        var owned = AddTorrent();
+        ClientConfig.Maintenance.Orphans.Enabled = true;
+        ClientConfig.Maintenance.Orphans.MinimumAgeMinutes = 0;
+        ClientConfig.Maintenance.RecycleBin.Enabled = false;
+        var first = Path.Combine(_root, "orphan-a.mkv");
+        var second = Path.Combine(_root, "orphan-b.mkv");
+        File.WriteAllText(first, "first");
+        File.WriteAllText(second, "second");
+        var plan = await Preview(MaintenanceOperation.OrphanScan);
+        plan.Actions.Should().HaveCount(2);
+        var fileReads = 0;
+        _client.Setup(c => c.GetTorrentFilesAsync(owned.Hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => ++fileReads == 1 ? _files[owned.Hash] : [new() { Name = "orphan-b.mkv", Size = 6 }]);
+
+        (await Apply(plan)).Applied.Should().Be(1);
+        fileReads.Should().Be(2);
+        File.Exists(first).Should().BeFalse();
+        File.ReadAllText(second).Should().Be("second");
+    }
+
+    [Fact]
+    public async Task LargeInventory_RefreshReenumeratesEveryOwner()
     {
         for (var i = 0; i < 1000; i++)
         {
@@ -1090,7 +1396,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
             _files[hash] = [new() { Name = hash, Size = 4 }];
         }
         var inventory = await _inventory.BuildAsync();
-        inventory = await _inventory.RefreshAsync(inventory);
+        inventory = await _inventory.BuildAsync();
         inventory.IsComplete.Should().BeTrue();
         _client.Verify(c => c.GetTorrentFilesAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2000));
         _client.Verify(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2000));
@@ -1455,6 +1761,53 @@ public sealed class MaintenanceSafetyTests : IDisposable
         => (T)typeof(TorrentAutomationService).GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(automation)!;
 
     [Fact]
+    public async Task TrackerCachePrunesOnlyAfterSuccessfulInventory()
+    {
+        var torrent = AddTorrent();
+        using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<TorrentAutomationService>.Instance);
+        await Inspect(automation, default);
+        var cache = AutomationField<System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset At, List<TorrentTracker> Trackers, bool? IsPrivate)>>(automation, "_trackerInspections");
+        var key = "one|" + torrent.Hash;
+        cache.Should().ContainKey(key);
+
+        var next = AutomationField<System.Collections.Concurrent.ConcurrentDictionary<string, DateTimeOffset>>(automation, "_nextInspection");
+        next.Clear();
+        _client.SetupSequence(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IOException("Inventory unavailable"))
+            .ReturnsAsync([]);
+        await Inspect(automation, default);
+        cache.Should().ContainKey(key);
+        next.Clear();
+        await Inspect(automation, default);
+        cache.Should().NotContainKey(key);
+    }
+
+    [Fact]
+    public async Task TrackerInspectionBudgetWithProgressResumesWithoutBackoff()
+    {
+        var fast = AddTorrent("fast"); fast.IsPrivate = true;
+        var slow = AddTorrent("slow", "slow.mkv"); slow.IsPrivate = true;
+        _client.Setup(c => c.GetTorrentTrackersAsync(slow.Hash, It.IsAny<CancellationToken>()))
+            .Returns(async (string _, CancellationToken ct) =>
+            {
+                await Task.Delay(Timeout.Infinite, ct);
+                return new List<TorrentTracker>();
+            });
+        using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<TorrentAutomationService>.Instance)
+        { InspectionBudget = TimeSpan.FromSeconds(1) };
+        await Inspect(automation, default);
+        var inspection = automation.GetStatus().Inspections.Single();
+        inspection.ConsecutiveFailures.Should().Be(0);
+        inspection.LastSucceededAt.Should().NotBeNull();
+        inspection.NextAttempt.Should().Be(inspection.LastSucceededAt);
+        _client.Setup(c => c.GetTorrentTrackersAsync(slow.Hash, It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        await Inspect(automation, default);
+        _client.Verify(c => c.GetTorrentTrackersAsync(slow.Hash, It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
     public async Task TrackerIssues_ForRemovedTorrentsClearAfterACompleteClientInventory()
     {
         var torrent = AddTorrent();
@@ -1463,6 +1816,19 @@ public sealed class MaintenanceSafetyTests : IDisposable
         using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
         automation.GetStatus().TrackerIssues.Should().ContainSingle();
         await Inspect(automation, default);
+        automation.GetStatus().TrackerIssues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TrackerIssue_IsNotReportedWhileAnotherTrackerIsHealthy()
+    {
+        var torrent = AddTorrent();
+        TorrentTracker healthy = new() { Url = "https://tracker.example/announce", Status = 2 };
+        TorrentTracker dead = new() { Url = "https://backup.example/announce", Status = 4, Msg = "unregistered torrent" };
+        await _seeding.ObserveTrackerIssueAsync(torrent, [dead], default);
+        using var automation = new TorrentAutomationService(_config, _registry.Object, _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
+        automation.GetStatus().TrackerIssues.Should().ContainSingle();
+        await _seeding.ObserveTrackerIssueAsync(torrent, [healthy, dead], default);
         automation.GetStatus().TrackerIssues.Should().BeEmpty();
     }
 
@@ -1581,6 +1947,22 @@ public sealed class MaintenanceSafetyTests : IDisposable
             await cancellation.CancelAsync();
             await FluentActions.Awaiting(() => inspection).Should().ThrowAsync<OperationCanceledException>();
         }
+    }
+
+    [Fact]
+    public async Task PausedRepair_OverBudgetSkipsInventory()
+    {
+        var torrent = AddTorrent(); torrent.State = "pausedDL"; torrent.Progress = 0.5;
+        ClientConfig.Maintenance.Repair.Enabled = true;
+        ClientConfig.Maintenance.ErrorRecovery.MaxPerRun = 0;
+        var plan = await Preview(MaintenanceOperation.RepairPaused);
+        plan.Actions.Should().ContainSingle().Which.Kind.Should().Be(MaintenanceActionKind.Recheck);
+        _client.Invocations.Clear();
+
+        var run = await Apply(plan);
+
+        run.SkippedReasons.Should().ContainSingle().Which.Should().Contain("Per-run new recheck limit reached");
+        _client.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never());
     }
 
     [Fact]
@@ -1972,6 +2354,17 @@ public sealed class MaintenanceSafetyTests : IDisposable
         (await _deletion.DeleteOwnedFileAsync("one", "abc", path)).Should().Be(allowed);
         File.Exists(Path.Combine(_root, "movie.mkv")).Should().Be(!allowed);
         _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task OwnedFileCleanup_PreservesSharedFileEvenWhenBothTorrentsClearProtection()
+    {
+        var torrent = AddTorrent();
+        AddTorrent("shared");
+        var path = Path.Combine(_root, "movie.mkv");
+
+        (await _deletion.DeleteOwnedFileAsync("one", torrent.Hash, path)).Should().BeFalse();
+        File.ReadAllText(path).Should().Be("data");
     }
 
     [Theory]

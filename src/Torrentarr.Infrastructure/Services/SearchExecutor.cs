@@ -252,6 +252,7 @@ public class SearchExecutor : ISearchExecutor
                     bool triggered;
                     try
                     {
+                        using var activity = ArrActivityTracking.Begin(_db, _logger, instanceName, arrConfig, "search");
                         triggered = isSonarr
                             ? await TriggerSonarrSearchAsync(instanceName, arrConfig, plan, cancellationToken)
                             : await TriggerSearchForCandidateAsync(instanceName, arrConfig, candidate, false, cancellationToken);

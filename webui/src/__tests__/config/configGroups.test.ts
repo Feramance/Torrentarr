@@ -55,9 +55,9 @@ describe("configuration groups", () => {
         .fields.map((f) => f.path?.join(".")),
     ).toEqual(["Host", "Port", "UserName", "Password", "SkipTLSVerify"]);
     for (const [title, definitions] of [
-      ["Settings", SETTINGS_FIELDS],
-      ["Web Settings", WEB_SETTINGS_FIELDS],
-      ["Authentication", AUTH_SETTINGS_FIELDS],
+      ["general", SETTINGS_FIELDS],
+      ["interface", WEB_SETTINGS_FIELDS],
+      ["auth", AUTH_SETTINGS_FIELDS],
     ] as const)
       check(definitions, simpleGroups(title, definitions));
     for (const name of [

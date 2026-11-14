@@ -16,6 +16,8 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
     // Completion cursor per scope; equal timestamps retain IDs to avoid losing simultaneous runs.
     private readonly Dictionary<string, (DateTimeOffset CompletedAt, HashSet<string> RunIds)> _maintenanceRuns = new();
 
+    private List<OperationalIssueReport> _configurationIssues = [];
+
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -35,8 +37,12 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
         if (services.GetService<IConfigReloader>() is { } reloader)
         {
             var state = reloader.GetStatus();
-            if (state.State is "error" or "applied") await Observe(new("config.apply", "system", "Configuration could not be applied", $"Accepted revision={state.AcceptedRevision}; state={state.State}; error={DiagnosticText.Safe(state.Error)}; components: {string.Join("; ", state.Components.Select(c => $"{c.Key}: applied={c.Value.AppliedRevision}, error={DiagnosticText.Safe(c.Value.Error)}"))}.", "Check configuration validation and component status.", Target: "config"), state.State == "error", ct);
+            if (state.State is "error" or "applied") await Observe(new("config.apply", "system", "Configuration could not be applied", $"File={DiagnosticText.Safe(reloader.ConfigPath)}; accepted revision={state.AcceptedRevision}; state={state.State}; error={DiagnosticText.Safe(state.Error)}; components: {string.Join("; ", state.Components.Select(c => $"{c.Key}: applied={c.Value.AppliedRevision}, error={DiagnosticText.Safe(c.Value.Error)}"))}.", "Open Config and correct the indicated settings in the saved configuration file. Save and verify that all components acknowledge the accepted revision.", Target: "config"), state.State == "error", ct);
         }
+        var disks = services.GetService<IFreeSpaceService>() is { } storage
+            ? await storage.GetFreeSpaceStatsAsync(ct)
+            : [];
+        await InspectConfigurationAsync(services, disks, ct);
         if (services.GetService<IConnectivityService>() is { LastChecked: not null } network)
             await Observe(new("network.internet", "system", "Internet connectivity is unavailable", $"Last connectivity check={network.LastChecked:O}; connected={network.IsConnected}. {network.FailureReason ?? "Client reachability and configured HTTP/TCP probes did not establish connectivity; no further probe detail was supplied."}", "Check the host network, DNS and configured connectivity hosts."), !network.IsConnected, ct);
         if (services.GetService<ITorrentClientRegistry>() is { } clients)
@@ -66,9 +72,21 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
                 var issue = new OperationalIssueReport("worker.lifecycle", "system", "Worker is not making healthy progress", $"Worker={id}; PID={state.ProcessId}; alive={state.IsAlive}; status={state.Status}; last exit={state.LastExitCode}; last failure={state.LastFailure ?? "none recorded"}; restarts={state.RestartCount}; started={state.StartTime:O}; heartbeat={state.LastHeartbeat:O}; config revision={state.ConfigRevision}. Torrent loop={state.Torrent?.Phase ?? "unavailable"}, last success={state.Torrent?.LastSuccess:O}; search loop={state.Search?.Phase ?? "unavailable"}, last success={state.Search?.LastSuccess:O}.", "Check worker logs and connection settings; restart after correcting the cause.", ArrInstance: id, Target: "processes");
                 if (!state.IsAlive) await issues.ReportAsync(issue, ct); else if (healthy) await issues.ResolveAsync(issue, ct);
             }
-        if (services.GetService<IFreeSpaceService>() is { } storage)
-            foreach (var disk in await storage.GetFreeSpaceStatsAsync(ct))
-                await Observe(new("storage.reserve", "system", "Download storage needs attention", $"Client={disk.ClientInstanceId}; path={disk.Path}; free={disk.FreeBytes} bytes; reserve={disk.ThresholdBytes} bytes; total={disk.TotalBytes} bytes; below threshold={disk.BelowThreshold}; inspection error={disk.Error ?? "none"}. Downloads may remain paused until the reserve is restored.", "Restore access to the monitored directory or free space above its configured reserve.", ClientInstance: disk.ClientInstanceId, SubjectType: "storage", SubjectId: disk.Path, Severity: "warning", Target: "config"), disk.Error != null || disk.BelowThreshold, ct);
+        foreach (var disk in disks)
+            await Observe(new("storage.reserve", "system", "Download storage needs attention", $"Client={disk.ClientInstanceId}; path={disk.Path}; free={disk.FreeBytes} bytes; reserve={disk.ThresholdBytes} bytes; total={disk.TotalBytes} bytes; below threshold={disk.BelowThreshold}; inspection error={disk.Error ?? "none"}. Downloads may remain paused until the reserve is restored.", "Restore access to the monitored directory or free space above its configured reserve.", ClientInstance: disk.ClientInstanceId, SubjectType: "storage", SubjectId: disk.Path, Severity: "warning", Target: "config"), disk.Error != null || disk.BelowThreshold, ct);
+        if (services.GetService<TorrentarrDbContext>() is { } storageDb)
+        {
+            var activeReserves = await storageDb.OperationalIssues.AsNoTracking()
+                .Where(i => i.Code == "storage.reserve" && i.ResolvedAt == null).ToListAsync(ct);
+            foreach (var old in activeReserves)
+            {
+                if (disks.Any(d => d.ClientInstanceId == old.ClientInstance && d.Path == old.SubjectId)) continue;
+                var client = config.GetTorrentClient(old.ClientInstance);
+                if (client is { Disabled: false } && client.FreeSpace.Any(m => m.Enabled && m.Path == old.SubjectId)) continue;
+                await issues.ResolveAsync(new(old.Code, old.Category, old.Title, old.Impact, old.Remediation,
+                    old.ArrInstance, old.ClientInstance, old.SubjectType, old.SubjectId, old.Severity, old.Target), ct);
+            }
+        }
         if (services.GetService<TorrentAutomationService>() is { } automation)
         {
             var state = automation.GetStatus();
@@ -78,7 +96,7 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
             foreach (var recovery in state.Recovery.Where(r => r.Stage is not ("new" or "checked")))
                 current.Add(new("automation.recovery", "automation", "Torrent recovery is pending", $"Torrent={recovery.TorrentName}; hash={recovery.TorrentHash}; operation={recovery.Operation}; stage={recovery.Stage}; attempts={recovery.Attempts}; failure since={recovery.FailureSince:O}; {recovery.Reason}", "Inspect the recovery status and storage access; do not remove protection evidence.", ClientInstance: recovery.ClientInstanceId, SubjectType: "torrent", SubjectId: recovery.TorrentHash, Severity: "warning", Target: "maintenance"));
             foreach (var group in state.Protection.Where(p => p.NativeStopLimitRisk || p.DeadlineRisk is "warning" or "critical" or "unachievable").GroupBy(p => new { p.ClientInstanceId, p.TorrentHash }))
-                current.Add(new("automation.protection", "automation", "Tracker obligation may be at risk", $"Hash={group.Key.TorrentHash}; {string.Join("; ", group.Select(p => $"{p.TorrentName}: tracker={p.Tracker}, state={p.State}, observed={p.ObservedSeedSeconds:F0}s, remaining={p.RemainingSeedSeconds:F0}s, deadline={p.Deadline:O}, recovery deadline={p.LatestRecoveryStart:O}, risk={p.DeadlineRisk}, native stop risk={p.NativeStopLimitRisk}. {p.Reason}"))}", "Review tracker protection and seeding limits in Manage; preserve the torrent while obligations remain.", ClientInstance: group.Key.ClientInstanceId, SubjectType: "torrent", SubjectId: group.Key.TorrentHash,
+                current.Add(new("automation.protection", "automation", "Tracker obligation may be at risk", $"Hash={group.Key.TorrentHash}; {string.Join("; ", group.Select(p => $"{p.TorrentName}: tracker={p.Tracker}, state={p.State}, {p.SeedAccountingDescription()}, deadline={p.Deadline:O}, recovery deadline={p.LatestRecoveryStart:O}, risk={p.DeadlineRisk}, native stop risk={p.NativeStopLimitRisk}. {p.Reason}"))}", "Review tracker protection and seeding limits in Manage; preserve the torrent while obligations remain.", ClientInstance: group.Key.ClientInstanceId, SubjectType: "torrent", SubjectId: group.Key.TorrentHash,
                     Severity: group.Any(p => p.DeadlineRisk is "critical" or "unachievable") ? "error" : "warning", Target: "maintenance"));
             foreach (var inspection in state.Inspections)
                 if (inspection.ConsecutiveFailures > 0 || inspection.LastSucceededAt.HasValue)
@@ -140,6 +158,91 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
                     _maintenanceRuns[latest.Scope] = (completedAt, new HashSet<string> { latest.Run.RunId });
             }
         }
+    }
+
+    private async Task InspectConfigurationAsync(IServiceProvider services, IReadOnlyList<FreeSpaceStats> disks, CancellationToken ct)
+    {
+        var current = new List<OperationalIssueReport>();
+        var validation = ConfigValidationHelper.ValidateAll(config);
+        if (!validation.Ok)
+            current.Add(new("config.validation", "system", "Configuration needs correction",
+                DiagnosticText.Safe(validation.Error), "Open Config and correct the indicated setting, then save and verify configuration activation.", Target: "config"));
+
+        var clients = config.GetAllTorrentClients();
+        var recycling = clients.Values.Any(c => !c.Disabled && c.Maintenance?.RecycleBin?.Enabled == true);
+        var paths = services.GetService<IPathMappingService>();
+        foreach (var (id, client) in clients)
+        {
+            if (!client.Disabled && (string.IsNullOrWhiteSpace(client.Type) || string.IsNullOrWhiteSpace(client.Host)
+                || client.Host == "CHANGE_ME" || client.Port is < 1 or > 65535))
+                current.Add(new("config.client", "system", "Torrent client configuration is incomplete",
+                    "An enabled torrent client requires a Type, Host and port between 1 and 65535.",
+                    "Open Config and complete this client's connection settings, or disable/remove an unused client.", ClientInstance: id, Target: "config"));
+            if (MigrationIssue(id, client, paths, disks) is { } migrationIssue)
+                current.Add(migrationIssue);
+            if (client.Maintenance?.PathMappings is not { } mappings) continue;
+            var errors = new List<string>();
+            if (recycling && mappings.Count == 0 && !string.IsNullOrWhiteSpace(client.Host) && client.Host != "CHANGE_ME")
+                errors.Add("Maintenance.PathMappings is missing. Recycling requires a complete file ownership inventory across all configured clients, even when client and local paths are identical.");
+            if (paths != null) errors.AddRange(paths.Validate(mappings));
+            if (errors.Count > 0)
+                current.Add(new("config.storage", "system", "Client storage configuration needs correction",
+                    DiagnosticText.Safe(string.Join("; ", errors)),
+                    "Open Config and configure this client's Maintenance.PathMappings: ClientPath is visible to the torrent client; LocalPath is the same folder inside Torrentarr. Verify mounts and permissions, then save.",
+                    ClientInstance: id, Severity: "warning", Target: "config"));
+        }
+
+        var previous = _configurationIssues.AsEnumerable();
+        if (services.GetService<TorrentarrDbContext>() is { } db)
+        {
+            var persisted = await db.OperationalIssues.AsNoTracking().Where(i => i.ResolvedAt == null
+                && (i.Code == "config.validation" || i.Code == "config.migration" || i.Code == "config.migration-action-required"
+                    || i.Code == "config.storage" || i.Code == "config.client")).ToListAsync(ct);
+            previous = previous.Concat(persisted.Select(i => new OperationalIssueReport(i.Code, i.Category, i.Title,
+                i.Impact, i.Remediation, i.ArrInstance, i.ClientInstance, i.SubjectType, i.SubjectId, i.Severity, i.Target)));
+        }
+        foreach (var old in previous.DistinctBy(i => (i.Code, i.ClientInstance)))
+            if (!current.Any(i => i.Code == old.Code && i.ClientInstance == old.ClientInstance))
+                await issues.ResolveAsync(old, ct);
+        foreach (var issue in current) await issues.ReportAsync(issue, ct);
+        _configurationIssues = current;
+    }
+
+    private static OperationalIssueReport? MigrationIssue(string id, TorrentClientInstanceConfig client,
+        IPathMappingService? paths, IReadOnlyList<FreeSpaceStats> disks)
+    {
+        var notices = client.Migration?.Notices ?? [];
+        var impact = new List<string>();
+        var actions = new List<string>();
+        var freeSpaceNotices = notices.Where(StorageConfigMigration.IsFreeSpaceNotice).ToArray();
+        if (freeSpaceNotices.Length > 0 && (StorageConfigMigration.Validate(client) != null ||
+            !disks.Any(d => d.ClientInstanceId.Equals(id, StringComparison.OrdinalIgnoreCase) && d.Error == null
+                && client.FreeSpace.Any(m => m.Enabled && m.Path == d.Path))))
+        {
+            impact.AddRange(freeSpaceNotices);
+            actions.Add("In Config, enable a free-space monitor with a readable local path, or disable all monitors and choose Keep free-space protection off.");
+        }
+        if (notices.Contains(StorageConfigMigration.DownloadPathNotice))
+        {
+            var localPath = client.Maintenance.PathMappings.Count == 0
+                ? StorageConfigMigration.LocalDownloadPath(client)
+                : client.DownloadPath is { Length: > 0 } downloadPath
+                    ? paths?.MapToLocal(downloadPath, client.Maintenance.PathMappings)
+                    : null;
+            if (localPath == null || paths == null || paths.ValidateLocalPath(localPath, localPath) != null)
+            {
+                impact.Add(StorageConfigMigration.DownloadPathNotice);
+                actions.Add("In Config, set DownloadPath and verify its local mount and any required path mapping.");
+            }
+        }
+        if (client.Migration?.EnvironmentDownloadPathFailed == true)
+        {
+            impact.Add(StorageConfigMigration.EnvironmentDownloadPathNotice);
+            actions.Add("Correct or remove the legacy COMPLETED_DOWNLOAD_FOLDER environment override and restart Torrentarr.");
+        }
+        return impact.Count == 0 ? null : new("config.migration-action-required", "system", "Migrated configuration needs review",
+            DiagnosticText.Safe(string.Join(". ", impact)), string.Join(" ", actions),
+            ClientInstance: id, Severity: "warning", Target: "config");
     }
 
     private Task Observe(OperationalIssueReport issue, bool failed, CancellationToken ct)

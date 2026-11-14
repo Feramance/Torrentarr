@@ -1,7 +1,13 @@
+import { configSections, type ConfigSection } from "../config/settingsSections";
+import type { ConfigDestination } from "../utils/navigateTab";
+import { TrackerSettings } from "./config/TrackerSettings";
+import { trackerRuleFields, trackerScope } from "./config/trackerRuleFields";
+import { ConfigFieldSearch } from "./config/ConfigFieldSearch";
 import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type JSX,
 } from "react";
@@ -14,17 +20,23 @@ import {
   getConfigSchema,
   refreshUrlBaseFromMeta,
   updateConfig,
+  restartProcess,
 } from "../api/client";
-import type { ConfigDocument } from "../api/types";
+import type { ConfigDocument, ConfigRestartRequirement } from "../api/types";
 import { useToast } from "../context/ToastContext";
 import {
   getCategoryCrossSectionIssues,
   getCategoryOverlapWarnings,
 } from "../config/categoryConfigValidation";
+import { arrTypeLabel } from "../config/arrSections";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { IconImage } from "../components/IconImage";
-import ConfigureIcon from "../icons/gear.svg";
+import { ShellDialog } from "../components/ShellDialog";
 import AddIcon from "../icons/plus.svg";
+import RadarrIcon from "../icons/radarr.svg";
+import SonarrIcon from "../icons/sonarr.svg";
+import LidarrIcon from "../icons/lidarr.svg";
+import ReadarrIcon from "../icons/readarr.svg";
 import {
   configureConfigFields,
   getClientFields,
@@ -72,8 +84,11 @@ import {
 } from "./config/configSaveResult";
 
 interface ConfigViewProps {
+  section?: ConfigSection;
+  onSectionChange?: (section: ConfigSection) => void;
   active?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  destination?: ConfigDestination;
 }
 
 type PendingSectionDelete = {
@@ -81,8 +96,21 @@ type PendingSectionDelete = {
   key: string;
 };
 
+const INTEGRATION_TYPES = [
+  { type: "radarr", icon: RadarrIcon },
+  { type: "sonarr", icon: SonarrIcon },
+  { type: "lidarr", icon: LidarrIcon },
+  { type: "readarr", icon: ReadarrIcon },
+] as const;
+
 export function ConfigView(props?: ConfigViewProps): JSX.Element {
-  const { active = true, onDirtyChange } = props ?? {};
+  const {
+    active = true,
+    section = "general",
+    onSectionChange,
+    onDirtyChange,
+    destination,
+  } = props ?? {};
   const { push } = useToast();
   const [application, setApplication] = useState<
     import("../api/types").ConfigurationApplicationStatus | null
@@ -125,8 +153,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     return () => window.removeEventListener("torrentarr:manage-saved", receive);
   }, []);
 
-  const [loading, setLoading] = useState(false);
-  const [, setSavingSection] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [savingSection, setSavingSection] = useState<string | null>(null);
   const [pendingRenames, setPendingRenames] = useState<Map<string, string>>(
     new Map(),
   );
@@ -134,9 +163,57 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     useState<PendingSectionDelete | null>(null);
   const [deletingSection, setDeletingSection] = useState(false);
   const [confirmDisableAuth, setConfirmDisableAuth] = useState(false);
+  const [pendingRestarts, setPendingRestarts] = useState<
+    ConfigRestartRequirement[]
+  >([]);
+  const [confirmRestart, setConfirmRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const recordRestartRequirements = useCallback(
+    (requirements: ConfigRestartRequirement[] = []) => {
+      if (!requirements.length) return;
+      setPendingRestarts((previous) =>
+        [...previous, ...requirements].filter(
+          (item, index, all) =>
+            all.findIndex(
+              (other) =>
+                other.category === item.category && other.kind === item.kind,
+            ) === index,
+        ),
+      );
+      setConfirmRestart(true);
+    },
+    [],
+  );
+  const restartSavedComponents = async () => {
+    if (restarting) return;
+    setRestarting(true);
+    setConfirmRestart(false);
+    for (const requirement of pendingRestarts) {
+      try {
+        const result = await restartProcess(
+          requirement.category,
+          requirement.kind,
+        );
+        if (result.status !== "restarted" || result.restarted?.length === 0)
+          throw new Error(`${requirement.component} did not restart`);
+        setPendingRestarts((previous) =>
+          previous.filter((item) => item !== requirement),
+        );
+      } catch (error) {
+        push(
+          error instanceof Error
+            ? error.message
+            : `Unable to restart ${requirement.component}`,
+          "error",
+        );
+      }
+    }
+    setRestarting(false);
+  };
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const [config, schema] = await Promise.all([
         getConfig(),
@@ -149,14 +226,13 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       // Clear pending renames when config is loaded
       setPendingRenames(new Map());
     } catch (error) {
-      push(
+      setLoadError(
         error instanceof Error ? error.message : "Failed to load configuration",
-        "error",
       );
     } finally {
       setLoading(false);
     }
-  }, [push]);
+  }, []);
 
   useEffect(() => {
     const id = window.setTimeout(() => {
@@ -222,6 +298,28 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       }),
     );
   }, [formState]);
+  const clientGroups = useMemo(() => {
+    const groups = new Map<string, typeof torrentClients>([
+      ["qbittorrent", []],
+    ]);
+    for (const client of torrentClients) {
+      const type =
+        String(client.value.Type || "qbittorrent")
+          .trim()
+          .toLowerCase() || "qbittorrent";
+      if (!groups.has(type)) groups.set(type, []);
+      groups.get(type)!.push(client);
+    }
+    return [...groups].sort(([a], [b]) =>
+      a === b
+        ? 0
+        : a === "qbittorrent"
+          ? -1
+          : b === "qbittorrent"
+            ? 1
+            : a.localeCompare(b),
+    );
+  }, [torrentClients]);
   const categoryOverlapWarnings = useMemo(
     () => getCategoryOverlapWarnings(formState),
     [formState],
@@ -260,11 +358,23 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       }
     }
 
-    groups.push({ label: "Radarr Instances", type: "radarr", items: radarr });
-    groups.push({ label: "Sonarr Instances", type: "sonarr", items: sonarr });
-    groups.push({ label: "Lidarr Instances", type: "lidarr", items: lidarr });
     groups.push({
-      label: "Readarr Instances",
+      label: `${arrTypeLabel("radarr")} Instances`,
+      type: "radarr",
+      items: radarr,
+    });
+    groups.push({
+      label: `${arrTypeLabel("sonarr")} Instances`,
+      type: "sonarr",
+      items: sonarr,
+    });
+    groups.push({
+      label: `${arrTypeLabel("lidarr")} Instances`,
+      type: "lidarr",
+      items: lidarr,
+    });
+    groups.push({
+      label: `${arrTypeLabel("readarr")} Instances`,
       type: "readarr",
       items: readarr,
     });
@@ -296,9 +406,64 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   const [clientSaving, setClientSaving] = useState(false);
   const [activeArrKey, setActiveArrKey] = useState<string | null>(null);
   const [activeQbitKey, setActiveQbitKey] = useState<string | null>(null);
-  const [isSettingsOpen, setSettingsOpen] = useState(false);
-  const [isWebSettingsOpen, setWebSettingsOpen] = useState(false);
-  const [isAuthSettingsOpen, setAuthSettingsOpen] = useState(false);
+  const isSettingsOpen = section === "general";
+  const isWebSettingsOpen = section === "interface";
+  const isAuthSettingsOpen = section === "auth";
+  const destinationFocus = useRef<{
+    fieldPath: string;
+    monitorPath?: string;
+  } | null>(null);
+  const handledDestination = useRef<ConfigDestination | undefined>(undefined);
+  const instanceSection = section === "clients" || section === "integrations";
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [section]);
+
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [editorRequest, setEditorRequest] = useState(0);
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editorRequest || !editor) return;
+    const headerHeight = editor.closest(".instance-page")
+      ? 0
+      : document.querySelector(".appbar")?.getBoundingClientRect().height ?? 0;
+    const requested = destinationFocus.current;
+    destinationFocus.current = null;
+    const field = requested
+      ? [...editor.querySelectorAll<HTMLElement>("[data-field-path]")].find(
+          (element) => element.dataset.fieldPath === requested.fieldPath,
+        )
+      : undefined;
+    const row =
+      requested?.monitorPath && field
+        ? [...field.querySelectorAll<HTMLElement>("[data-monitor-path]")].find(
+            (element) => element.dataset.monitorPath === requested.monitorPath,
+          )
+        : undefined;
+    const target = row || field || editor;
+    const focus =
+      requested?.monitorPath && !row
+        ? field?.querySelector<HTMLElement>(".config-section__heading")
+        : target.querySelector<HTMLElement>(
+            "input:not([type=hidden]), select, textarea",
+          );
+    target.style.scrollMarginTop = `${headerHeight + 12}px`;
+    (target === editor ? editor : focus ?? editor).focus({
+      preventScroll: true,
+    });
+    target.scrollIntoView?.({
+      block: "start",
+      behavior: "instant",
+    });
+  }, [editorRequest]);
+  const [fieldSearch, setFieldSearch] = useState("");
+  const [pickerSection, setPickerSection] = useState<
+    "clients" | "integrations"
+  >();
+  useEffect(() => {
+    setPickerSection(undefined);
+  }, [section, active]);
   const [isSetPasswordOpen, setSetPasswordOpen] = useState(false);
   const [isDirty, setDirty] = useState(false);
   const [serverValidationErrors, setServerValidationErrors] = useState<
@@ -470,15 +635,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   }, [onDirtyChange]);
 
   useEffect(() => {
-    const anyModalOpen = Boolean(
-      activeArrKey ||
-        activeQbitKey ||
-        activeClient ||
-        isSettingsOpen ||
-        isWebSettingsOpen ||
-        isAuthSettingsOpen ||
-        isSetPasswordOpen,
-    );
+    const anyModalOpen = isSetPasswordOpen || confirmDisableAuth;
     if (!active || !anyModalOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -494,12 +651,6 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         ) {
           return;
         }
-        setActiveArrKey(null);
-        setActiveQbitKey(null);
-        setActiveClient(null);
-        setSettingsOpen(false);
-        setWebSettingsOpen(false);
-        setAuthSettingsOpen(false);
         setSetPasswordOpen(false);
       }
     };
@@ -535,7 +686,11 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       const prefix = type.charAt(0).toUpperCase() + type.slice(1);
       let index = 1;
       let key = `${prefix}-${index}`;
-      while (formState[key]) {
+      while (
+        Object.keys(formState).some(
+          (name) => name.toLowerCase() === key.toLowerCase(),
+        )
+      ) {
         index += 1;
         key = `${prefix}-${index}`;
       }
@@ -548,8 +703,8 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           draft[key] = defaults;
         }),
       );
-      // Open modal for immediate configuration
       setActiveArrKey(key);
+      setEditorRequest((request) => request + 1);
     },
     [formState],
   );
@@ -661,6 +816,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       savedSectionKeys: Iterable<string> | "all",
       changedKeys: readonly string[] = [],
       applicationStatus?: import("../api/types").ConfigurationApplicationStatus,
+      trackerRenames: Record<string, string> = {},
     ) => {
       const message = formatConfigSaveMessage(
         reloadType,
@@ -702,6 +858,20 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
             if (Object.hasOwn(saved, key))
               draft[key] = structuredClone(saved[key]);
             else delete draft[key];
+          }
+          if (
+            Object.keys(trackerRenames).length &&
+            Array.isArray(draft.Trackers)
+          ) {
+            for (const rule of draft.Trackers as ConfigDocument[]) {
+              const scope = trackerScope(rule);
+              rule[scope.key] = scope.ids.map(
+                (id) =>
+                  Object.entries(trackerRenames).find(
+                    ([source]) => source.toLowerCase() === id.toLowerCase(),
+                  )?.[1] ?? id,
+              );
+            }
           }
         });
       });
@@ -750,9 +920,11 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         reloadType,
         affectedInstances,
         application: applicationStatus,
+        restartRequirements,
       } = await updateConfig({
         changes,
       });
+      recordRestartRequirements(restartRequirements);
       setServerValidationErrors([]);
       if (kind === "qbit") {
         setActiveQbitKey(null);
@@ -795,10 +967,15 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     pendingRenames,
     push,
     applyConfigSaveResult,
+    recordRestartRequirements,
   ]);
 
   const saveSection = useCallback(
-    async (sectionKey: string): Promise<boolean> => {
+    async (
+      sectionKey: string,
+      keepProtectionOff = false,
+      onValidationError?: (error: ValidationError) => void,
+    ): Promise<boolean> => {
       if (!formState) return false;
       setSavingSection(sectionKey);
       try {
@@ -808,9 +985,33 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           originalConfig,
           false,
         );
+        if (sectionKey === "Trackers") {
+          const rules = (formState.Trackers ?? []) as ConfigDocument[];
+          rules.forEach((rule, index) => {
+            const path = ["Trackers", String(index)];
+            const scope = trackerScope(rule);
+            if (scope.ids.length === 0) {
+              validationErrors.push({
+                path: [...path, scope.key],
+                message: "Select at least one instance for this tracker rule.",
+              });
+            }
+            validateFieldGroup(
+              validationErrors,
+              trackerRuleFields(rule),
+              rule,
+              path,
+              {
+                root: formState,
+                section: rule,
+              },
+            );
+          });
+        }
         if (validationErrors.length) {
           push(formatValidationErrors(validationErrors), "error");
-          focusFirstValidationError(validationErrors);
+          if (onValidationError) onValidationError(validationErrors[0]);
+          else focusFirstValidationError(validationErrors);
           return false;
         }
 
@@ -820,6 +1021,10 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           sectionKey,
           pendingRenames,
         );
+        const freeSpaceField = `${sectionKey}.FreeSpace`;
+        if (keepProtectionOff)
+          changes[freeSpaceField] =
+            get(formState, [sectionKey, "FreeSpace"]) ?? [];
         if (Object.keys(changes).length === 0) {
           push(`No changes detected for ${sectionKey}`, "info");
           return false;
@@ -838,10 +1043,15 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           affectedInstances,
           warning,
           application: applicationStatus,
+          restartRequirements,
         } = await updateConfig({
           changes,
           ...(Object.keys(renames).length ? { renames } : {}),
+          ...(keepProtectionOff
+            ? { keepFreeSpaceProtectionOff: freeSpaceField }
+            : {}),
         });
+        recordRestartRequirements(restartRequirements);
         if (warning) push(warning, "warning");
         setServerValidationErrors([]);
         const savedKeys = sectionKeysFromChanges(changes);
@@ -857,6 +1067,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           savedKeys,
           Object.keys(changes),
           applicationStatus,
+          renames,
         );
         return true;
       } catch (error) {
@@ -864,7 +1075,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           const apiErrors = validationErrorsFromApi(error.validationErrors);
           setServerValidationErrors(apiErrors);
           push(error.message, "error");
-          focusFirstValidationError(apiErrors);
+          if (onValidationError && apiErrors.length)
+            onValidationError(apiErrors[0]);
+          else focusFirstValidationError(apiErrors);
           return false;
         }
         push(
@@ -878,10 +1091,21 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         setSavingSection(null);
       }
     },
-    [formState, originalConfig, pendingRenames, push, applyConfigSaveResult],
+    [
+      formState,
+      originalConfig,
+      pendingRenames,
+      push,
+      applyConfigSaveResult,
+      recordRestartRequirements,
+    ],
   );
 
-  const saveClient = async (name: string, remove = false): Promise<boolean> => {
+  const saveClient = async (
+    name: string,
+    remove = false,
+    keepProtectionOff = false,
+  ): Promise<boolean> => {
     if (!formState || clientSaving) return false;
     setClientSaving(true);
     const path = ["TorrentClient", name];
@@ -920,9 +1144,17 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         if (!host || !Number.isInteger(port) || port < 1 || port > 65535)
           throw new Error("Enter a host and a port between 1 and 65535.");
       }
+      const freeSpaceField = `TorrentClient.${name}.FreeSpace`;
+      if (keepProtectionOff) changes[freeSpaceField] = value.FreeSpace ?? [];
       const result = Object.keys(changes).length
-        ? await updateConfig({ changes })
+        ? await updateConfig({
+            changes,
+            ...(keepProtectionOff
+              ? { keepFreeSpaceProtectionOff: freeSpaceField }
+              : {}),
+          })
         : null;
+      recordRestartRequirements(result?.restartRequirements);
       const saved = await getConfig();
       const merge = (previous: ConfigDocument | null) =>
         produce(previous ?? {}, (draft) => {
@@ -946,7 +1178,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
                 Object.keys(changes),
                 result.application,
               )
-            : "Torrent client saved",
+            : "Configuration saved",
         "success",
       );
       return true;
@@ -962,28 +1194,106 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
       setClientSaving(false);
     }
   };
-  const addClient = () => {
+  const addClient = (type: string) => {
     let index = 1;
-    const clients = (formState?.TorrentClient ?? {}) as ConfigDocument;
-    while (clients[`client-${index}`] || formState?.[`client-${index}`])
+    const names = torrentClients.map((client) => client.name.toLowerCase());
+    while (
+      names.includes(`client-${index}`) ||
+      Object.keys(formState ?? {}).some(
+        (name) => name.toLowerCase() === `client-${index}`,
+      )
+    )
       index++;
     const name = `client-${index}`;
     setFormState((previous) =>
       produce(previous ?? {}, (draft) => {
-        set(draft, ["TorrentClient", name], getSchemaDefaults("TorrentClient"));
+        set(draft, ["TorrentClient", name], {
+          ...getSchemaDefaults("TorrentClient"),
+          Type: type,
+        });
       }),
     );
     setActiveClient(name);
+    setEditorRequest((request) => request + 1);
   };
 
-  const applicationNotice = application && (
-    <p role="status" className="card-body">
+  const chooseEditor = (open: () => void) => {
+    setActiveArrKey(null);
+    setActiveQbitKey(null);
+    setActiveClient(null);
+    setFieldSearch("");
+    open();
+  };
+  useEffect(() => {
+    setActiveArrKey(null);
+    setActiveQbitKey(null);
+    setActiveClient(null);
+    setFieldSearch("");
+  }, [section]);
+  useEffect(() => {
+    if (
+      !active ||
+      !formState ||
+      !destination ||
+      handledDestination.current === destination
+    )
+      return;
+    const clientName = (
+      pendingRenames.get(destination.client ?? "") ?? destination.client
+    )?.toLowerCase();
+    const matchingClients = torrentClients.filter(
+      ({ name }) => name.toLowerCase() === clientName,
+    );
+    const client =
+      matchingClients.find(({ legacy }) => !legacy) ?? matchingClients[0];
+    const arrName = (
+      pendingRenames.get(destination.arr ?? "") ?? destination.arr
+    )?.toLowerCase();
+    const arr = arrSections.find(([name]) => name.toLowerCase() === arrName);
+    const targetSection = client ? "clients" : arr ? "integrations" : "general";
+    if (section !== targetSection && onSectionChange) {
+      onSectionChange(targetSection);
+      return;
+    }
+    handledDestination.current = destination;
+    chooseEditor(() => {
+      const section =
+        client && !client.legacy
+          ? `TorrentClient.${client.name}`
+          : client?.name ?? arr?.[0] ?? "Settings";
+      if (client) {
+        if (client.legacy) setActiveQbitKey(client.name);
+        else setActiveClient(client.name);
+      } else if (arr) {
+        setActiveArrKey(arr[0]);
+      }
+      if (destination.field)
+        destinationFocus.current = {
+          fieldPath: `${section}.${destination.field}`,
+          monitorPath: destination.monitorPath,
+        };
+      setEditorRequest((request) => request + 1);
+    });
+  }, [
+    active,
+    formState,
+    destination,
+    torrentClients,
+    arrSections,
+    pendingRenames,
+    section,
+    onSectionChange,
+  ]);
+
+  const sectionDirty = (key: string) =>
+    !equal(formState?.[key], originalConfig?.[key]);
+
+  const applicationNotice = application && application.state !== "applied" && (
+    <p role="status" className="settings-notice">
       {application.error ??
-        (application.state === "applied"
-          ? "Configuration applied live"
-          : application.state === "pending"
-            ? "Configuration saved; waiting for active operations to finish"
-            : "Some configuration changes could not be applied")}
+        (application.state === "pending"
+          ? "Configuration saved; waiting for active operations to finish"
+          : "Some configuration changes could not be applied")}
       {Object.entries(application.components)
         .filter(([, value]) => value.error)
         .map(([name, value]) => (
@@ -995,348 +1305,542 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     </p>
   );
 
-  if (loading || !formState) {
+  const notices = (
+    <>
+      {applicationNotice}
+      {pendingRestarts.length > 0 && (
+        <p role="status" className="settings-notice">
+          Pending restart:{" "}
+          {pendingRestarts.map((item) => item.component).join(", ")}.{" "}
+          <button
+            type="button"
+            className="btn small"
+            disabled={restarting}
+            onClick={() => setConfirmRestart(true)}
+          >
+            {restarting ? "Restarting…" : "Retry restart"}
+          </button>
+        </p>
+      )}
+    </>
+  );
+
+  if (loading || loadError || !formState) {
     return (
-      <section className="card">
-        <div className="card-header">Config</div>
-        {applicationNotice}
-        <div className="card-body">
-          <div className="loading">
+      <section className="config-workspace" aria-label="Settings editor">
+        {notices}
+        {loading ? (
+          <div className="loading" role="status">
             <span className="spinner" /> Loading configuration…
           </div>
-        </div>
+        ) : loadError ? (
+          <p className="settings-notice settings-notice--error" role="alert">
+            {loadError}{" "}
+            <button
+              type="button"
+              className="btn small ghost"
+              onClick={() => void loadConfig()}
+            >
+              Retry
+            </button>
+          </p>
+        ) : (
+          <p className="hint">No configuration available.</p>
+        )}
       </section>
     );
   }
 
   return (
     <>
-      <section className="card">
-        <div className="card-header">Config</div>
-        {applicationNotice}
-        <div className="card-body config-layout">
-          <section className="config-arr-group">
-            <details className="config-arr-group__details" open>
-              <summary>
-                <span>Core Configuration</span>
-              </summary>
-              <div className="config-grid">
-                <ConfigSummaryCard
-                  title="Settings"
-                  description="Core application configuration"
-                  onConfigure={() => setSettingsOpen(true)}
-                />
-                <ConfigSummaryCard
-                  title="Web Settings"
-                  description="Host, port, and proxy"
-                  onConfigure={() => setWebSettingsOpen(true)}
-                />
-                <ConfigSummaryCard
-                  title="Authentication"
-                  description="Login, local auth, and OIDC settings"
-                  onConfigure={() => setAuthSettingsOpen(true)}
-                />
-              </div>
-            </details>
-          </section>
-          <section className="config-arr-group">
-            <details className="config-arr-group__details" open>
-              <summary>
-                <span>Torrent Clients</span>
-                <span className="config-arr-group__count">
-                  {torrentClients.length}
-                </span>
-                <button className="btn small" type="button" onClick={addClient}>
-                  <IconImage src={AddIcon} />
-                  Add Instance
-                </button>
-              </summary>
-              <div className="config-arr-grid">
-                {torrentClients.map(({ name: key, value, legacy }) => {
-                  const host = getValue(value as ConfigDocument, ["Host"]);
-                  const port = getValue(value as ConfigDocument, ["Port"]);
-                  const disabled = getValue(value as ConfigDocument, [
-                    "Disabled",
-                  ]);
-                  return (
-                    <div
-                      className="card config-card config-arr-card"
-                      key={`${legacy ? "legacy" : "client"}:${key}`}
-                    >
-                      <div className="card-header">{key}</div>
-                      <div className="card-body">
-                        <dl className="config-arr-summary">
-                          <div className="config-arr-summary__item">
-                            <dt>Client Type</dt>
-                            <dd>{String(value.Type ?? "qbittorrent")}</dd>
-                          </div>
-                          <div className="config-arr-summary__item">
-                            <dt>Status</dt>
-                            <dd>{disabled ? "Disabled" : "Enabled"}</dd>
-                          </div>
-                          <div className="config-arr-summary__item">
-                            <dt>Host</dt>
-                            <dd>
-                              {host ? `${String(host)}:${port ?? 8080}` : "-"}
-                            </dd>
-                          </div>
-                        </dl>
-                        <div className="config-arr-actions">
-                          <button
-                            className="btn primary"
-                            type="button"
-                            onClick={() =>
-                              legacy
-                                ? setActiveQbitKey(key)
-                                : setActiveClient(key)
-                            }
-                          >
-                            <IconImage src={ConfigureIcon} />
-                            Configure
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </details>
-          </section>
-          {groupedArrSections.length ? (
-            <div className="config-arr-groups">
-              {groupedArrSections.map((group) => (
-                <section className="config-arr-group" key={group.type}>
-                  <details className="config-arr-group__details" open>
-                    <summary>
-                      <span>{group.label}</span>
-                      <span className="config-arr-group__count">
-                        {group.items.length}
+      <section
+        className="config-workspace"
+        aria-label="Settings editor"
+        ref={scrollRef}
+      >
+        {isDirty && (
+          <p className="settings-notice settings-notice--warning" role="status">
+            Unsaved changes
+          </p>
+        )}
+        {notices}
+        <div
+          className={`config-workspace__layout${instanceSection ? " config-instance-layout" : ""}`}
+        >
+          {section === "trackers" && (
+            <TrackerSettings
+              rules={(formState.Trackers ?? []) as ConfigDocument[]}
+              clientIds={torrentClients
+                .filter(({ name, legacy }) =>
+                  legacy
+                    ? Object.hasOwn(originalConfig ?? {}, name)
+                    : Object.hasOwn(
+                        (originalConfig?.TorrentClient ?? {}) as ConfigDocument,
+                        name,
+                      ),
+                )
+                .map(({ name }) => name)}
+              integrationIds={arrSections
+                .filter(([name]) => Object.hasOwn(originalConfig ?? {}, name))
+                .map(([name]) => name)}
+              onChange={handleFieldChange}
+              onReplace={(rules) =>
+                handleFieldChange(["Trackers"], {} as FieldDefinition, rules)
+              }
+              onSave={(onValidationError) =>
+                void saveSection("Trackers", false, onValidationError)
+              }
+              dirty={!equal(formState.Trackers, originalConfig?.Trackers)}
+              saving={savingSection === "Trackers"}
+            />
+          )}
+          {section === "clients" && (
+            <section
+              className="config-arr-overview"
+              aria-label="Configured torrent clients"
+            >
+              {clientGroups.map(([type, clients]) => (
+                <section
+                  className="config-arr-group"
+                  key={type}
+                  aria-label={`${type === "qbittorrent" ? "qBittorrent" : type} Instances`}
+                >
+                  <header className="config-instance-header">
+                    <h3>
+                      {type === "qbittorrent" ? "qBittorrent" : type}{" "}
+                      <span>
+                        {clients.length}{" "}
+                        {clients.length === 1 ? "instance" : "instances"}
                       </span>
-                      {(group.type === "radarr" ||
-                        group.type === "sonarr" ||
-                        group.type === "lidarr" ||
-                        group.type === "readarr") && (
+                    </h3>
+                  </header>
+                  {type !== "qbittorrent" && (
+                    <p className="hint">
+                      Connection requires a supported client type.
+                    </p>
+                  )}
+                  <div className="config-arr-list">
+                    {clients.length === 0 && (
+                      <p className="hint">No instances configured.</p>
+                    )}
+                    {clients.map(({ name, value, legacy }) => {
+                      const active = legacy
+                        ? activeQbitKey === name
+                        : activeClient === name;
+                      const original = legacy
+                        ? originalConfig?.[name]
+                        : get(originalConfig, ["TorrentClient", name]);
+                      const categories = Array.isArray(value.ManagedCategories)
+                        ? value.ManagedCategories
+                        : [];
+                      return (
                         <button
-                          className="btn small"
                           type="button"
+                          key={`${legacy}:${name}`}
+                          className={`config-arr-row${active ? " active" : ""}`}
+                          aria-label={`Configure ${name}${torrentClients.filter((client) => client.name === name).length > 1 ? (legacy ? " (legacy)" : " (TorrentClient)") : ""}`}
+                          aria-pressed={active}
                           onClick={() =>
-                            addArrInstance(
-                              group.type as
-                                | "radarr"
-                                | "sonarr"
-                                | "lidarr"
-                                | "readarr",
-                            )
+                            chooseEditor(() => {
+                              if (legacy) setActiveQbitKey(name);
+                              else setActiveClient(name);
+                              setEditorRequest((request) => request + 1);
+                            })
                           }
                         >
-                          <IconImage src={AddIcon} />
-                          Add Instance
+                          <span className="config-arr-name">
+                            {name}
+                            {!equal(value, original) && (
+                              <span className="config-arr-dirty">Unsaved</span>
+                            )}
+                          </span>
+                          <span className="config-arr-cell">
+                            <small>Address</small>
+                            <span>
+                              {String(value.Host || "Not configured")}
+                              {value.Port ? `:${value.Port}` : ""}
+                            </span>
+                          </span>
+                          <span className="config-arr-cell">
+                            <small>Categories</small>
+                            <span>
+                              {categories.join(", ") || "None assigned"}
+                            </span>
+                          </span>
+                          <span className="config-arr-cell">
+                            <small>Scan interval</small>
+                            <span>
+                              {String(value.TorrentScanIntervalSeconds ?? 30)} s
+                            </span>
+                          </span>
+                          <span
+                            className={`config-arr-state${value.Disabled === true ? " config-arr-state--disabled" : ""}`}
+                          >
+                            {value.Disabled === true ? "Disabled" : "Enabled"}
+                          </span>
                         </button>
-                      )}
-                    </summary>
-                    <div className="config-arr-grid">
-                      {group.items.length === 0 ? (
-                        <div className="empty-state config-arr-empty">
-                          No {group.label.replace(/ Instances$/i, "")} instances
-                          configured. Use Add Instance to create one.
-                        </div>
-                      ) : (
-                        group.items.map(([key, value]) => {
-                          const uri = getValue(value as ConfigDocument, [
-                            "URI",
-                          ]);
-                          const category = getValue(value as ConfigDocument, [
-                            "Category",
-                          ]);
-                          const managed = getValue(value as ConfigDocument, [
-                            "Managed",
-                          ]);
-                          return (
-                            <div
-                              className="card config-card config-arr-card"
-                              key={key}
-                            >
-                              <div className="card-header">{key}</div>
-                              <div className="card-body">
-                                <dl className="config-arr-summary">
-                                  <div className="config-arr-summary__item">
-                                    <dt>Managed</dt>
-                                    <dd>{managed ? "Enabled" : "Disabled"}</dd>
-                                  </div>
-                                  <div className="config-arr-summary__item">
-                                    <dt>Category</dt>
-                                    <dd>{category ? String(category) : "-"}</dd>
-                                  </div>
-                                  <div className="config-arr-summary__item">
-                                    <dt>URI</dt>
-                                    <dd className="config-arr-summary__uri">
-                                      {uri ? String(uri) : "-"}
-                                    </dd>
-                                  </div>
-                                </dl>
-                                <div className="config-arr-actions">
-                                  <button
-                                    className="btn primary"
-                                    type="button"
-                                    onClick={() => setActiveArrKey(key)}
-                                  >
-                                    <IconImage src={ConfigureIcon} />
-                                    Configure
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </details>
+                      );
+                    })}
+                  </div>
                 </section>
               ))}
-            </div>
-          ) : null}
+            </section>
+          )}
+          {section === "integrations" && (
+            <section
+              className="config-arr-overview"
+              aria-label="Configured integrations"
+            >
+              {groupedArrSections.map((group) => (
+                <section
+                  className="config-arr-group"
+                  key={group.type}
+                  aria-label={group.label}
+                >
+                  <header className="config-instance-header">
+                    <h3>
+                      {group.label.replace(/ Instances$/, "")}{" "}
+                      <span>
+                        {group.items.length}{" "}
+                        {group.items.length === 1 ? "instance" : "instances"}
+                      </span>
+                    </h3>
+                  </header>
+                  <div className="config-arr-list">
+                    {group.items.length === 0 && (
+                      <p className="hint">No instances configured.</p>
+                    )}
+                    {group.items.map(([name, section]) => {
+                      const managed = section.Managed !== false;
+                      let address = "Not configured";
+                      try {
+                        const url = new URL(String(section.URI ?? ""));
+                        address = url.host + url.pathname.replace(/\/$/, "");
+                      } catch {
+                        /* The editor shows URL validation errors. */
+                      }
+                      return (
+                        <button
+                          key={name}
+                          type="button"
+                          className={`config-arr-row${activeArrKey === name ? " active" : ""}`}
+                          aria-label={`Configure ${name}`}
+                          aria-pressed={activeArrKey === name}
+                          onClick={() =>
+                            chooseEditor(() => {
+                              setActiveArrKey(name);
+                              setEditorRequest((request) => request + 1);
+                            })
+                          }
+                        >
+                          <span className="config-arr-name">
+                            {name}
+                            {sectionDirty(name) && (
+                              <span className="config-arr-dirty">Unsaved</span>
+                            )}
+                          </span>
+                          <span className="config-arr-cell">
+                            <small>Address</small>
+                            <span>{address}</span>
+                          </span>
+                          <span className="config-arr-cell">
+                            <small>Category</small>
+                            <span>{String(section.Category || "Not set")}</span>
+                          </span>
+                          <span className="config-arr-cell">
+                            <small>Mode</small>
+                            <span>
+                              {section.ProcessingOnly === true
+                                ? "Torrents only"
+                                : section.SearchOnly === true
+                                  ? "Search only"
+                                  : "Search + torrents"}
+                            </span>
+                          </span>
+                          <span
+                            className={`config-arr-state${managed ? "" : " config-arr-state--disabled"}`}
+                          >
+                            {managed ? "Enabled" : "Disabled"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </section>
+          )}
+          {active &&
+            (activeArrKey ||
+              activeQbitKey ||
+              activeClient ||
+              isSettingsOpen ||
+              isWebSettingsOpen ||
+              isAuthSettingsOpen) && (
+              <div
+                className="config-workspace__editor"
+                ref={editorRef}
+                tabIndex={-1}
+              >
+                <div className="field config-field-search">
+                  <label htmlFor="config-field-search">
+                    Find a setting in this section
+                  </label>
+                  <input
+                    id="config-field-search"
+                    type="search"
+                    value={fieldSearch}
+                    onChange={(event) => setFieldSearch(event.target.value)}
+                    placeholder="Search field names and descriptions…"
+                  />
+                </div>
+                <ConfigFieldSearch.Provider value={fieldSearch}>
+                  {active && activeArrKey && formState ? (
+                    <ArrInstanceModal
+                      inline
+                      keyName={activeArrKey}
+                      diskKey={resolveSectionDiskKey(
+                        activeArrKey,
+                        pendingRenames,
+                      )}
+                      state={
+                        (formState[activeArrKey] as ConfigDocument) ?? null
+                      }
+                      onChange={handleFieldChange}
+                      onRename={handleRenameSection}
+                      onClose={() => setActiveArrKey(null)}
+                      onSave={() => saveSection(activeArrKey)}
+                      onDelete={
+                        /^(radarr|sonarr|lidarr|readarr)/i.test(activeArrKey)
+                          ? () => requestDeleteArrInstance(activeArrKey)
+                          : undefined
+                      }
+                      overlapWarnings={categoryOverlapWarnings}
+                      saveDisabled={arrSaveGate.saveDisabled}
+                      saveBlockedReason={arrSaveGate.saveBlockedReason}
+                      validationErrors={arrSaveGate.validationErrors}
+                    />
+                  ) : null}
+                  {active && isSettingsOpen ? (
+                    <SimpleConfigModal
+                      inline
+                      title={configSections.general}
+                      section="general"
+                      fields={SETTINGS_FIELDS}
+                      state={formState}
+                      basePath={[]}
+                      onChange={handleFieldChange}
+                      onSave={() => saveSection("Settings")}
+                      saveDisabled={settingsSaveGate.saveDisabled}
+                      saveBlockedReason={settingsSaveGate.saveBlockedReason}
+                      validationErrors={settingsSaveGate.validationErrors}
+                    />
+                  ) : null}
+                  {active && isWebSettingsOpen ? (
+                    <SimpleConfigModal
+                      inline
+                      title={configSections.interface}
+                      section="interface"
+                      fields={WEB_SETTINGS_FIELDS}
+                      state={formState}
+                      basePath={[]}
+                      onChange={handleFieldChange}
+                      onSave={() => saveSection("WebUI")}
+                      showLiveSettings={true}
+                      saveDisabled={webSaveGate.saveDisabled}
+                      saveBlockedReason={webSaveGate.saveBlockedReason}
+                      validationErrors={webSaveGate.validationErrors}
+                    />
+                  ) : null}
+                  {active && isAuthSettingsOpen ? (
+                    <SimpleConfigModal
+                      inline
+                      title={configSections.auth}
+                      section="auth"
+                      fields={AUTH_SETTINGS_FIELDS}
+                      state={formState}
+                      basePath={[]}
+                      onChange={handleFieldChange}
+                      onSave={() => saveSection("WebUI")}
+                      onSetPassword={() => setSetPasswordOpen(true)}
+                      saveDisabled={webSaveGate.saveDisabled}
+                      saveBlockedReason={webSaveGate.saveBlockedReason}
+                      validationErrors={webSaveGate.validationErrors}
+                    />
+                  ) : null}
+                  {active && isSetPasswordOpen ? (
+                    <SetPasswordModal
+                      onClose={() => setSetPasswordOpen(false)}
+                    />
+                  ) : null}
+                  {active && confirmDisableAuth ? (
+                    <ConfigModalPortal>
+                      <ConfirmDialog
+                        title="Disable authentication?"
+                        message="Anyone who can reach this WebUI will be able to change settings and control Torrentarr without logging in. Protect access with an authenticated reverse proxy, VPN, or firewall if you disable authentication."
+                        confirmLabel="Disable authentication"
+                        danger
+                        onCancel={() => setConfirmDisableAuth(false)}
+                        onConfirm={() => {
+                          setFormState((previous) =>
+                            previous
+                              ? produce(previous, (draft) => {
+                                  setValue(
+                                    draft,
+                                    ["WebUI", "AuthDisabled"],
+                                    true,
+                                  );
+                                })
+                              : previous,
+                          );
+                          setConfirmDisableAuth(false);
+                        }}
+                      />
+                    </ConfigModalPortal>
+                  ) : null}
+                  {active && activeQbitKey && formState ? (
+                    <QbitInstanceModal
+                      inline
+                      manageClientId={
+                        originalConfig?.[activeQbitKey] &&
+                        !pendingRenames.has(activeQbitKey) &&
+                        ![...pendingRenames.values()].includes(activeQbitKey)
+                          ? activeQbitKey
+                          : undefined
+                      }
+                      keyName={activeQbitKey}
+                      state={
+                        (formState[activeQbitKey] as ConfigDocument) ?? null
+                      }
+                      onChange={handleFieldChange}
+                      onRename={handleRenameQbitSection}
+                      onClose={() => setActiveQbitKey(null)}
+                      onSave={(keepProtectionOff) =>
+                        saveSection(activeQbitKey, keepProtectionOff)
+                      }
+                      onDelete={() => requestDeleteQbitInstance(activeQbitKey)}
+                      overlapWarnings={categoryOverlapWarnings}
+                      saveDisabled={qbitSaveGate.saveDisabled}
+                      saveBlockedReason={qbitSaveGate.saveBlockedReason}
+                      validationErrors={qbitSaveGate.validationErrors}
+                    />
+                  ) : null}
+                  {active && activeClient ? (
+                    <QbitInstanceModal
+                      inline
+                      manageClientId={
+                        (originalConfig?.TorrentClient as ConfigDocument)?.[
+                          activeClient
+                        ]
+                          ? activeClient
+                          : undefined
+                      }
+                      keyName={activeClient}
+                      fields={getClientFields()}
+                      fieldPathPrefix={`TorrentClient.${activeClient}`}
+                      validationErrors={clientValidationErrors}
+                      state={
+                        (formState.TorrentClient as ConfigDocument)?.[
+                          activeClient
+                        ] as ConfigDocument
+                      }
+                      onChange={(path, def, value) =>
+                        handleFieldChange(
+                          ["TorrentClient", ...path],
+                          def,
+                          value,
+                        )
+                      }
+                      onRename={() => {}}
+                      overlapWarnings={categoryOverlapWarnings}
+                      onClose={() => setActiveClient(null)}
+                      onSave={(keepProtectionOff) =>
+                        saveClient(activeClient, false, keepProtectionOff)
+                      }
+                      onDelete={() => {
+                        setDeleteClient(activeClient);
+                        setActiveClient(null);
+                      }}
+                      saveDisabled={clientSaving}
+                    />
+                  ) : null}
+                </ConfigFieldSearch.Provider>
+              </div>
+            )}
         </div>
       </section>
-      {active && activeArrKey && formState ? (
-        <ArrInstanceModal
-          keyName={activeArrKey}
-          diskKey={resolveSectionDiskKey(activeArrKey, pendingRenames)}
-          state={(formState[activeArrKey] as ConfigDocument) ?? null}
-          onChange={handleFieldChange}
-          onRename={handleRenameSection}
-          onClose={() => setActiveArrKey(null)}
-          onSave={() => saveSection(activeArrKey)}
-          onDelete={
-            /^(radarr|sonarr|lidarr|readarr)/i.test(activeArrKey)
-              ? () => requestDeleteArrInstance(activeArrKey)
-              : undefined
-          }
-          overlapWarnings={categoryOverlapWarnings}
-          saveDisabled={arrSaveGate.saveDisabled}
-          saveBlockedReason={arrSaveGate.saveBlockedReason}
-          validationErrors={arrSaveGate.validationErrors}
-        />
-      ) : null}
-      {active && isSettingsOpen ? (
-        <SimpleConfigModal
-          title="Settings"
-          fields={SETTINGS_FIELDS}
-          state={formState}
-          basePath={[]}
-          onChange={handleFieldChange}
-          onClose={() => setSettingsOpen(false)}
-          onSave={() => saveSection("Settings")}
-          saveDisabled={settingsSaveGate.saveDisabled}
-          saveBlockedReason={settingsSaveGate.saveBlockedReason}
-          validationErrors={settingsSaveGate.validationErrors}
-        />
-      ) : null}
-      {active && isWebSettingsOpen ? (
-        <SimpleConfigModal
-          title="Web Settings"
-          fields={WEB_SETTINGS_FIELDS}
-          state={formState}
-          basePath={[]}
-          onChange={handleFieldChange}
-          onClose={() => setWebSettingsOpen(false)}
-          onSave={() => saveSection("WebUI")}
-          showLiveSettings={true}
-          saveDisabled={webSaveGate.saveDisabled}
-          saveBlockedReason={webSaveGate.saveBlockedReason}
-          validationErrors={webSaveGate.validationErrors}
-        />
-      ) : null}
-      {active && isAuthSettingsOpen ? (
-        <SimpleConfigModal
-          title="Authentication"
-          fields={AUTH_SETTINGS_FIELDS}
-          state={formState}
-          basePath={[]}
-          onChange={handleFieldChange}
-          onClose={() => setAuthSettingsOpen(false)}
-          onSave={() => saveSection("WebUI")}
-          onSetPassword={() => setSetPasswordOpen(true)}
-          saveDisabled={webSaveGate.saveDisabled}
-          saveBlockedReason={webSaveGate.saveBlockedReason}
-          validationErrors={webSaveGate.validationErrors}
-        />
-      ) : null}
-      {active && isSetPasswordOpen ? (
-        <SetPasswordModal onClose={() => setSetPasswordOpen(false)} />
-      ) : null}
-      {active && confirmDisableAuth ? (
-        <ConfigModalPortal>
-          <ConfirmDialog
-            title="Disable authentication?"
-            message="Anyone who can reach this WebUI will be able to change settings and control Torrentarr without logging in. Protect access with an authenticated reverse proxy, VPN, or firewall if you disable authentication."
-            confirmLabel="Disable authentication"
-            danger
-            onCancel={() => setConfirmDisableAuth(false)}
-            onConfirm={() => {
-              setFormState((previous) =>
-                previous
-                  ? produce(previous, (draft) => {
-                      setValue(draft, ["WebUI", "AuthDisabled"], true);
-                    })
-                  : previous,
-              );
-              setConfirmDisableAuth(false);
+      {active && instanceSection && (
+        <div className="instance-add-bar">
+          <button
+            className="btn primary instance-add-button"
+            type="button"
+            aria-label="Add Instance"
+            title="Add Instance"
+            aria-haspopup={
+              section === "integrations" || clientGroups.length > 1
+                ? "dialog"
+                : undefined
+            }
+            onClick={() => {
+              if (section === "clients" && clientGroups.length === 1)
+                chooseEditor(() => addClient("qbittorrent"));
+              else setPickerSection(section);
             }}
-          />
-        </ConfigModalPortal>
-      ) : null}
-      {active && activeQbitKey && formState ? (
-        <QbitInstanceModal
-          manageClientId={
-            originalConfig?.[activeQbitKey] &&
-            !pendingRenames.has(activeQbitKey) &&
-            ![...pendingRenames.values()].includes(activeQbitKey)
-              ? activeQbitKey
-              : undefined
+          >
+            <IconImage src={AddIcon} alt="" />
+          </button>
+        </div>
+      )}
+      {active && pickerSection && (
+        <ShellDialog
+          title={
+            pickerSection === "clients"
+              ? "Add torrent client"
+              : "Add integration"
           }
-          keyName={activeQbitKey}
-          state={(formState[activeQbitKey] as ConfigDocument) ?? null}
-          onChange={handleFieldChange}
-          onRename={handleRenameQbitSection}
-          onClose={() => setActiveQbitKey(null)}
-          onSave={() => saveSection(activeQbitKey)}
-          onDelete={() => requestDeleteQbitInstance(activeQbitKey)}
-          overlapWarnings={categoryOverlapWarnings}
-          saveDisabled={qbitSaveGate.saveDisabled}
-          saveBlockedReason={qbitSaveGate.saveBlockedReason}
-          validationErrors={qbitSaveGate.validationErrors}
-        />
-      ) : null}
-      {active && activeClient ? (
-        <QbitInstanceModal
-          manageClientId={
-            (originalConfig?.TorrentClient as ConfigDocument)?.[activeClient]
-              ? activeClient
-              : undefined
-          }
-          keyName={activeClient}
-          fields={getClientFields()}
-          fieldPathPrefix={`TorrentClient.${activeClient}`}
-          validationErrors={clientValidationErrors}
-          state={
-            (formState.TorrentClient as ConfigDocument)?.[
-              activeClient
-            ] as ConfigDocument
-          }
-          onChange={(path, def, value) =>
-            handleFieldChange(["TorrentClient", ...path], def, value)
-          }
-          onRename={() => {}}
-          overlapWarnings={categoryOverlapWarnings}
-          onClose={() => setActiveClient(null)}
-          onSave={() => saveClient(activeClient)}
-          onDelete={() => {
-            setDeleteClient(activeClient);
-            setActiveClient(null);
-          }}
-          saveDisabled={clientSaving}
-        />
-      ) : null}
+          className="integration-dialog"
+          onClose={() => setPickerSection(undefined)}
+        >
+          <div
+            className="integration-picker"
+            role="group"
+            aria-label={
+              pickerSection === "clients"
+                ? "Torrent client type"
+                : "Integration type"
+            }
+          >
+            {pickerSection === "clients"
+              ? clientGroups.map(([type]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className="integration-picker__option"
+                    onClick={() => {
+                      setPickerSection(undefined);
+                      chooseEditor(() => addClient(type));
+                    }}
+                  >
+                    {type === "qbittorrent" ? "qBittorrent" : type}
+                  </button>
+                ))
+              : INTEGRATION_TYPES.map(({ type, icon }) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className="integration-picker__option"
+                    onClick={() => {
+                      setPickerSection(undefined);
+                      chooseEditor(() => addArrInstance(type));
+                    }}
+                  >
+                    <IconImage src={icon} alt="" />
+                    <span>{arrTypeLabel(type)}</span>
+                  </button>
+                ))}
+          </div>
+        </ShellDialog>
+      )}
       {active && deleteClient ? (
         <ConfirmDialog
           title={`Remove ${deleteClient}?`}
@@ -1346,6 +1850,16 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           onCancel={() => setDeleteClient(null)}
         />
       ) : null}
+      {active && confirmRestart && (
+        <ConfirmDialog
+          title="Restart required"
+          message={`Configuration saved. Restart these components: ${pendingRestarts.map((item) => item.component).join(", ")}.`}
+          confirmLabel="Restart now"
+          cancelLabel="Later"
+          onConfirm={() => void restartSavedComponents()}
+          onCancel={() => setConfirmRestart(false)}
+        />
+      )}
       {active && pendingDelete ? (
         <ConfirmDialog
           title={`Remove ${pendingDelete.key}?`}
@@ -1370,32 +1884,5 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         />
       ) : null}
     </>
-  );
-}
-
-interface ConfigSummaryCardProps {
-  title: string;
-  description: string;
-  onConfigure: () => void;
-}
-
-function ConfigSummaryCard({
-  title,
-  description,
-  onConfigure,
-}: ConfigSummaryCardProps): JSX.Element {
-  return (
-    <div className="card config-card">
-      <div className="card-header">{title}</div>
-      <div className="card-body config-summary-card">
-        <p>{description}</p>
-        <div className="config-arr-actions">
-          <button className="btn primary" type="button" onClick={onConfigure}>
-            <IconImage src={ConfigureIcon} />
-            Configure
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

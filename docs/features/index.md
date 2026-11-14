@@ -262,7 +262,10 @@ RemoveTorrent = 3  # Remove when ratio OR time met
 **Per-tracker example:**
 
 ```toml
-[[Radarr-Movies.Torrent.Trackers]]
+[Radarr-Movies]
+
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
 Name = "Private Tracker"
 Priority = 10
 URI = "https://tracker.example.com/announce"
@@ -413,7 +416,7 @@ Port = 6969
 Token = "your-secret-token"
 
 # Theme
-Theme = "Dark"  # Dark or Light
+Theme = "Dark"  # System, Light, Dark, or Midnight
 ```
 
 **Security:**

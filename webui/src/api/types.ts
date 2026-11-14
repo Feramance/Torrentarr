@@ -8,6 +8,16 @@ export interface WorkerLoopProgress {
 }
 
 export interface ProcessInfo {
+  searchesTriggered?: number | null;
+  itemsSearched?: number | null;
+  downloadingCount?: number | null;
+  seedingCount?: number | null;
+  observedAt?: string | null;
+  observationError?: string | null;
+  pausedLastPass?: number | null;
+  resumedLastPass?: number | null;
+  handledLastPass?: number | null;
+  monitoredCategoryCount?: number | null;
   torrent?: WorkerLoopProgress | null;
   search?: WorkerLoopProgress | null;
   freeSpacePaused?: number;
@@ -53,6 +63,7 @@ export interface ArrListResponse {
 }
 
 export interface QbitInstance {
+  scanIntervalSeconds?: number;
   alive: boolean;
   host: string;
   port: number;
@@ -76,6 +87,10 @@ export interface QbitCategorySeedingConfig {
 }
 
 export interface QbitCategory {
+  downloadingCount?: number;
+  observedAt?: string | null;
+  observationError?: string | null;
+  scanIntervalSeconds?: number;
   category: string;
   instance: string;
   managedBy: "qbit" | "arr";
@@ -87,7 +102,14 @@ export interface QbitCategory {
   seedingConfig: QbitCategorySeedingConfig | null;
 }
 
+export interface ClientObservation {
+  observedAt: string | null;
+  error: string | null;
+  scanIntervalSeconds: number;
+}
+
 export interface QbitCategoriesResponse {
+  observations?: Record<string, ClientObservation>;
   categories: QbitCategory[];
   ready: boolean;
 }
@@ -157,7 +179,41 @@ export interface QbitOverviewCategory {
   torrentsTruncated?: boolean;
 }
 
+export interface QbitActivitySummary {
+  instance: string;
+  torrentCount: number;
+  totalSize: number;
+  downloading: number;
+  seeding: number;
+  stopped: number;
+  other: number;
+}
+
+export type TransferRange = "1h" | "24h" | "7d";
+export interface TransferBucket {
+  timestamp: string;
+  downloadRate: number | null;
+  uploadRate: number | null;
+  samples: number;
+  expectedSamples: number;
+}
+export interface TransferHistoryResponse {
+  range: TransferRange;
+  bucketMinutes: number;
+  generatedAt: string;
+  series: { instance: string; points: TransferBucket[] }[];
+}
+
 export interface QbitOverviewResponse {
+  summaries?: QbitActivitySummary[];
+  observations?: Record<
+    string,
+    {
+      observedAt: string | null;
+      error: string | null;
+      scanIntervalSeconds: number;
+    }
+  >;
   instances: string[];
   categories: QbitOverviewCategory[];
   ready: boolean;
@@ -339,16 +395,6 @@ export interface LidarrAlbumEntry {
   [key: string]: unknown;
 }
 
-export interface LidarrAlbumsResponse {
-  category: string;
-  counts: LidarrCounts;
-  counts_tracks?: LidarrCounts;
-  total: number;
-  page: number;
-  page_size: number;
-  albums: LidarrAlbumEntry[];
-}
-
 export interface LidarrArtistEntry {
   artist: {
     id: number;
@@ -468,6 +514,7 @@ export type ConfigDocument = Record<string, unknown>;
 export interface ConfigUpdatePayload {
   changes: Record<string, unknown>;
   renames?: Record<string, string>;
+  keepFreeSpaceProtectionOff?: string;
 }
 
 export interface UpdateState {
@@ -481,6 +528,7 @@ export interface MetaResponse {
   update_channel?: "latest" | "stable" | "nightly";
   auto_update_supported?: boolean;
   current_version: string;
+  is_test_build?: boolean;
   latest_version: string | null;
   update_available: boolean;
   changelog: string | null; // Latest version changelog
@@ -514,7 +562,14 @@ export interface MetaResponse {
   url_base?: string;
 }
 
+export interface ConfigRestartRequirement {
+  component: string;
+  category: string;
+  kind: string;
+}
+
 export interface ConfigUpdateResponse {
+  restartRequirements?: ConfigRestartRequirement[];
   application?: ConfigurationApplicationStatus;
   warning?: string | null;
   status: string;
@@ -800,4 +855,37 @@ export interface IssuesSummary {
     affected: number;
   }[];
   pending: PendingOperationalIssue[];
+}
+
+export interface FreeSpaceStatistics {
+  clientInstanceId: string;
+  path: string;
+  error: string | null;
+  freeBytes: number;
+  thresholdBytes: number;
+  committedBytes: number | null;
+  remainingAllocationBytes: number | null;
+  lastCompletedPass: string | null;
+  blockedReason: string | null;
+}
+
+export interface ArrActivityPoint {
+  timestamp: string;
+  queueDepth: number | null;
+  searchesCompleted: number | null;
+  importsConfirmed: number | null;
+  queueSamples: number;
+  completionSamples: number;
+  expectedSamples: number;
+}
+export interface ArrActivitySeries {
+  instance: string;
+  type: string;
+  points: ArrActivityPoint[];
+}
+export interface ArrActivityHistory {
+  range: TransferRange;
+  bucketMinutes: number;
+  generatedAt: string;
+  series: ArrActivitySeries[];
 }

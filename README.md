@@ -1,6 +1,6 @@
 # Torrentarr
 
-**Automated qBittorrent management for the *Arr stack** — Hit & Run protection, free space control, quality upgrades, and import triggering. C# port of qBitrr with the same config and schema.
+**Automated qBittorrent management for the *Arr stack** — Hit & Run protection, free space control, quality upgrades, and import triggering. C# port of qBitrr with direct upgrades from qBitrr configuration and a compatible database schema.
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![vs qBitrr](https://img.shields.io/badge/vs_qBitrr-%2B1_major-blue)]()
@@ -75,6 +75,7 @@ Access the WebUI at `http://<host>:6969/ui` after startup.
 ## Key Features
 
 - **Manage** – Configure and run all ten recovery, organization, and storage tools in one workspace. Compact cards keep advanced settings out of the client configuration dialog. [Maintenance guide](docs/features/torrent-maintenance.md) and [worked examples](docs/features/maintenance-examples.md).
+- **Radarr v3 through v7 support** – All versions use `/api/v3`; no configuration changes. [Radarr configuration](docs/configuration/arr/radarr.md).
 - **Sonarr v3, v4, and v5 support** – Automatic API version detection with the same configuration format. [Sonarr configuration](docs/configuration/arr/sonarr.md).
 - **Multi-qBittorrent Support** – Manage torrents across multiple qBittorrent instances for load balancing, redundancy, and VPN isolation
 - **Torrent Health Monitoring** – Detect stalled/failed downloads, auto-blacklist, trigger re-searches

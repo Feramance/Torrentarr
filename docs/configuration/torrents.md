@@ -448,9 +448,14 @@ UploadRateLimitPerTorrent = -1          # KB/s upload limit (-1 = unlimited)
 MaxUploadRatio = 2.0                    # Remove after 2:1 ratio
 MaxSeedingTime = 43200                  # Remove after 12 hours (seconds)
 RemoveTorrent = -1                      # Additional removal delay (seconds)
-RemoveDeadTrackers = false              # Remove torrents with dead trackers
-RemoveTrackerWithMessage = []           # Remove if tracker message matches
+RemoveDeadTrackers = false              # Report dead trackers; never delete torrents
+RemoveTrackerWithMessage = []           # Remove matching tracker URLs; private configured/last URLs preserved
 ```
+
+While protection is unmet or a private tracker is unmatched, Torrentarr records and
+temporarily clears conflicting per-torrent native stop limits so qBittorrent cannot
+remove the torrent first. Restored only when Torrentarr still owns the unlimited
+values and the torrent identity matches.
 
 **See also:** [Seeding Configuration Guide](seeding.md)
 
@@ -463,51 +468,25 @@ Override global torrent settings on a per-tracker basis.
 ### Tracker Configuration Structure
 
 ```toml
-[Radarr-Movies.Torrent.Trackers]
+[Radarr-Movies]
 
-[[Radarr-Movies.Torrent.Trackers.PassThePopcorn]]
-UseTracker = true
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
 MaximumETA = 1800                       # 30 minutes (overrides global)
 DownloadRateLimit = -1
 UploadRateLimit = -1
 MaxUploadRatio = 3.0                    # Seed to 3:1
 MaxSeedingTime = 86400                  # 24 hours
 RemoveTorrent = -1
-TrackerURLInclude = ["passthepopcorn.me"]
+URI = "https://passthepopcorn.me"
 ```
 
 ### Tracker Settings
 
-#### UseTracker
+#### URI
 
-**Type:** Boolean
-**Default:** `true`
-
-Enable tracking for this tracker configuration.
-
-```toml
-UseTracker = true
-```
-
----
-
-#### TrackerURLInclude
-
-**Type:** List of strings
-**Required:** Yes
-
-URL patterns to match for this tracker.
-
-```toml
-TrackerURLInclude = ["passthepopcorn.me", "ptp.me"]
-```
-
-**Matching:**
-
-- Partial match against tracker announce URL
-- Case-insensitive
-
----
+The tracker announce host or URL. A rule matches that host and its subdomains.
+Create one rule for each alternate host.
 
 #### MaximumETA (per-tracker)
 
@@ -715,21 +694,28 @@ MaxUploadRatio = -1  # No global ratio limit
 MaxSeedingTime = -1  # No global time limit
 
 # Tracker-specific overrides
-[[Radarr-Movies.Torrent.Trackers.PassThePopcorn]]
-UseTracker = true
-TrackerURLInclude = ["passthepopcorn.me"]
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
+URI = "https://passthepopcorn.me"
 MaximumETA = 1800  # 30 minutes (fast tracker)
 MaxUploadRatio = 3.0
 MaxSeedingTime = 86400  # 24 hours
 DownloadRateLimit = -1
 UploadRateLimit = -1
 
-[[Radarr-Movies.Torrent.Trackers.BroadcasTheNet]]
-UseTracker = true
-TrackerURLInclude = ["broadcasthe.net", "landof.tv"]
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
+URI = "https://broadcasthe.net"
 MaximumETA = 3600  # 1 hour
 MaxUploadRatio = 2.0
 MaxSeedingTime = 172800  # 48 hours (more patient)
+
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
+URI = "https://landof.tv"
+MaximumETA = 3600
+MaxUploadRatio = 2.0
+MaxSeedingTime = 172800
 ```
 
 ---
@@ -880,16 +866,18 @@ IgnoreTorrentsYoungerThan = 600  # 10 minutes
 
 ```toml
 # Slow public tracker
-[[Radarr-Movies.Torrent.Trackers.YTS]]
-UseTracker = true
-TrackerURLInclude = ["yts.mx"]
+[Radarr-Movies]
+
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
+URI = "https://yts.mx"
 MaximumETA = -1  # Disable ETA limit
 MaxSeedingTime = 3600  # Seed for 1 hour only
 
 # Fast private tracker
-[[Radarr-Movies.Torrent.Trackers.PrivateHD]]
-UseTracker = true
-TrackerURLInclude = ["privatehd.to"]
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
+URI = "https://privatehd.to"
 MaximumETA = 1800  # 30 minutes
 MaxSeedingTime = 86400  # Seed for 24 hours
 ```
@@ -925,3 +913,13 @@ Adjust patterns if too many valid files are excluded.
 - **Stalled handling** - Configure `StalledDelay` and `DoNotRemoveSlow`
 - **Tracker overrides** - Custom settings per tracker for optimal performance
 - **Start conservative** and enable automation after testing
+
+## Import rejection and deferred removal
+
+An import allowlist warning means that the configured rules excluded content needed for import. Executables remain excluded. Rejected `.rar` and split `.r00`/`.r01` archive files are identified in the diagnostic; Torrentarr does not extract archives through this workflow. Use an appropriate unpacking workflow outside Torrentarr or select a release containing allowed media files. Adding archive extensions to the allowlist does not extract them.
+
+Import rejection and cleanup are separate outcomes. H&R can preserve a rejected release until its configured obligations are met. A healthy protection wait is informational; missing mappings, unknown tracker evidence, and tracker deadline or native-stop risks remain actionable warnings. Legacy diagnostics use client-reported seed time, including the configured tracker update buffer; remaining time describes only the time requirement and does not clear unmet ratio obligations.
+
+Unchanged allowlist and removal diagnostics move to Debug after the first message. Changed blockers or configuration produce a fresh message; retries continue normally and operational issues remain current. Suppression is in memory and resets after a restart or cache eviction.
+
+Configured file inclusion/exclusion rules determine import eligibility. If allowed content remains and ordinary readiness checks pass, excluded files remaining on disk do not block import. `AutoDelete` cleanup is independent and retries safely; H&R can prevent that cleanup or torrent removal without suppressing the import. This applies to all excluded file types, with no screenshot or metadata exception list. All-files-excluded releases remain rejected, and unsafe paths, missing storage, failed filtering requests, and Arr failures remain actionable.

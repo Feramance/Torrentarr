@@ -45,10 +45,11 @@ export interface FieldDefinition {
   minimum?: number;
   /** Inclusive upper bound for number fields (from registry). */
   maximum?: number;
-  /** When true, show hint that the setting applies live without a full restart. */
+  /** Compatibility metadata; ordinary application needs no UI hint. */
   applyLive?: boolean;
   /** When true, show hint that saving requires a component or app restart. */
   requiresRestart?: boolean;
+  restartComponent?: string;
 }
 
 export interface ValidationError {

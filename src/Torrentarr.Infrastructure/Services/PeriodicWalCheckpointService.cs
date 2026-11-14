@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Torrentarr.Infrastructure.Services;
 
 /// <summary>
-/// Periodic WAL checkpoint + health/repair (qBitrr 5.12.9 <c>maintain_database</c>, 5-minute interval).
+/// Periodic WAL checkpoint and health check (qBitrr 5.12.9 <c>maintain_database</c>, 5-minute interval).
 /// </summary>
 public class PeriodicWalCheckpointService : BackgroundService
 {
@@ -35,8 +35,7 @@ public class PeriodicWalCheckpointService : BackgroundService
                 await Task.Delay(Interval, stoppingToken);
                 using var scope = _scopeFactory.CreateScope();
                 var dbHealth = scope.ServiceProvider.GetRequiredService<IDatabaseHealthService>();
-                if (!await dbHealth.MaintainAsync(repairIfUnhealthy: true, stoppingToken))
-                    _logger.LogCritical("Periodic database maintenance detected corruption and repair failed");
+                await dbHealth.MaintainAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

@@ -370,7 +370,7 @@ ProfileSwitchRetryAttempts = 3
 
 **Configuration via WebUI:**
 
-1. Open **Config** tab in WebUI
+1. Open **Settings → Integrations** in the WebUI
 2. Find your Sonarr instance
 3. Click **"Test Connection"** to load quality profiles
 4. Add profile mappings using dropdowns (no JSON editing!)

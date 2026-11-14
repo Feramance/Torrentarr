@@ -18,4 +18,8 @@ public class FreeSpaceStats
     public long FreeBytes { get; set; }
     public long ThresholdBytes { get; set; }
     public bool BelowThreshold { get; set; }
+    public long? CommittedBytes { get; set; }
+    public long? RemainingAllocationBytes { get; set; }
+    public DateTimeOffset? LastCompletedPass { get; set; }
+    public string? BlockedReason { get; set; }
 }

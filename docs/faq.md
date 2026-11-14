@@ -21,7 +21,7 @@ Torrentarr solves several common problems:
 Torrentarr works with:
 
 - **qBittorrent**: v4.x and v5.x (including 5.2)
-- **Radarr**: v3.x, v4.x, v5.x, and v6.x
+- **Radarr**: v3.x, v4.x, v5.x, v6.x, and v7.x
 - **Sonarr**: v3.x, v4.x, and v5.x
 - **Lidarr**: v1.x and v2.x
 - **Runtime**: Self-contained **binary** (no separate .NET install) or **Docker**; **from source** needs a .NET SDK
@@ -509,7 +509,10 @@ ForceMinimumCustomFormat = true    # Remove below threshold
 Configure per-tracker seeding rules:
 
 ```toml
-[[Radarr-Movies.Torrent.Trackers]]
+[Radarr-Movies]
+
+[[Trackers]]
+ArrInstances = ["Radarr-Movies"]
 Name = "PrivateHD"
 URI = "https://tracker.privatehd.com"
 MaxUploadRatio = 3.0      # Higher ratio for private

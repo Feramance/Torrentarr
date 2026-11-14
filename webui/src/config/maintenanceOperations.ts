@@ -12,7 +12,7 @@ export const maintenanceCategories = [
 export const maintenanceOperations: {
   operation: MaintenanceOperation;
   title: string;
-  category: string;
+  category: (typeof maintenanceCategories)[number];
   group: string;
   description: string;
   paths: string[];

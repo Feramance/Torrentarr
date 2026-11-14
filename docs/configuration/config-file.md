@@ -70,7 +70,7 @@ The `[Settings]` section contains global configuration that applies to all Torre
 ```toml
 [Settings]
 # Internal config schema version - DO NOT MODIFY
-ConfigVersion = "6.20.3"
+ConfigVersion = "6.20.4"
 
 # Logging
 ConsoleLevel = "INFO"
@@ -112,7 +112,7 @@ ProcessRestartDelay = 5
 ### ConfigVersion
 
 ```toml
-ConfigVersion = "6.20.3"
+ConfigVersion = "6.20.4"
 ```
 
 **Type:** String
@@ -200,6 +200,16 @@ LocalPath = "/data/downloads"
 
 The same fields work in legacy `[qBit]` and `[qBit-name]` sections. `DownloadPath` is the default root **as seen by the client**, used when creating missing categories. Existing category paths are preserved. Monitor `Path` values are absolute paths **as seen by Torrentarr**; mounts must already exist. Path mappings translate between these views without moving files.
 
+Recycling requires explicit mappings for every configured client's file ownership inventory, including when client and Torrentarr paths are identical. A missing mapping keeps affected cleanup pending; it does not indicate a worker crash. For a shared `/downloads` mount visible at the same path in both containers:
+
+```toml
+[[TorrentClient.local.Maintenance.PathMappings]]
+ClientPath = '/downloads'
+LocalPath = '/downloads'
+```
+
+Use this example instead of the mapping above when both paths match. For Docker, `LocalPath` is the path **inside Torrentarr's container**, not the host path. Verify the mounted directory and permissions before saving; a mapping does not create a mount. Config reload applies saved mappings on the next worker cycle, which can then perform previously blocked recycling after fresh protection and ownership checks.
+
 New clients have no monitors. New monitor rows start disabled with a `10G` limit. Limits accept nonnegative bytes or K/M/G/T suffixes (powers of 1024); use `Enabled = false` to disable a row. Duplicate paths are rejected, while temporarily unavailable paths may still be saved.
 
 `TorrentScanIntervalSeconds` accepts only 5, 15, 30, 60, 90, or 120 seconds; new clients default to 30. Arr and qBit-only torrent processing, tracker sorting, failed/recheck handling, and routine protection inspections follow this per-client interval. Free space checks use the shortest interval among clients sharing each filesystem. Independent filesystems keep separate deadlines. Scans run immediately at startup; configuration changes and client reconnections can wake processing early. Each loop runs sequentially and skips missed ticks; slow operations and error backoff can delay scans. Fresh safety checks and manual actions may run between scans.
@@ -214,13 +224,13 @@ Clients missing `TorrentScanIntervalSeconds` inherit the nearest allowed interva
 
 #### Migration to 6.20.2
 
-Maintenance remains the canonical per-client configuration and all ten tools remain supported. Configure them in **Manage**. Existing maintenance values, scopes, limits, outcomes, and schedules are preserved. Interim Storage and Recovery values fill only missing maintenance settings. Explicit daily cleanup becomes equivalent per-operation scheduling, without enabling unrelated tools. Schema 6.20.2 changes session execution modes to Manual while preserving their schedules. See [Manage configuration](maintenance.md).
+Maintenance remains the canonical per-client configuration and all ten tools remain supported. Configure them under **Maintenance**. Existing maintenance values, scopes, limits, outcomes, and schedules are preserved. Interim Storage and Recovery values fill only missing maintenance settings. Explicit daily cleanup becomes equivalent per-operation scheduling, without enabling unrelated tools. Schema 6.20.2 changes session execution modes to Manual while preserving their schedules. See [Maintenance configuration](maintenance.md).
 
 #### Migration to 6.19.0
 
 The old global `CompletedDownloadFolder`, `FreeSpace`, `FreeSpaceFolder`, `AutoPauseResume`, and `FreeSpaceThresholdGB` fields are migrated automatically, backed up to `config.toml.bak`, and removed from the saved file. Existing per-client values take precedence, including an explicitly empty monitor list.
 
-For one client, a missing download root inherits the old completed folder (reverse-mapped only when unambiguous). The monitor uses the old free-space folder, completed folder, then mapped client download path. The old limit and disabled state are preserved. With multiple clients, explicit client paths are used; ambiguous paths remain disabled and produce warnings for review. Migration does not create path mappings.
+For one client, a missing download root inherits the old completed folder (reverse-mapped only when unambiguous). The monitor uses the old free-space folder, completed folder, then mapped client download path. The old limit and disabled state are preserved. With multiple clients, explicit client paths are used; ambiguous paths remain disabled and produce warnings for review. Migration does not create path mappings. Migration notices are saved under each client’s `Migration.Notices` for reference. The Issues view reports current configuration failures, including legacy environment overrides that cannot be mapped. Missing mappings required for recycling and invalid/inaccessible configured mapping roots also create issues before cleanup is attempted; those issues resolve after correction.
 
 Legacy `TORRENTARR_SETTINGS_*` environment overrides and their `QBITRR_SETTINGS_*` aliases still apply at runtime through equivalent conversion, without being written to disk. Explicitly empty primary variables suppress their aliases.
 
@@ -854,14 +864,14 @@ Sonarr and Lidarr catalogs always browse as series and artist rows (qBitrr 5.14)
 ### Theme
 
 ```toml
-Theme = "Dark"
+Theme = "System"
 ```
 
 **Type:** String
-**Default:** `"Dark"`
-**Options:** `Dark`, `Light`
+**Default:** `"System"`
+**Options:** `System`, `Light`, `Dark`, `Midnight`
 
-WebUI color theme.
+WebUI color theme. System follows the operating system preference; Midnight uses a black background.
 
 - `Dark` - Dark mode (easier on eyes)
 - `Light` - Light mode (better in bright environments)
@@ -906,7 +916,7 @@ Each Arr instance has its own section with subsections for:
 - `[<Type>-<Name>.Overseerr]` - Request integration (Radarr/Sonarr only)
 - `[<Type>-<Name>.Torrent]` - Torrent management
 - `[<Type>-<Name>.Torrent.SeedingMode]` - Seeding configuration
-- `[[<Type>-<Name>.Torrent.Trackers]]` - Per-tracker settings
+- `[[Trackers]]` with `ArrInstances` - Per-integration tracker rules
 
 For complete Arr configuration documentation:
 
@@ -1100,7 +1110,7 @@ Absolute minimum configuration to get started:
 
 ```toml
 [Settings]
-ConfigVersion = "6.20.3"
+ConfigVersion = "6.20.4"
 
 [WebUI]
 Host = "0.0.0.0"
@@ -1203,9 +1213,8 @@ Torrentarr uses infinite retry loops in specific scenarios for reliability:
 
 ### Database WAL Checkpoint
 
-Torrentarr automatically performs WAL checkpoint and VACUUM on database errors for self-repair.
-
-**Not configurable** - happens automatically during database error recovery.
+The Host runs a scheduled WAL checkpoint and integrity check. Database recovery
+requires stopping the Host and workers.
 
 See [Database Troubleshooting](../troubleshooting/database.md) for details on manual database maintenance.
 

@@ -18,6 +18,9 @@ public class CatalogRollupService
 
     public record Counts(int Available, int Monitored, int Missing, int QualityMet = 0, int Requests = 0);
 
+    private static Counts FromTotals(int available, int monitored, int qualityMet = 0, int requests = 0)
+        => new(available, monitored, Math.Max(monitored - available, 0), qualityMet, requests);
+
     public Task<(Counts Albums, int AlbumTotal, Counts Tracks)> GetLidarrRollupsAsync(
         string instanceName, CancellationToken ct = default)
         => GetLidarrRollupsAsync([instanceName], ct);
@@ -30,31 +33,30 @@ public class CatalogRollupService
         if (TryGetCache(cacheKey, out var cached) && cached is (Counts a, int t, Counts tr))
             return (a, t, tr);
 
-        var albums = await _db.Albums.Where(x => keys.Contains(x.ArrInstance)).ToListAsync(ct);
-        var monitored = albums.Count(x => x.Monitored);
-        var available = albums.Count(x => x.Monitored && x.HasFile);
-        var albumCounts = new Counts(
-            available,
-            monitored,
-            Math.Max(monitored - available, 0),
-            albums.Count(x => x.QualityMet),
-            albums.Count(x => x.IsRequest));
-
-        var tracks = await _db.Tracks
+        var albums = await _db.Albums.Where(x => keys.Contains(x.ArrInstance))
+            .GroupBy(_ => 1)
+            .Select(group => new
+            {
+                Monitored = group.Count(x => x.Monitored),
+                Available = group.Count(x => x.Monitored && x.HasFile),
+                QualityMet = group.Count(x => x.QualityMet),
+                Requests = group.Count(x => x.IsRequest),
+                Total = group.Count()
+            }).SingleOrDefaultAsync(ct);
+        var trackQuery = _db.Tracks
             .Where(t => keys.Contains(t.ArrInstance))
-            .Join(_db.Albums.Where(x => keys.Contains(x.ArrInstance)),
-                t => t.AlbumId,
-                x => x.EntryId,
-                (t, _) => t)
-            .ToListAsync(ct);
-        var trackMonitored = tracks.Count(t => t.Monitored);
-        var trackAvailable = tracks.Count(t => t.Monitored && t.HasFile);
-        var trackCounts = new Counts(
-            trackAvailable,
-            trackMonitored,
-            Math.Max(trackMonitored - trackAvailable, 0));
+            .Join(_db.Albums.Where(x => keys.Contains(x.ArrInstance)), t => t.AlbumId, x => x.EntryId, (t, _) => t);
+        var tracks = await trackQuery
+            .GroupBy(_ => 1)
+            .Select(group => new
+            {
+                Monitored = group.Count(x => x.Monitored),
+                Available = group.Count(x => x.Monitored && x.HasFile)
+            }).SingleOrDefaultAsync(ct);
 
-        var snapshot = (albumCounts, albums.Count, trackCounts);
+        var albumCounts = FromTotals(albums?.Available ?? 0, albums?.Monitored ?? 0, albums?.QualityMet ?? 0, albums?.Requests ?? 0);
+        var trackCounts = FromTotals(tracks?.Available ?? 0, tracks?.Monitored ?? 0);
+        var snapshot = (albumCounts, albums?.Total ?? 0, trackCounts);
         SetCache(cacheKey, snapshot);
         return snapshot;
     }
@@ -71,16 +73,18 @@ public class CatalogRollupService
         if (TryGetCache(cacheKey, out var cached) && cached is (Counts b, int t))
             return (b, t);
 
-        var books = await _db.Books.Where(x => keys.Contains(x.ArrInstance)).ToListAsync(ct);
-        var monitored = books.Count(x => x.Monitored);
-        var available = books.Count(x => x.Monitored && x.HasFile);
-        var bookCounts = new Counts(
-            available,
-            monitored,
-            Math.Max(monitored - available, 0),
-            books.Count(x => x.QualityMet),
-            books.Count(x => x.IsRequest));
-        var snapshot = (bookCounts, books.Count);
+        var books = await _db.Books.Where(x => keys.Contains(x.ArrInstance))
+            .GroupBy(_ => 1)
+            .Select(group => new
+            {
+                Monitored = group.Count(x => x.Monitored),
+                Available = group.Count(x => x.Monitored && x.HasFile),
+                QualityMet = group.Count(x => x.QualityMet),
+                Requests = group.Count(x => x.IsRequest),
+                Total = group.Count()
+            }).SingleOrDefaultAsync(ct);
+        var counts = FromTotals(books?.Available ?? 0, books?.Monitored ?? 0, books?.QualityMet ?? 0, books?.Requests ?? 0);
+        var snapshot = (counts, books?.Total ?? 0);
         SetCache(cacheKey, snapshot);
         return snapshot;
     }
@@ -97,16 +101,18 @@ public class CatalogRollupService
         if (TryGetCache(cacheKey, out var cached) && cached is (Counts c, int total))
             return (c, total);
 
-        var movies = await _db.Movies.Where(m => keys.Contains(m.ArrInstance)).ToListAsync(ct);
-        var monitored = movies.Count(m => m.Monitored);
-        var available = movies.Count(m => m.Monitored && m.MovieFileId != 0);
-        var counts = new Counts(
-            available,
-            monitored,
-            Math.Max(monitored - available, 0),
-            movies.Count(m => m.QualityMet),
-            movies.Count(m => m.IsRequest));
-        var snapshot = (counts, movies.Count);
+        var movies = await _db.Movies.Where(x => keys.Contains(x.ArrInstance))
+            .GroupBy(_ => 1)
+            .Select(group => new
+            {
+                Monitored = group.Count(x => x.Monitored),
+                Available = group.Count(x => x.Monitored && x.MovieFileId != 0),
+                QualityMet = group.Count(x => x.QualityMet),
+                Requests = group.Count(x => x.IsRequest),
+                Total = group.Count()
+            }).SingleOrDefaultAsync(ct);
+        var counts = FromTotals(movies?.Available ?? 0, movies?.Monitored ?? 0, movies?.QualityMet ?? 0, movies?.Requests ?? 0);
+        var snapshot = (counts, movies?.Total ?? 0);
         SetCache(cacheKey, snapshot);
         return snapshot;
     }
@@ -123,10 +129,14 @@ public class CatalogRollupService
         if (TryGetCache(cacheKey, out var cached) && cached is (Counts c, int total))
             return (c, total);
 
-        var episodes = await _db.Episodes.Where(e => keys.Contains(e.ArrInstance)).ToListAsync(ct);
-        var monitored = episodes.Count(e => e.Monitored == true);
-        var available = episodes.Count(e => e.Monitored == true && e.EpisodeFileId is > 0);
-        var counts = new Counts(available, monitored, Math.Max(monitored - available, 0));
+        var episodes = await _db.Episodes.Where(x => keys.Contains(x.ArrInstance))
+            .GroupBy(_ => 1)
+            .Select(group => new
+            {
+                Monitored = group.Count(x => x.Monitored == true),
+                Available = group.Count(x => x.Monitored == true && x.EpisodeFileId > 0)
+            }).SingleOrDefaultAsync(ct);
+        var counts = FromTotals(episodes?.Available ?? 0, episodes?.Monitored ?? 0);
         var totalSeries = await _db.Series.CountAsync(s => keys.Contains(s.ArrInstance), ct);
         var snapshot = (counts, totalSeries);
         SetCache(cacheKey, snapshot);

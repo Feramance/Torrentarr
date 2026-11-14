@@ -24,7 +24,7 @@ public static class MaintenanceRequirements
         MaintenanceOperation.OrphanScan => InventoryRequirements.Metadata | InventoryRequirements.Files | InventoryRequirements.LocalFiles | InventoryRequirements.GlobalOwnership,
         MaintenanceOperation.HardlinkAudit => InventoryRequirements.Metadata | InventoryRequirements.Files | InventoryRequirements.LocalFiles,
         MaintenanceOperation.UnregisteredCleanup or MaintenanceOperation.ErrorRecovery => InventoryRequirements.Metadata | InventoryRequirements.Trackers | InventoryRequirements.Properties,
-        MaintenanceOperation.CategoryReconcile or MaintenanceOperation.AutomaticManagement or MaintenanceOperation.RepairPaused => InventoryRequirements.Metadata | InventoryRequirements.Trackers | InventoryRequirements.Properties,
+        MaintenanceOperation.CategoryReconcile or MaintenanceOperation.AutomaticManagement or MaintenanceOperation.RepairPaused => InventoryRequirements.Metadata,
         MaintenanceOperation.TrackerErrorTagging => InventoryRequirements.Metadata | InventoryRequirements.Trackers,
         MaintenanceOperation.PrivateTagging => InventoryRequirements.Metadata | InventoryRequirements.Properties,
         MaintenanceOperation.RecycleRetention => InventoryRequirements.None,

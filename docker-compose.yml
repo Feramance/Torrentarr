@@ -1,6 +1,9 @@
 services:
   torrentarr:
-    build: .
+    build:
+      context: .
+      args:
+      - VERSION
     container_name: torrentarr
     restart: unless-stopped
     ports:
@@ -13,12 +16,6 @@ services:
     - PUID=1000
     - PGID=1000
     - TORRENTARR_CONFIG=/config/config.toml
-    healthcheck:
-      test: [CMD, curl, -f, http://localhost:6969/health]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
 volumes:
   torrents-writable:

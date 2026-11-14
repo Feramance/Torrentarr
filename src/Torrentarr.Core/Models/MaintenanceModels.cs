@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Torrentarr.Core.Models;
 
 public enum MaintenanceOperation
@@ -143,6 +145,10 @@ public sealed class TorrentInventoryItem
     public bool TrackersComplete { get; set; }
     public bool FilesComplete { get; set; }
     public bool LocalFilesComplete { get; set; }
+    [JsonIgnore]
+    public bool RecycleFilesComplete { get; set; }
+    [JsonIgnore]
+    public bool CanRecycleFiles => (LocalFilesComplete || RecycleFilesComplete) && Files.Any(f => !f.ExpectedMissing);
 }
 
 public sealed class TorrentFileInventoryItem
@@ -151,6 +157,8 @@ public sealed class TorrentFileInventoryItem
     public required string ClientPath { get; init; }
     public string? LocalPath { get; init; }
     public string? ExpectedLocalPath { get; init; }
+    [JsonIgnore]
+    public bool ExpectedMissing { get; init; }
 }
 
 public sealed record TorrentClientView(

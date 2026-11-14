@@ -1,3 +1,8 @@
+import { useState } from "react";
+import {
+  maintenanceSections,
+  type MaintenanceSection,
+} from "../../config/settingsSections";
 import { beforeEach, expect, it, vi } from "vitest";
 import {
   render,
@@ -43,21 +48,40 @@ vi.mock("../../api/client", async (importOriginal) => ({
 let status: MaintenanceStatus;
 let plan: MaintenancePlan;
 let document: ConfigDocument;
+function MaintenanceHarness(props: Parameters<typeof MaintenanceView>[0]) {
+  const [section, setSection] = useState<MaintenanceSection>("Shared Settings");
+  return (
+    <>
+      <nav aria-label="Maintenance sections">
+        {maintenanceSections.map((item) => (
+          <button key={item} onClick={() => setSection(item)}>
+            {item}
+          </button>
+        ))}
+      </nav>
+      <MaintenanceView
+        {...props}
+        section={section}
+        onSectionChange={setSection}
+      />
+    </>
+  );
+}
 function show(props: Parameters<typeof MaintenanceView>[0] = {}) {
   return render(
     <ToastProvider>
       <WebUIProvider>
-        <MaintenanceView {...props} />
+        <MaintenanceHarness {...props} />
       </WebUIProvider>
     </ToastProvider>,
   );
 }
 function openTool(name: string) {
-  const card = screen
-    .getByText(name, { selector: "strong" })
-    .closest("details")!;
-  fireEvent.click(card.querySelector("summary")!);
-  return card;
+  const tool = maintenanceOperations.find(({ title }) => title === name)!;
+  fireEvent.click(
+    screen.getByRole("button", { name: tool.category, exact: true }),
+  );
+  return screen.getByRole("heading", { name, exact: true }).closest("section")!;
 }
 async function chooseRecycle() {
   const input = screen.getByLabelText(/Outcome after failed repair/);
@@ -69,7 +93,7 @@ async function chooseRecycle() {
   await userEvent.click(within(menu!).getByRole("option", { name: "recycle" }));
 }
 async function loaded() {
-  await screen.findByText("Shared settings · enabled");
+  await screen.findByText("Shared configuration");
 }
 beforeEach(() => {
   vi.clearAllMocks();
@@ -172,34 +196,40 @@ beforeEach(() => {
     errors: [],
   });
 });
-it("opens without scans or mutations and keeps every tool collapsed", async () => {
+it("shows the selected category without scanning or mutating", async () => {
   show();
   await loaded();
-  expect(screen.getByRole("heading", { name: "Manage" })).toBeInTheDocument();
-  for (const tool of maintenanceOperations)
-    expect(
-      screen.getByText(tool.title, { selector: "strong" }).closest("details"),
-    ).not.toHaveAttribute("open");
   expect(
-    screen.getByText("Recent runs").closest("details"),
-  ).not.toHaveAttribute("open");
+    screen.getByRole("region", { name: "Maintenance" }),
+  ).toBeInTheDocument();
+  for (const category of ["Recovery", "Organization", "Storage"]) {
+    fireEvent.click(screen.getByRole("button", { name: category }));
+    for (const tool of maintenanceOperations) {
+      const title = screen.queryByRole("heading", {
+        name: tool.title,
+        exact: true,
+      });
+      if (tool.category === category) {
+        expect(title).toBeInTheDocument();
+        expect(title).toBeVisible();
+      } else {
+        expect(title).not.toBeInTheDocument();
+      }
+    }
+  }
   expect(api.previewMaintenance).not.toHaveBeenCalled();
   expect(api.updateConfig).not.toHaveBeenCalled();
   expect(api.maintenanceCommand).not.toHaveBeenCalled();
 });
-it("opens one tool at a time with advanced settings collapsed", async () => {
+it("shows multiple tools and their advanced fields together", async () => {
   show();
   await loaded();
   const first = openTool("Error recovery");
-  await waitFor(() => expect(first).toHaveAttribute("open"));
+  const second = openTool("Paused-torrent repair");
   expect(
-    within(first)
-      .getByText("Advanced", { selector: "summary" })
-      .closest("details"),
-  ).not.toHaveAttribute("open");
-  const second = openTool("Hardlink audit");
-  await waitFor(() => expect(second).toHaveAttribute("open"));
-  expect(first).not.toHaveAttribute("open");
+    within(first).getByLabelText(/Repair attempts per incident/),
+  ).toBeVisible();
+  expect(second).toBeVisible();
 });
 it("assigns every schema field to exactly one tool or shared settings", () => {
   const fields = getClientFields().filter(
@@ -223,15 +253,16 @@ it("checks only the selected tool and applies a reviewed preview once", async ()
   );
   await screen.findByText("/downloads/orphan");
   expect(api.previewMaintenance).toHaveBeenCalledWith(["one"], ["OrphanScan"]);
+  fireEvent.click(screen.getByRole("button", { name: "Recovery" }));
+  expect(screen.queryByText(/Preview results/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Storage" }));
   fireEvent.click(
     screen.getByRole("button", { name: /Apply reviewed changes/ }),
   );
   await waitFor(() =>
     expect(api.applyMaintenance).toHaveBeenCalledWith("reviewed", true),
   );
-  expect(screen.getByText("Recent runs").closest("details")).toHaveAttribute(
-    "open",
-  );
+  expect(await screen.findByText(/success: .* changes applied/)).toBeVisible();
 });
 it("expands failed run diagnostics without breaking the recent runs table", async () => {
   vi.mocked(api.getMaintenanceHistory).mockResolvedValue([
@@ -258,10 +289,9 @@ it("expands failed run diagnostics without breaking the recent runs table", asyn
   ]);
   show();
   await loaded();
-  fireEvent.click(screen.getByText("Recent runs"));
+  fireEvent.click(screen.getByRole("button", { name: "Recent Runs" }));
   const table = await screen.findByRole("table");
   expect(table).toHaveStyle({ width: "100%", tableLayout: "fixed" });
-  fireEvent.click(screen.getByText(/1 failed.*1 error/));
   expect(
     screen.getByText(/global ownership inventory incomplete/),
   ).toBeVisible();
@@ -331,28 +361,24 @@ it("preserves a draft when switching clients is cancelled and discards only afte
   confirm.mockRestore();
 });
 it("selects the client requested by the configuration shortcut", async () => {
-  show({ requestedClientId: "two" });
+  show({ requestedClient: { id: "two" } });
   await loaded();
   expect(screen.getByLabelText("Torrent client")).toHaveValue("two");
 });
 it("reveals advanced validation errors and does not save invalid settings", async () => {
   show();
   await loaded();
-  const tool = openTool("Error recovery");
-  fireEvent.click(within(tool).getByText("Advanced", { selector: "summary" }));
+  openTool("Error recovery");
   fireEvent.change(screen.getByLabelText(/Repair attempts per incident/), {
     target: { value: "0" },
   });
+  fireEvent.click(screen.getByRole("button", { name: "Storage" }));
   fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
   expect(api.updateConfig).not.toHaveBeenCalled();
   await waitFor(() =>
     expect(screen.getAllByRole("alert").length).toBeGreaterThan(0),
   );
-  expect(
-    within(tool)
-      .getByText("Advanced", { selector: "summary" })
-      .closest("details"),
-  ).toHaveAttribute("open");
+  expect(screen.getByLabelText(/Repair attempts per incident/)).toHaveFocus();
 });
 it("keeps unsaved settings after a failed save", async () => {
   vi.mocked(api.updateConfig).mockRejectedValue(new Error("Save failed"));
@@ -376,6 +402,7 @@ it("invalidates preview when settings are edited", async () => {
   await screen.findByText("/downloads/orphan");
   openTool("Error recovery");
   await chooseRecycle();
+  fireEvent.click(screen.getByRole("button", { name: "Storage" }));
   expect(
     screen.getByRole("button", { name: /Apply reviewed changes/ }),
   ).toBeDisabled();

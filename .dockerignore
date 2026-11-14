@@ -45,6 +45,7 @@ webui/coverage/
 *.db-shm
 
 # Config files (use example)
+.config/
 config.toml
 
 # Test files

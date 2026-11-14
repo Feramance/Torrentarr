@@ -176,19 +176,29 @@ public sealed class AuditFixRegressionTests
     }
 
     [Fact]
-    public async Task ImportConfirmationDoesNotMistakePageTwoOrFailedPageForSuccess()
+    public async Task ImportConfirmationRequiresMatchingHistoryForCurrentTorrentAndClearQueue()
     {
         using var stub = new ArrStub("radarr");
         var config = new TorrentarrConfig();
         config.ArrInstances.Clear(); config.ArrInstances["Arr"] = Config("radarr", stub.Url);
         await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var service = new ArrImportService(NullLogger<ArrImportService>.Instance, config, Moq.Mock.Of<Torrentarr.Core.Interfaces.ITorrentClientRegistry>(), db);
-        stub.QueueTarget = true;
-        (await service.IsImportedAsync("TARGET")).Should().BeFalse();
-        stub.QueueTarget = false;
-        (await service.IsImportedAsync("TARGET")).Should().BeTrue();
-        stub.FailQueuePageTwo = true;
-        (await service.IsImportedAsync("TARGET")).Should().BeFalse();
+        config.ArrInstances["Arr"].Category = "movies";
+        var submitted = DateTimeOffset.UtcNow;
+        var added = submitted.AddHours(-1);
+        var accepted = await service.TriggerImportAsync("TARGET", "/downloads/item", "movies");
+        accepted.Success.Should().BeTrue();
+        accepted.CommandId.Should().Be(42);
+        (await service.IsImportedAsync("TARGET", "movies", submitted)).Should().BeFalse();
+        stub.ImportHistoryDate = submitted.AddMinutes(-1);
+        (await service.IsImportedAsync("TARGET", "movies", submitted)).Should().BeFalse();
+        (await service.IsImportedAsync("TARGET", "movies", added)).Should().BeTrue();
+        stub.ImportHistoryDate = submitted.AddSeconds(1);
+        (await service.IsImportedAsync("OTHER", "movies", submitted)).Should().BeFalse();
+        stub.QueuedDownloadId = "target";
+        (await service.IsImportedAsync("TARGET", "movies", submitted)).Should().BeFalse();
+        stub.QueuedDownloadId = "OTHER";
+        (await service.IsImportedAsync("TARGET", "movies", submitted)).Should().BeTrue();
     }
 
     [Fact]
@@ -289,8 +299,8 @@ public sealed class AuditFixRegressionTests
         public int RejectId;
         public bool ChangeOnSecondRead;
         private int _profileReads;
-        public bool QueueTarget;
-        public bool FailQueuePageTwo;
+        public DateTimeOffset? ImportHistoryDate;
+        public string? QueuedDownloadId;
         public ArrStub(string type)
         {
             var socket = new TcpListener(IPAddress.Loopback, 0); socket.Start(); var port = ((IPEndPoint)socket.LocalEndpoint).Port; socket.Stop();
@@ -306,19 +316,16 @@ public sealed class AuditFixRegressionTests
                     var body = path == "/api" ? """{"current":"v3"}""" : path.EndsWith("qualityprofile") ? """[{"id":7,"name":"HD"},{"id":99,"name":"Any"}]"""
                         : path.EndsWith("system/status") ? """{"version":"4.0.0"}"""
                         : $"{{\"id\":42,\"qualityProfileId\":{Profile},\"title\":\"Item\",\"tags\":[3],\"metadataProfileId\":1}}";
+                    if (path.EndsWith("/history/since"))
+                        body = ImportHistoryDate is { } date
+                            ? JsonSerializer.Serialize(new[] { new { id = 1, downloadId = "TARGET", eventType = "downloadFolderImported", date } })
+                            : "[]";
                     if (path.EndsWith("/queue"))
                     {
-                        var page = int.Parse(context.Request.QueryString["page"] ?? "1");
-                        body = JsonSerializer.Serialize(new
-                        {
-                            page,
-                            pageSize = 2,
-                            totalRecords = 3,
-                            records = page == 1
-                            ? new[] { new { id = 1, downloadId = "first" }, new { id = 2, downloadId = "second" } }
-                            : new[] { new { id = 3, downloadId = QueueTarget ? "TARGET" : "third" } }
-                        });
-                        if (page == 2 && FailQueuePageTwo) context.Response.StatusCode = 400;
+                        var records = QueuedDownloadId is { } downloadId
+                            ? new[] { new { id = 1, downloadId, trackedDownloadState = "importPending" } }
+                            : [];
+                        body = JsonSerializer.Serialize(new { page = 1, pageSize = 1000, totalRecords = records.Length, records });
                     }
                     if (context.Request.HttpMethod == "PUT")
                     {

@@ -14,9 +14,17 @@ export type NavigableTab =
   | "config"
   | "maintenance";
 
+export interface ConfigDestination {
+  client?: string;
+  arr?: string;
+  field?: string;
+  monitorPath?: string;
+}
+
 export interface NavigateTabDetail {
   tab: NavigableTab;
   manageClientId?: string;
+  configDestination?: ConfigDestination;
   issueInstance?: string;
   issueCategory?: "automation" | "system";
   preserveConfigDraft?: boolean;

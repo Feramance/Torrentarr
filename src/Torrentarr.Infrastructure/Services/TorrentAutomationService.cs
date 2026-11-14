@@ -64,6 +64,8 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
         };
     }
 
+    internal TimeSpan InspectionBudget { get; set; } = TimeSpan.FromSeconds(55);
+
     internal TimeProvider Clock { get; set; } = TimeProvider.System;
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -97,6 +99,9 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
             var started = System.Diagnostics.Stopwatch.GetTimestamp();
             _logger.LogInformation("Protection inspection started for {ClientInstance}", id);
             var inspectionStarted = Clock.GetUtcNow();
+            using var deadline = new CancellationTokenSource(InspectionBudget, Clock);
+            using var inspection = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
+            var completed = 0;
             try
             {
                 using var scope = _scopes.CreateScope();
@@ -104,8 +109,6 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 var seeding = scope.ServiceProvider.GetRequiredService<ISeedingService>() as SeedingService;
                 var urgent = _protection.Values.SelectMany(decisions => decisions).Any(d => d.ClientInstanceId == id && NeedsFreshInspection(d));
                 var full = _nextFullInspection.GetValueOrDefault(id) <= Clock.GetUtcNow();
-                using var inspection = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                inspection.CancelAfter(TimeSpan.FromSeconds(55));
                 var inspectionCt = inspection.Token;
                 var torrents = await client.GetTorrentsAsync(cancellationToken: inspectionCt);
                 var allHashes = torrents.Select(t => t.Hash).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -113,23 +116,24 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                     && NeedsFreshInspection(d))).ToList();
                 torrents = torrents.OrderBy(t => _trackerInspections.GetValueOrDefault(id + "|" + t.Hash).At).ThenByDescending(t => _protection.Values.SelectMany(decisions => decisions).Any(d => d.ClientInstanceId == id && d.TorrentHash == t.Hash && d.DeadlineRisk != "none"))
                     .ThenByDescending(t => cfg.Maintenance.ErrorRecovery.States.Contains(t.State, StringComparer.OrdinalIgnoreCase)).ToList();
+                var cachePrefix = id + "|";
+                foreach (var key in _trackerInspections.Keys)
+                    if (key.StartsWith(cachePrefix, StringComparison.OrdinalIgnoreCase) && !allHashes.Contains(key[cachePrefix.Length..]))
+                        _trackerInspections.TryRemove(key, out _);
                 var hashes = allHashes;
                 foreach (var entry in _protection.Where(p => p.Value.Any(d => d.ClientInstanceId == id && !hashes.Contains(d.TorrentHash))).ToList()) _protection.TryRemove(entry.Key, out _);
                 var prefix = id.ToUpperInvariant() + "|";
-                var oldTrackerIssues = await db.MaintenanceState.Where(s => s.Key.StartsWith(prefix) && s.Key.EndsWith("|tracker-issue")).ToListAsync(inspectionCt);
-                var removed = oldTrackerIssues.Where(s => !allHashes.Contains(s.Key.Split('|')[1])).ToList();
-                if (removed.Count > 0)
-                {
-                    db.MaintenanceState.RemoveRange(removed);
-                    await db.SaveChangesAsync(inspectionCt);
-                }
+                var oldTrackerIssues = await db.MaintenanceState.AsNoTracking().Where(s => s.Key.StartsWith(prefix) && s.Key.EndsWith("|tracker-issue"))
+                    .Select(s => s.Key).ToListAsync(inspectionCt);
+                foreach (var stale in oldTrackerIssues.Where(k => !allHashes.Contains(k.Split('|')[1])))
+                    await MaintenancePersistence.DeleteAsync(db, stale, inspectionCt);
                 using var budget = new SemaphoreSlim(2);
                 using var observations = new SemaphoreSlim(1);
                 await Task.WhenAll(torrents.Select(async torrent =>
                 {
                     torrent.ClientInstanceId = id;
                     var key = id + "|" + torrent.Hash;
-                    var fresh = cfg.Trackers.Any(t => t.Protection != null) || _config.ArrInstances.Values.Any(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent) && a.Torrent.Trackers.Any(t => t.Protection != null)) || cfg.Maintenance.ErrorRecovery.States.Contains(torrent.State, StringComparer.OrdinalIgnoreCase)
+                    var fresh = TrackerRules.ForTorrent(_config, torrent).Any(t => t.Protection != null) || cfg.Maintenance.ErrorRecovery.States.Contains(torrent.State, StringComparer.OrdinalIgnoreCase)
                         || _protection.Values.SelectMany(decisions => decisions).Any(d => d.ClientInstanceId == id && d.TorrentHash == torrent.Hash && NeedsFreshInspection(d));
                     await budget.WaitAsync(inspectionCt);
                     try
@@ -181,17 +185,8 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                                 }
                                 _protection[key] = decisions;
                             }
-                            if ((cfg.Trackers.Any(t => t.Protection != null) || _config.ArrInstances.Values.Any(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent) && a.Torrent.Trackers.Any(t => t.Protection != null))) && torrent.Progress >= 1 && (torrent.IsStopped || torrent.State.Contains("paused", StringComparison.OrdinalIgnoreCase))
-                                && !SplitTags(torrent.Tags).Contains("qBitrr-free_space_paused") && !SplitTags(torrent.Tags).Contains("qBitrr-ignored"))
-                            {
-                                var pauseKey = MaintenancePersistence.Key(id, torrent.Hash, "routine-pause");
-                                var pause = MaintenancePersistence.Read<PauseOwnership>(db, pauseKey);
-                                if (pause.Owned && pause.AddedOn == torrent.AddedOn
-                                    && _protection.Values.SelectMany(decisions => decisions).Any(d => d.ClientInstanceId == id && d.TorrentHash == torrent.Hash && d.State != "eligible")
-                                    && await client.ResumeTorrentsAsync([torrent.Hash], inspectionCt))
-                                    MaintenancePersistence.Write(db, pauseKey, new PauseOwnership());
-                            }
                             _trackerInspections[key] = (fetchedAt, trackers, torrent.IsPrivate);
+                            completed++;
                         }
                         finally { observations.Release(); }
                     }
@@ -206,6 +201,15 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 _nextFullInspection[id] = _nextInspection[id];
                 _logger.LogInformation("Protection inspection completed: full={Full}; inventory={InventoryCount}; inspected={InspectedCount}; urgent={Urgent}; elapsed={ElapsedMs:F1}ms; nextAttempt={NextAttempt:O}",
                     full, allHashes.Count, torrents.Count, urgent, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds, _nextInspection[id]);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested && deadline.IsCancellationRequested && completed > 0)
+            {
+                _lastInspection[id] = Clock.GetUtcNow();
+                _inspectionFailures.TryRemove(id, out _);
+                _inspectionErrors.TryRemove(id, out _);
+                _nextInspection[id] = _lastInspection[id];
+                _nextFullInspection[id] = _lastInspection[id];
+                _logger.LogInformation("Protection inspection reached its budget after observing {Count} torrents for {Instance}", completed, id);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {

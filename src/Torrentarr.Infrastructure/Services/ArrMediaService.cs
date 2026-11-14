@@ -337,7 +337,7 @@ public class ArrMediaService : IArrMediaService
                     {
                         if ((!searchConfig.Unmonitored && movie.Monitored != true) || movie.Searched)
                         {
-                            _logger.LogInformation("Search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, searched={Searched}", movie.Title, movie.ArrId, instanceName, movie.Monitored, movie.Searched);
+                            _logger.LogDebug("Search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, searched={Searched}", movie.Title, movie.ArrId, instanceName, movie.Monitored, movie.Searched);
                             continue;
                         }
                         var priority = GetReasonPriority(movie.Reason, searchConfig);
@@ -372,7 +372,7 @@ public class ArrMediaService : IArrMediaService
                     {
                         if ((!searchConfig.Unmonitored && album.Monitored != true) || album.Searched)
                         {
-                            _logger.LogInformation("Search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, searched={Searched}", album.Title, album.ArrId, instanceName, album.Monitored, album.Searched);
+                            _logger.LogDebug("Search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, searched={Searched}", album.Title, album.ArrId, instanceName, album.Monitored, album.Searched);
                             continue;
                         }
                         var priority = GetReasonPriority(album.Reason, searchConfig);
@@ -401,7 +401,7 @@ public class ArrMediaService : IArrMediaService
                     {
                         if ((!searchConfig.Unmonitored && book.Monitored != true) || book.Searched)
                         {
-                            _logger.LogInformation("Search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, searched={Searched}", book.Title, book.ArrId, instanceName, book.Monitored, book.Searched);
+                            _logger.LogDebug("Search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, searched={Searched}", book.Title, book.ArrId, instanceName, book.Monitored, book.Searched);
                             continue;
                         }
                         var priority = GetReasonPriority(book.Reason, searchConfig);
@@ -452,7 +452,7 @@ public class ArrMediaService : IArrMediaService
                 {
                     if (movie.Monitored != true || !movie.HasFile || (searchConfig.DoUpgradeSearch ? movie.Upgrade : movie.Searched))
                     {
-                        _logger.LogInformation("Upgrade search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, hasFile={HasFile}, upgrade={Upgrade}, searched={Searched}", movie.Title, movie.ArrId, instanceName, movie.Monitored, movie.HasFile, movie.Upgrade, movie.Searched);
+                        _logger.LogDebug("Upgrade search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, hasFile={HasFile}, upgrade={Upgrade}, searched={Searched}", movie.Title, movie.ArrId, instanceName, movie.Monitored, movie.HasFile, movie.Upgrade, movie.Searched);
                         continue;
                     }
                     var priority = GetUpgradePriority(movie.QualityMet, movie.CustomFormatMet, searchConfig);
@@ -487,7 +487,7 @@ public class ArrMediaService : IArrMediaService
                 {
                     if (album.Monitored != true || !album.HasFile || (searchConfig.DoUpgradeSearch ? album.Upgrade : album.Searched))
                     {
-                        _logger.LogInformation("Upgrade search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, hasFile={HasFile}, upgrade={Upgrade}, searched={Searched}", album.Title, album.ArrId, instanceName, album.Monitored, album.HasFile, album.Upgrade, album.Searched);
+                        _logger.LogDebug("Upgrade search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, hasFile={HasFile}, upgrade={Upgrade}, searched={Searched}", album.Title, album.ArrId, instanceName, album.Monitored, album.HasFile, album.Upgrade, album.Searched);
                         continue;
                     }
                     var priority = GetUpgradePriority(album.QualityMet, album.CustomFormatMet, searchConfig);
@@ -518,7 +518,7 @@ public class ArrMediaService : IArrMediaService
                 {
                     if (book.Monitored != true || !book.HasFile || (searchConfig.DoUpgradeSearch ? book.Upgrade : book.Searched))
                     {
-                        _logger.LogInformation("Upgrade search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, hasFile={HasFile}, upgrade={Upgrade}, searched={Searched}", book.Title, book.ArrId, instanceName, book.Monitored, book.HasFile, book.Upgrade, book.Searched);
+                        _logger.LogDebug("Upgrade search skipped for {Title} [id={ArrId}, instance={Instance}]: monitored={Monitored}, hasFile={HasFile}, upgrade={Upgrade}, searched={Searched}", book.Title, book.ArrId, instanceName, book.Monitored, book.HasFile, book.Upgrade, book.Searched);
                         continue;
                     }
                     var priority = GetUpgradePriority(book.QualityMet, book.CustomFormatMet, searchConfig);

@@ -15,6 +15,92 @@ namespace Torrentarr.Host.Tests.Api;
 public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory>
 {
     [Theory]
+    [InlineData("/web/config")]
+    [InlineData("/api/config")]
+    public async Task ScopedTrackerRulesArePublishedAndReferencesFollowRenames(string endpoint)
+    {
+        using var client = _factory.CreateClientWithApiToken();
+        var cfg = _factory.Services.GetRequiredService<TorrentarrConfig>();
+        var loader = _factory.Services.GetRequiredService<ConfigurationLoader>();
+        var originalRules = cfg.Trackers;
+        var suffix = endpoint.StartsWith("/web") ? "web" : "api";
+        var first = $"tracker-first-{suffix}";
+        var second = $"tracker-second-{suffix}";
+        var renamed = $"tracker-renamed-{suffix}";
+        var firstArr = $"Radarr-tracker-{suffix}";
+        var secondArr = $"Sonarr-tracker-{suffix}";
+        var renamedArr = $"Radarr-renamed-{suffix}";
+
+        Task<HttpResponseMessage> Save(Dictionary<string, object?> changes, Dictionary<string, string>? renames = null) =>
+            client.PostAsJsonAsync(endpoint, new { changes, renames = renames ?? new() });
+
+        try
+        {
+            using var save = await Save(new()
+            {
+                [$"TorrentClient.{first}.Host"] = "fixture",
+                [$"TorrentClient.{first}.Disabled"] = true,
+                [$"TorrentClient.{second}.Host"] = "fixture",
+                [$"TorrentClient.{second}.Disabled"] = true,
+                [$"{firstArr}.Category"] = "tracker-movies",
+                [$"{secondArr}.Category"] = "tracker-tv",
+                [$"{firstArr}.Managed"] = false,
+                [$"{secondArr}.Managed"] = false,
+                ["Trackers"] = new object[]
+                {
+                    new { Name = "Shared", URI = "https://tracker.example", ClientIds = new[] { first, second } },
+                    new { Name = "Override", URI = "https://tracker.example", ArrInstances = new[] { firstArr, secondArr } }
+                }
+            });
+            (await save.Content.ReadAsStringAsync()).Should().Contain("applied");
+            save.EnsureSuccessStatusCode();
+            cfg.Trackers.Should().HaveCount(2);
+            using var document = JsonDocument.Parse(await client.GetStringAsync(endpoint));
+            document.RootElement.GetProperty("Trackers").GetArrayLength().Should().Be(2);
+
+            var before = File.ReadAllText(loader.ConfigPath);
+            using var invalid = await Save(new()
+            {
+                ["Trackers"] = new[] { new { ClientIds = new[] { first }, ArrInstances = new[] { firstArr } } }
+            });
+            invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            using var deletion = await Save(new() { [$"TorrentClient.{first}"] = null });
+            deletion.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await deletion.Content.ReadAsStringAsync()).Should().Contain("Shared").And.Contain(first);
+            File.ReadAllText(loader.ConfigPath).Should().Be(before);
+
+            using var rename = await Save(new()
+            {
+                [$"TorrentClient.{first}"] = null,
+                [$"TorrentClient.{renamed}.Host"] = "fixture",
+                [$"TorrentClient.{renamed}.Disabled"] = true,
+                [firstArr] = null,
+                [$"{renamedArr}.Category"] = "tracker-movies",
+                [$"{renamedArr}.Managed"] = false
+            }, new() { [first] = renamed, [firstArr] = renamedArr });
+            rename.EnsureSuccessStatusCode();
+            cfg.Trackers[0].ClientIds.Should().Equal(renamed, second);
+            cfg.Trackers[1].ArrInstances.Should().Equal(renamedArr, secondArr);
+            loader.Load(false).Trackers.Should().BeEquivalentTo(cfg.Trackers, o => o.WithStrictOrdering());
+        }
+        finally
+        {
+            using var cleanup = await Save(new()
+            {
+                ["Trackers"] = originalRules.Select(rule => Newtonsoft.Json.Linq.JObject.FromObject(rule).ToString())
+                    .Select(json => JsonSerializer.Deserialize<JsonElement>(json)).ToArray(),
+                [$"TorrentClient.{first}"] = null,
+                [$"TorrentClient.{second}"] = null,
+                [$"TorrentClient.{renamed}"] = null,
+                [firstArr] = null,
+                [secondArr] = null,
+                [renamedArr] = null
+            });
+            cleanup.EnsureSuccessStatusCode();
+        }
+    }
+
+    [Theory]
     [InlineData("/web/torrent-clients/no-such-client/reconnect")]
     [InlineData("/api/torrent-clients/no-such-client/reconnect")]
     public async Task ManualReconnect_UnknownClientReturnsNotFound(string endpoint)
@@ -46,7 +132,67 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         _factory = factory;
     }
 
+    [Theory]
+    [InlineData("/web/config", "TorrentClient.storage-migration-fixture")]
+    [InlineData("/api/config", "qBit-storage-migration-fixture")]
+    public async Task KeepFreeSpaceProtectionOff_RequiresValidExplicitSave(string endpoint, string section)
+    {
+        using var client = _factory.CreateClientWithApiToken();
+        await AssertStorageMigrationSave(client, _factory.Services.GetRequiredService<ConfigurationLoader>(), endpoint, section);
+    }
 
+    internal static async Task AssertStorageMigrationSave(HttpClient client, ConfigurationLoader loader, string endpoint, string section)
+    {
+        const string pendingMonitor = "no unambiguous local monitor path; free-space protection remains disabled until configured";
+        var id = section.Split('.').Last();
+        var field = $"{section}.FreeSpace";
+        var seed = await client.PostAsJsonAsync(endpoint, new
+        {
+            changes = new Dictionary<string, object>
+            {
+                [$"{section}.Host"] = "fixture",
+                [$"{section}.Disabled"] = true,
+                [$"{section}.Migration.Notices"] = new[] { pendingMonitor, StorageConfigMigration.DownloadPathNotice }
+            }
+        });
+        seed.EnsureSuccessStatusCode();
+        try
+        {
+            var unrelated = await client.PostAsJsonAsync(endpoint, new
+            {
+                changes = new Dictionary<string, object> { [$"{section}.TorrentScanIntervalSeconds"] = 60 }
+            });
+            unrelated.EnsureSuccessStatusCode();
+            loader.Load(false).GetTorrentClient(id)!.Migration.Notices.Should().Contain(pendingMonitor);
+
+            var before = File.ReadAllText(loader.ConfigPath);
+            var invalid = await client.PostAsJsonAsync(endpoint, new
+            {
+                changes = new Dictionary<string, object> { [field] = new[] { new { Path = "relative", Enabled = false, Limit = "10G" } } },
+                keepFreeSpaceProtectionOff = field
+            });
+            invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            File.ReadAllText(loader.ConfigPath).Should().Be(before);
+
+            var saved = await client.PostAsJsonAsync(endpoint, new
+            {
+                changes = new Dictionary<string, object> { [field] = Array.Empty<object>() },
+                keepFreeSpaceProtectionOff = field
+            });
+            saved.EnsureSuccessStatusCode();
+            var updated = loader.Load(false).GetTorrentClient(id)!;
+            updated.FreeSpace.Should().BeEmpty();
+            updated.Migration.Notices.Should().Equal(StorageConfigMigration.DownloadPathNotice);
+        }
+        finally
+        {
+            var cleanup = await client.PostAsJsonAsync(endpoint, new
+            {
+                changes = new Dictionary<string, object?> { [section] = null }
+            });
+            cleanup.EnsureSuccessStatusCode();
+        }
+    }
 
     [Theory]
     [InlineData("/web/config", 10)]
@@ -75,19 +221,20 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
             services.AddHostedService<ProcessOrchestratorService>()));
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "test-api-token");
-        var service = factory.Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
-            .OfType<ProcessOrchestratorService>().Single();
         var reloader = factory.Services.GetRequiredService<Torrentarr.Core.Services.IConfigReloader>();
+        var config = factory.Services.GetRequiredService<TorrentarrConfig>();
+        var previousRevision = reloader.Revision;
+        var interval = config.Settings.LoopSleepTimer == 3600 ? 3599 : 3600;
         var response = await client.PostAsJsonAsync(endpoint, new
         {
-            changes = new Dictionary<string, object>
-            {
-                ["Settings.LoopSleepTimer"] = 3600
-            }
+            changes = new Dictionary<string, object> { ["Settings.LoopSleepTimer"] = interval }
         });
         response.EnsureSuccessStatusCode();
+        reloader.Revision.Should().BeGreaterThan(previousRevision);
+        config.Settings.LoopSleepTimer.Should().Be(interval);
+        var acceptedRevision = reloader.Revision;
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        while (reloader.GetStatus().Components.GetValueOrDefault("torrent-policy")?.AppliedRevision != reloader.Revision)
+        while (reloader.GetStatus().Components.GetValueOrDefault("torrent-policy")?.AppliedRevision != acceptedRevision)
             await Task.Delay(10, timeout.Token);
     }
 
@@ -256,6 +403,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         json.GetProperty("reloadType").GetString().Should().Be("live");
+        json.GetProperty("restartRequirements").GetArrayLength().Should().Be(0);
     }
 
     [Fact]
@@ -276,6 +424,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         json.GetProperty("reloadType").GetString().Should().Be("live");
+        json.GetProperty("restartRequirements").GetArrayLength().Should().Be(0);
     }
 
     [Fact]
@@ -296,6 +445,7 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         json.GetProperty("reloadType").GetString().Should().Be("live");
+        json.GetProperty("restartRequirements").GetArrayLength().Should().Be(0);
     }
 
     [Fact]

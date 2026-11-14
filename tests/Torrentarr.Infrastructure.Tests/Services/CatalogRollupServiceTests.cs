@@ -13,9 +13,27 @@ public class CatalogRollupServiceTests
     private static TorrentarrDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<TorrentarrDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .UseSqlite("Data Source=:memory:")
             .Options;
-        return new TorrentarrDbContext(options);
+        var db = new TorrentarrDbContext(options);
+        db.Database.OpenConnection();
+        db.Database.EnsureCreated();
+        return db;
+    }
+
+    [Fact]
+    public async Task Rollups_ReturnZeroesForEmptyOrUnmatchedInstances()
+    {
+        await using var db = CreateDb();
+        db.Movies.Add(new MoviesFilesModel { EntryId = 1, ArrInstance = "other", Monitored = true, MovieFileId = 5 });
+        await db.SaveChangesAsync();
+        var service = new CatalogRollupService(db);
+        var zero = new CatalogRollupService.Counts(0, 0, 0);
+
+        (await service.GetRadarrRollupsAsync("empty")).Should().Be((zero, 0));
+        (await service.GetSonarrRollupsAsync("empty")).Should().Be((zero, 0));
+        (await service.GetLidarrRollupsAsync("empty")).Should().Be((zero, 0, zero));
+        (await service.GetReadarrRollupsAsync("empty")).Should().Be((zero, 0));
     }
 
     [Fact]

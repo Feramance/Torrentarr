@@ -10,15 +10,16 @@ using Torrentarr.Infrastructure.Database.Models;
 namespace Torrentarr.Infrastructure.Services;
 
 public sealed class OperationalIssueReporter(IServiceScopeFactory scopes, ILogger<OperationalIssueReporter> logger,
-    TorrentarrConfig config) : BackgroundService, IOperationalIssueReporter
+    TorrentarrConfig config, TimeProvider? clock = null) : BackgroundService, IOperationalIssueReporter
 {
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private readonly Dictionary<string, PendingOperationalIssue> _pending = new();
     private readonly SemaphoreSlim _writes = new(1, 1);
     private readonly object _gate = new();
     public IReadOnlyList<PendingOperationalIssue> Pending { get { lock (_gate) return _pending.Values.ToArray(); } }
     private static string Key(OperationalIssueReport r) => System.Text.Json.JsonSerializer.Serialize(new[] { r.Code, r.ArrInstance.ToUpperInvariant(), r.ClientInstance.ToUpperInvariant(), r.SubjectType, r.SubjectId });
-    public Task ReportAsync(OperationalIssueReport report, CancellationToken ct = default) => SubmitAsync(new(report, false, DateTime.UtcNow, config.Revision), ct);
-    public Task ResolveAsync(OperationalIssueReport report, CancellationToken ct = default) => SubmitAsync(new(report, true, DateTime.UtcNow, config.Revision), ct);
+    public Task ReportAsync(OperationalIssueReport report, CancellationToken ct = default) => SubmitAsync(new(report, false, _clock.GetUtcNow().UtcDateTime, config.Revision), ct);
+    public Task ResolveAsync(OperationalIssueReport report, CancellationToken ct = default) => SubmitAsync(new(report, true, _clock.GetUtcNow().UtcDateTime, config.Revision), ct);
 
     private async Task SubmitAsync(PendingOperationalIssue update, CancellationToken ct)
     {
@@ -73,7 +74,7 @@ public sealed class OperationalIssueReporter(IServiceScopeFactory scopes, ILogge
                                 await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE torrentarr_operational_issues SET ResolvedAt={at}, Resolution={"Verified recovery"}, LastObserved={at} WHERE Code={r.Code} AND ArrInstance={r.ArrInstance} COLLATE NOCASE AND ClientInstance={r.ClientInstance} COLLATE NOCASE AND SubjectType={r.SubjectType} AND SubjectId={r.SubjectId} AND (ResolvedAt IS NULL OR {update.FirstObserved.HasValue}) AND LastObserved <= {at}", ct);
                         }
                         else
-                            await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO torrentarr_operational_issues (Code, Category, ArrInstance, ClientInstance, SubjectType, SubjectId, Severity, Title, Impact, Remediation, Target, FirstObserved, LastObserved, Occurrences) VALUES ({r.Code}, {r.Category}, {r.ArrInstance}, {r.ClientInstance}, {r.SubjectType}, {r.SubjectId}, {r.Severity}, {r.Title}, {r.Impact}, {r.Remediation}, {r.Target}, {update.FirstObserved ?? at}, {at}, 1) ON CONFLICT(Code, ArrInstance, ClientInstance, SubjectType, SubjectId) DO UPDATE SET LastObserved=excluded.LastObserved, ResolvedAt=NULL, Resolution=NULL, Occurrences=Occurrences+1, Severity=excluded.Severity, Title=excluded.Title, Impact=excluded.Impact, Remediation=excluded.Remediation, Target=excluded.Target WHERE LastObserved <= excluded.LastObserved", ct);
+                            await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO torrentarr_operational_issues (Code, Category, ArrInstance, ClientInstance, SubjectType, SubjectId, Severity, Title, Impact, Remediation, Target, FirstObserved, LastObserved, Occurrences) VALUES ({r.Code}, {r.Category}, {r.ArrInstance}, {r.ClientInstance}, {r.SubjectType}, {r.SubjectId}, {r.Severity}, {r.Title}, {r.Impact}, {r.Remediation}, {r.Target}, {update.FirstObserved ?? at}, {at}, 1) ON CONFLICT(Code, ArrInstance, ClientInstance, SubjectType, SubjectId) DO UPDATE SET FirstObserved=CASE WHEN ResolvedAt IS NULL THEN FirstObserved ELSE excluded.FirstObserved END, LastObserved=excluded.LastObserved, ResolvedAt=NULL, Resolution=NULL, Occurrences=Occurrences+1, Severity=excluded.Severity, Title=excluded.Title, Impact=excluded.Impact, Remediation=excluded.Remediation, Target=excluded.Target WHERE LastObserved <= excluded.LastObserved", ct);
                     }
                     else
                     {
@@ -100,6 +101,7 @@ public sealed class OperationalIssueReporter(IServiceScopeFactory scopes, ILogge
                         }
                         if (item != null && item.LastObserved <= at)
                         {
+                            if (item.ResolvedAt != null) item.FirstObserved = update.FirstObserved ?? at;
                             item.LastObserved = at; item.ResolvedAt = update.Resolved ? at : null;
                             item.Resolution = update.Resolved ? "Verified recovery" : null;
                             if (!update.Resolved) { item.Occurrences++; item.Title = r.Title; item.Impact = r.Impact; item.Remediation = r.Remediation; item.Severity = r.Severity; item.Target = r.Target; }
@@ -124,8 +126,13 @@ public sealed class OperationalIssueReporter(IServiceScopeFactory scopes, ILogge
         var now = DateTime.UtcNow;
         var arrs = config.ArrInstances.Keys.ToList();
         var clients = config.GetAllTorrentClients().Keys.ToList();
-        var retired = await db.OperationalIssues.Where(i => i.ResolvedAt == null &&
+        var retirementCandidates = await db.OperationalIssues.Where(i => i.ResolvedAt == null &&
             (i.ArrInstance != "" && !arrs.Contains(i.ArrInstance) || i.ClientInstance != "" && !clients.Contains(i.ClientInstance))).ToListAsync(ct);
+        // Torrent removal warnings use the owning category in their persisted identity.
+        var retired = retirementCandidates.Where(i => !i.Code.StartsWith("torrent.removal.", StringComparison.Ordinal)
+            || !clients.Contains(i.ClientInstance)
+            || !CategoryPathHelper.CategoryEquals(i.ArrInstance,
+                CategoryOwnershipHelper.ResolveOwningCategory(config, i.ArrInstance, i.ClientInstance)));
         foreach (var issue in retired) { issue.ResolvedAt = now; issue.Resolution = "Instance removed from configuration"; }
         if (now >= _nextCleanup)
         {

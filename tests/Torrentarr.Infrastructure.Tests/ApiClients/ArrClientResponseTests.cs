@@ -25,14 +25,17 @@ public sealed class ArrClientResponseTests
             .Which.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
     }
 
-    [Fact]
-    public void EnsureSuccess_DoesNotThrow_OnSuccess()
+    [Theory]
+    [InlineData(HttpStatusCode.OK)]
+    [InlineData(HttpStatusCode.Created)]
+    [InlineData(HttpStatusCode.Accepted)]
+    public void EnsureSuccess_DoesNotThrow_On2xx(HttpStatusCode statusCode)
     {
         var response = new RestResponse
         {
             ResponseStatus = ResponseStatus.Completed,
-            StatusCode = HttpStatusCode.OK,
-            StatusDescription = "OK",
+            StatusCode = statusCode,
+            StatusDescription = statusCode.ToString(),
             Content = "[]"
         };
 

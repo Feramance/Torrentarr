@@ -261,6 +261,11 @@ public class QBitCategoryWorkerManager : BackgroundService
                     break;
                 }
                 catch (ConfigurationBusyException) { }
+                catch (TorrentProcessingUnavailableException ex)
+                {
+                    _stateManager.Update(stateName, s => s.Status = "Waiting for torrent client...");
+                    _logger.LogInformation("Torrent processing deferred for {Category}: {Reason}", category, ex.Message);
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error in qBit category worker for {Category}", category);

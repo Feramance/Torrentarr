@@ -1,3 +1,4 @@
+import type { SimpleConfigSection } from "../../config/settingsSections";
 import { requestNavigateTab } from "../../utils/navigateTab";
 import { clientGroups, arrGeneralGroups, simpleGroups } from "./configGroups";
 import React, { useEffect, useMemo, useRef, useState, type JSX } from "react";
@@ -12,6 +13,7 @@ import {
 import type { ConfigDocument } from "../../api/types";
 import { useToast } from "../../context/ToastContext";
 import { useWebUI } from "../../context/WebUIContext";
+import { THEME_OPTIONS, themeFromValue } from "../../utils/theme";
 import { getQbitTorrentHandlingSummary } from "../../config/torrentHandlingSummary";
 import { IconImage } from "../../components/IconImage";
 import CloseIcon from "../../icons/close.svg";
@@ -19,12 +21,7 @@ import DeleteIcon from "../../icons/trash.svg";
 import SaveIcon from "../../icons/check-mark.svg";
 import RefreshIcon from "../../icons/refresh-arrow.svg";
 import { safeClick } from "../../utils/safeClick";
-import {
-  ARR_TRACKER_FIELDS,
-  getTrackerProtectionFields,
-  getArrFieldSets,
-  QBIT_FIELDS,
-} from "./configFields";
+import { getArrFieldSets, QBIT_FIELDS } from "./configFields";
 import {
   ArrTorrentSummary,
   CategoryOverlapAlert,
@@ -39,11 +36,14 @@ import type { FieldDefinition, ValidationError } from "./configTypes";
 
 export function ConfigModalPortal({
   children,
+  inline = false,
 }: {
   children: React.ReactNode;
+  inline?: boolean;
 }): JSX.Element {
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    if (inline) return;
     const previous = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -77,11 +77,27 @@ export function ConfigModalPortal({
       document.body.style.overflow = overflow;
       previous?.focus();
     };
-  }, []);
+  }, [inline]);
+  if (inline) return <div className="config-inline-editor">{children}</div>;
   return createPortal(<div ref={root}>{children}</div>, document.body);
 }
 
+function ConfigModalActions({
+  inline,
+  children,
+}: {
+  inline: boolean;
+  children: React.ReactNode;
+}): JSX.Element {
+  return inline ? (
+    <div className="config-inline-actions">{children}</div>
+  ) : (
+    <>{children}</>
+  );
+}
+
 export interface ArrInstanceModalProps {
+  inline?: boolean;
   keyName: string;
   diskKey?: string;
   state: ConfigDocument | ConfigDocument[keyof ConfigDocument] | null;
@@ -108,6 +124,7 @@ export function ArrInstanceModal({
   overlapWarnings,
   saveDisabled = false,
   saveBlockedReason,
+  inline = false,
   validationErrors = [],
 }: ArrInstanceModalProps): JSX.Element {
   const {
@@ -118,7 +135,6 @@ export function ArrInstanceModal({
     entryOverseerrFields,
     torrentFields,
     seedingFields,
-    trackerFields,
   } = getArrFieldSets(keyName);
   const { push } = useToast();
 
@@ -256,7 +272,7 @@ export function ArrInstanceModal({
 
       const saved = await onSave();
       if (saved) {
-        onClose();
+        if (!inline) onClose();
       }
     } finally {
       setSavingModal(false);
@@ -264,12 +280,15 @@ export function ArrInstanceModal({
   };
 
   return (
-    <ConfigModalPortal>
-      <div className="modal-backdrop" role="presentation">
+    <ConfigModalPortal inline={inline}>
+      <div
+        className={inline ? "config-inline-backdrop" : "modal-backdrop"}
+        role="presentation"
+      >
         <div
           className="modal config-modal"
-          role="dialog"
-          aria-modal="true"
+          role={inline ? "region" : "dialog"}
+          aria-modal={inline ? undefined : true}
           aria-labelledby="arr-instance-modal-title"
           onClick={(e) => e.stopPropagation()}
         >
@@ -301,7 +320,6 @@ export function ArrInstanceModal({
                 }
                 onRenameSection={onRename}
                 sectionKey={keyName}
-                defaultOpen={group.defaultOpen}
                 validationErrors={validationErrors}
               >
                 {group.title === "Connection" && (
@@ -438,51 +456,42 @@ export function ArrInstanceModal({
               sectionKey={keyName}
               validationErrors={validationErrors}
             />
-            <FieldGroup
-              title="Trackers"
-              fields={trackerFields}
-              state={state}
-              basePath={[]}
-              onChange={(path, def, value) =>
-                onChange([keyName, ...path], def, value)
-              }
-              sectionKey={keyName}
-              validationErrors={validationErrors}
-            />
           </div>
-          {(validationErrors.length || saveDisabled) && saveBlockedReason ? (
-            <div className="modal-footer-note" role="status">
-              {saveBlockedReason}
-            </div>
-          ) : null}
-          <div className="modal-footer">
-            {onDelete && (
+          <ConfigModalActions inline={inline}>
+            {(validationErrors.length || saveDisabled) && saveBlockedReason ? (
+              <div className="modal-footer-note" role="status">
+                {saveBlockedReason}
+              </div>
+            ) : null}
+            <div className="modal-footer">
+              {onDelete && (
+                <button
+                  className="btn danger"
+                  type="button"
+                  onClick={safeClick(() => {
+                    onDelete();
+                  })}
+                >
+                  <IconImage src={DeleteIcon} />
+                  Delete
+                </button>
+              )}
               <button
-                className="btn danger"
+                className="btn primary"
                 type="button"
-                onClick={safeClick(() => {
-                  onDelete();
-                })}
+                onClick={() => void handleSave()}
+                disabled={savingModal || testState.testing}
+                title={
+                  validationErrors.length || saveDisabled
+                    ? saveBlockedReason || "Fix validation errors to save"
+                    : undefined
+                }
               >
-                <IconImage src={DeleteIcon} />
-                Delete
+                <IconImage src={SaveIcon} />
+                {savingModal ? "Saving..." : "Save"}
               </button>
-            )}
-            <button
-              className="btn primary"
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={savingModal || testState.testing}
-              title={
-                validationErrors.length || saveDisabled
-                  ? saveBlockedReason || "Fix validation errors to save"
-                  : undefined
-              }
-            >
-              <IconImage src={SaveIcon} />
-              {savingModal ? "Saving..." : "Save"}
-            </button>
-          </div>
+            </div>
+          </ConfigModalActions>
         </div>
       </div>
     </ConfigModalPortal>
@@ -509,6 +518,7 @@ export function QbitTorrentSummary({
 }
 
 export interface QbitInstanceModalProps {
+  inline?: boolean;
   manageClientId?: string;
   fieldPathPrefix?: string;
   keyName: string;
@@ -517,7 +527,7 @@ export interface QbitInstanceModalProps {
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
   onRename: (oldName: string, newName: string) => void;
   onClose: () => void;
-  onSave: () => Promise<boolean>;
+  onSave: (keepProtectionOff?: boolean) => Promise<boolean>;
   onDelete?: () => void;
   overlapWarnings: string[];
   saveDisabled?: boolean;
@@ -539,12 +549,25 @@ export function QbitInstanceModal({
   overlapWarnings,
   saveDisabled = false,
   saveBlockedReason,
+  inline = false,
   validationErrors = [],
 }: QbitInstanceModalProps): JSX.Element {
   const { push } = useToast();
   const [savingModal, setSavingModal] = useState(false);
+  const monitors: unknown = get(state, "FreeSpace");
+  const migrationNotices: unknown = get(state, "Migration.Notices");
+  const canKeepProtectionOff =
+    Array.isArray(migrationNotices) &&
+    migrationNotices.some(
+      (notice) =>
+        notice ===
+          "legacy monitor ownership is ambiguous; the inherited path is disabled for review" ||
+        notice ===
+          "no unambiguous local monitor path; free-space protection remains disabled until configured",
+    ) &&
+    !(Array.isArray(monitors) && monitors.some((monitor) => monitor?.Enabled));
 
-  const handleDone = async () => {
+  const handleDone = async (keepProtectionOff = false) => {
     if (savingModal) return;
     if (validationErrors.length || saveDisabled) {
       const message =
@@ -557,9 +580,9 @@ export function QbitInstanceModal({
     }
     setSavingModal(true);
     try {
-      const saved = await onSave();
+      const saved = await onSave(keepProtectionOff);
       if (saved) {
-        onClose();
+        if (!inline) onClose();
       }
     } finally {
       setSavingModal(false);
@@ -567,12 +590,15 @@ export function QbitInstanceModal({
   };
 
   return (
-    <ConfigModalPortal>
-      <div className="modal-backdrop" role="presentation">
+    <ConfigModalPortal inline={inline}>
+      <div
+        className={inline ? "config-inline-backdrop" : "modal-backdrop"}
+        role="presentation"
+      >
         <div
           className="modal config-modal config-modal--torrent-client"
-          role="dialog"
-          aria-modal="true"
+          role={inline ? "region" : "dialog"}
+          aria-modal={inline ? undefined : true}
           aria-labelledby="qbit-instance-modal-title"
           onClick={(e) => e.stopPropagation()}
         >
@@ -607,46 +633,46 @@ export function QbitInstanceModal({
                     ),
                 )
                 .map((group) => (
-                  <FieldGroup
-                    key={group.title}
-                    title={
-                      group.fields.length === 1 &&
-                      group.fields[0]?.type === "collection"
-                        ? null
-                        : group.title
-                    }
-                    fields={group.fields}
-                    state={state}
-                    basePath={[]}
-                    onChange={(path, def, value) =>
-                      onChange([keyName, ...path], def, value)
-                    }
-                    onRenameSection={onRename}
-                    sectionKey={fieldPathPrefix ?? keyName}
-                    defaultOpen={group.defaultOpen}
-                    validationErrors={validationErrors}
-                  />
+                  <React.Fragment key={group.title}>
+                    <FieldGroup
+                      title={
+                        group.fields.length === 1 &&
+                        group.fields[0]?.type === "collection"
+                          ? null
+                          : group.title
+                      }
+                      fields={group.fields}
+                      state={state}
+                      basePath={[]}
+                      onChange={(path, def, value) =>
+                        onChange([keyName, ...path], def, value)
+                      }
+                      onRenameSection={onRename}
+                      sectionKey={fieldPathPrefix ?? keyName}
+                      validationErrors={validationErrors}
+                    />
+                    {group.fields[0]?.path?.at(-1) === "FreeSpace" &&
+                      canKeepProtectionOff && (
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={
+                            savingModal ||
+                            saveDisabled ||
+                            validationErrors.length > 0
+                          }
+                          onClick={() => void handleDone(true)}
+                        >
+                          Keep free-space protection off
+                        </button>
+                      )}
+                  </React.Fragment>
                 ))}
-              <FieldGroup
-                title="Trackers"
-                fields={[
-                  ...ARR_TRACKER_FIELDS,
-                  ...getTrackerProtectionFields(),
-                ]}
-                state={state}
-                basePath={[]}
-                onChange={(path, def, value) =>
-                  onChange([keyName, ...path], def, value)
-                }
-                defaultOpen={false}
-                qbitTrackers
-                sectionKey={fieldPathPrefix ?? keyName}
-                validationErrors={validationErrors}
-              />
               <div className="config-section">
-                <h3>Manage</h3>
+                <h3>Maintenance</h3>
                 <p>
-                  Configure recovery, organization, and storage tools in Manage.
+                  Configure recovery, organization, and storage tools under
+                  Settings.
                 </p>
                 <p>
                   {(state as ConfigDocument)?.Maintenance &&
@@ -667,47 +693,52 @@ export function QbitInstanceModal({
                     })
                   }
                 >
-                  Open Manage
+                  Open Shared Settings
                 </button>
                 {!manageClientId && (
-                  <p>Save this client and its name before opening Manage.</p>
+                  <p>
+                    Save this client and its name before opening Shared
+                    Settings.
+                  </p>
                 )}
               </div>
             </div>
           </div>
-          {(validationErrors.length || saveDisabled) && saveBlockedReason ? (
-            <div className="modal-footer-note" role="status">
-              {saveBlockedReason}
-            </div>
-          ) : null}
-          <div className="modal-footer">
-            {onDelete && (
+          <ConfigModalActions inline={inline}>
+            {(validationErrors.length || saveDisabled) && saveBlockedReason ? (
+              <div className="modal-footer-note" role="status">
+                {saveBlockedReason}
+              </div>
+            ) : null}
+            <div className="modal-footer">
+              {onDelete && (
+                <button
+                  className="btn danger"
+                  type="button"
+                  onClick={safeClick(() => {
+                    onDelete();
+                  })}
+                >
+                  <IconImage src={DeleteIcon} />
+                  Delete
+                </button>
+              )}
               <button
-                className="btn danger"
+                className="btn primary"
                 type="button"
-                onClick={safeClick(() => {
-                  onDelete();
-                })}
+                onClick={() => void handleDone()}
+                disabled={savingModal}
+                title={
+                  validationErrors.length || saveDisabled
+                    ? saveBlockedReason || "Fix validation errors to save"
+                    : undefined
+                }
               >
-                <IconImage src={DeleteIcon} />
-                Delete
+                <IconImage src={SaveIcon} />
+                {savingModal ? "Saving..." : "Save"}
               </button>
-            )}
-            <button
-              className="btn primary"
-              type="button"
-              onClick={() => void handleDone()}
-              disabled={savingModal}
-              title={
-                validationErrors.length || saveDisabled
-                  ? saveBlockedReason || "Fix validation errors to save"
-                  : undefined
-              }
-            >
-              <IconImage src={SaveIcon} />
-              {savingModal ? "Saving..." : "Save"}
-            </button>
-          </div>
+            </div>
+          </ConfigModalActions>
         </div>
       </div>
     </ConfigModalPortal>
@@ -715,12 +746,14 @@ export function QbitInstanceModal({
 }
 
 export interface SimpleConfigModalProps {
+  inline?: boolean;
   title: string;
+  section: SimpleConfigSection;
   fields: FieldDefinition[];
   state: ConfigDocument | null;
   basePath: string[];
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
-  onClose: () => void;
+  onClose?: () => void;
   onSave?: () => Promise<boolean>;
   showLiveSettings?: boolean;
   onSetPassword?: () => void;
@@ -731,6 +764,7 @@ export interface SimpleConfigModalProps {
 
 export function SimpleConfigModal({
   title,
+  section,
   fields,
   state,
   basePath,
@@ -741,6 +775,7 @@ export function SimpleConfigModal({
   onSetPassword,
   saveDisabled = false,
   saveBlockedReason,
+  inline = false,
   validationErrors = [],
 }: SimpleConfigModalProps): JSX.Element | null {
   const webUI = useWebUI();
@@ -762,7 +797,7 @@ export function SimpleConfigModal({
     try {
       const saved = await onSave();
       if (saved) {
-        onClose();
+        if (!inline) onClose?.();
       }
     } finally {
       setSavingModal(false);
@@ -771,28 +806,29 @@ export function SimpleConfigModal({
 
   if (!state) return null;
   return (
-    <ConfigModalPortal>
-      <div className="modal-backdrop" role="presentation">
+    <ConfigModalPortal inline={inline}>
+      <div
+        className={inline ? "config-inline-backdrop" : "modal-backdrop"}
+        role="presentation"
+      >
         <div
           className="modal config-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby={`${title}-modal-title`}
+          role={inline ? "region" : "dialog"}
+          aria-modal={inline ? undefined : true}
+          aria-label={title}
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="modal-header">
-            <h2 id={`${title}-modal-title`}>{title}</h2>
-            <button
-              className="btn ghost"
-              type="button"
-              onClick={safeClick(onClose)}
-            >
-              <IconImage src={CloseIcon} />
-              Close
-            </button>
-          </div>
+          {onClose && (
+            <div className="modal-header">
+              <h2 id={`${title.replace(/\s+/g, "-")}-modal-title`}>{title}</h2>
+              <button type="button" className="btn ghost" onClick={onClose}>
+                <IconImage src={CloseIcon} />
+                Close
+              </button>
+            </div>
+          )}
           <div className="modal-body">
-            {simpleGroups(title, fields).map((group) => (
+            {simpleGroups(section, fields).map((group) => (
               <FieldGroup
                 key={group.title}
                 title={group.title}
@@ -809,7 +845,6 @@ export function SimpleConfigModal({
                 state={state}
                 basePath={basePath}
                 onChange={onChange}
-                defaultOpen={group.defaultOpen}
                 validationErrors={validationErrors}
               >
                 {group.title === "Appearance and live display" && (
@@ -839,16 +874,17 @@ export function SimpleConfigModal({
                             <select
                               value={webUI.theme}
                               onChange={(e) =>
-                                webUI.setTheme(
-                                  e.target.value as "light" | "dark",
-                                )
+                                webUI.setTheme(themeFromValue(e.target.value))
                               }
                             >
-                              <option value="dark">Dark</option>
-                              <option value="light">Light</option>
+                              {THEME_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
                             </select>
                             <p className="field-description">
-                              WebUI theme (Light or Dark)
+                              WebUI theme (System, Light, Dark, or Midnight)
                             </p>
                           </div>
                         </div>
@@ -886,38 +922,40 @@ export function SimpleConfigModal({
               </FieldGroup>
             ))}
           </div>
-          {(validationErrors.length || saveDisabled) && saveBlockedReason ? (
-            <div className="modal-footer-note" role="status">
-              {saveBlockedReason}
+          <ConfigModalActions inline={inline}>
+            {(validationErrors.length || saveDisabled) && saveBlockedReason ? (
+              <div className="modal-footer-note" role="status">
+                {saveBlockedReason}
+              </div>
+            ) : null}
+            <div className="modal-footer">
+              {onSave ? (
+                <button
+                  className="btn primary"
+                  type="button"
+                  onClick={() => void handleSave()}
+                  disabled={savingModal}
+                  title={
+                    validationErrors.length || saveDisabled
+                      ? saveBlockedReason || "Fix validation errors to save"
+                      : undefined
+                  }
+                >
+                  <IconImage src={SaveIcon} />
+                  {savingModal ? "Saving..." : "Save"}
+                </button>
+              ) : onClose ? (
+                <button
+                  className="btn primary"
+                  type="button"
+                  onClick={safeClick(onClose)}
+                >
+                  <IconImage src={SaveIcon} />
+                  Done
+                </button>
+              ) : null}
             </div>
-          ) : null}
-          <div className="modal-footer">
-            {onSave ? (
-              <button
-                className="btn primary"
-                type="button"
-                onClick={() => void handleSave()}
-                disabled={savingModal}
-                title={
-                  validationErrors.length || saveDisabled
-                    ? saveBlockedReason || "Fix validation errors to save"
-                    : undefined
-                }
-              >
-                <IconImage src={SaveIcon} />
-                {savingModal ? "Saving..." : "Save"}
-              </button>
-            ) : (
-              <button
-                className="btn primary"
-                type="button"
-                onClick={safeClick(onClose)}
-              >
-                <IconImage src={SaveIcon} />
-                Done
-              </button>
-            )}
-          </div>
+          </ConfigModalActions>
         </div>
       </div>
     </ConfigModalPortal>

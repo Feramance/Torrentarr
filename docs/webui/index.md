@@ -432,7 +432,8 @@ The WebUI uses a tab-based navigation system:
 | **Sonarr** | 📺 | Sonarr TV series views |
 | **Lidarr** | 🎵 | Lidarr music library views |
 | **qBittorrent** | 📦 | qBit category management and seeding stats |
-| **Config** | ⚙️ | Configuration editor |
+| **Settings** | ⚙️ | Configuration |
+| **Maintenance** | ⚙️ | Torrent maintenance tools and run history |
 | **API** | 🔌 | API documentation and testing |
 
 ### Header Bar

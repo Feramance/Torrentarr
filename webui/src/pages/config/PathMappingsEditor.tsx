@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react";
 import type { ConfigDocument } from "../../api/types";
 import type { FieldDefinition, ValidationError } from "./configTypes";
 import { FieldGroup } from "./configFieldComponents";
@@ -30,22 +29,15 @@ export function PathMappingsEditor({
       } as Record<string, string>
     )[kind] ?? "entry";
   const rows = (Array.isArray(value) ? value : []) as ConfigDocument[];
-  const hasErrors = validationErrors.some(({ path }) => {
-    const key = path.join(".");
-    return key === dataPath || key.startsWith(`${dataPath}.`);
-  });
-  const details = useRef<HTMLDetailsElement>(null);
-  useEffect(() => {
-    if (hasErrors && details.current) details.current.open = true;
-  }, [hasErrors]);
   return (
-    <details
+    <section
       className="config-section field--full-width collection-editor"
-      ref={details}
       aria-label={field.label}
       data-field-path={dataPath}
     >
-      <summary>{field.label}</summary>
+      <h4 className="config-section__heading" tabIndex={-1}>
+        {field.label}
+      </h4>
       <div className="config-section__body">
         <p className="field-description">{field.description}</p>
         {isMapping && (
@@ -68,6 +60,7 @@ export function PathMappingsEditor({
             <div
               key={index}
               className={`collection-row ${isMapping || kind === "CategoryMappings" ? "collection-row--mapping" : isMonitor ? "collection-row--monitor" : "collection-row--rules"}`}
+              data-monitor-path={isMonitor ? String(row.Path ?? "") : undefined}
               role="group"
               aria-label={`${itemLabel[0]!.toUpperCase() + itemLabel.slice(1)} ${index + 1}`}
             >
@@ -130,6 +123,6 @@ export function PathMappingsEditor({
           Add {itemLabel}
         </button>
       </div>
-    </details>
+    </section>
   );
 }

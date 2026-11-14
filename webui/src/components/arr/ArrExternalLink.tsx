@@ -2,13 +2,13 @@ import type { JSX, MouseEvent } from "react";
 
 interface ArrExternalLinkProps {
   readonly href: string | null;
-  readonly arrName: "Radarr" | "Sonarr" | "Lidarr" | "Readarr";
+  readonly instanceLabel: string;
 }
 
 /** Shared "Open in *Arr" action link for detail modals. */
 export function ArrExternalLink({
   href,
-  arrName,
+  instanceLabel,
 }: ArrExternalLinkProps): JSX.Element | null {
   if (!href) {
     return null;
@@ -46,7 +46,7 @@ export function ArrExternalLink({
         rel="noreferrer"
         onClick={openAuthenticated}
       >
-        Open in {arrName}
+        Open in {instanceLabel}
       </a>
     </div>
   );

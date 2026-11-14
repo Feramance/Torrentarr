@@ -24,6 +24,17 @@ internal static class MaintenancePersistence
         }
         db.Database.ExecuteSqlInterpolated($"INSERT INTO torrentarr_maintenance_state (Key, Data) VALUES ({key}, {json}) ON CONFLICT(Key) DO UPDATE SET Data=excluded.Data");
     }
+    public static async Task DeleteAsync(TorrentarrDbContext db, string key, CancellationToken ct)
+    {
+        if (!db.Database.IsRelational())
+        {
+            var record = await db.MaintenanceState.FindAsync([key], ct);
+            if (record != null) { db.MaintenanceState.Remove(record); await db.SaveChangesAsync(ct); }
+            return;
+        }
+        // Raw delete stays idempotent when another worker clears the same row concurrently.
+        await db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM torrentarr_maintenance_state WHERE Key = {key}", ct);
+    }
 }
 
 internal sealed class ScanCursor { public string Position { get; set; } = ""; }

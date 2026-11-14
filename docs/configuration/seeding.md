@@ -11,15 +11,20 @@ Completed torrents must satisfy the effective ratio/time removal policy, includi
 configured AND/OR combination and any legacy minimum seeding requirements. Incomplete
 torrents must pass minimum age and stalled grace: `StalledDelay = -1` holds them indefinitely,
 `0` adds no stalled grace, and positive values require that many idle minutes.
-Custom-format failures, failed categories, missing files, Arr errors, and Manage actions
+Custom-format failures, failed categories, missing files, Arr errors, and maintenance actions
 cannot bypass these checks. HnR always retains its own veto. Changed torrent activity,
 category, location, or re-addition invalidates an earlier removal decision.
 
 ## Configuration structure
 
-Each torrent client has CategorySeeding and Trackers. Legacy `[qBit]` / `[qBit-name]`
-and canonical `[TorrentClient.name]` use the same keys. Arr torrent seeding settings
-can override ordinary handling for that Arr category; client instances remain independent.
+Each torrent client has its own `CategorySeeding`. Configure tracker rules under
+**Settings → Trackers** or as top-level `[[Trackers]]` entries in TOML.
+
+Each rule requires exactly one nonempty list of instance IDs. Use `ClientIds`
+for rules shared by torrent clients and `ArrInstances` for rules scoped to
+integration categories. Each selected integration uses its existing torrent-client
+scope. Arr overrides take precedence for ordinary tracker behavior, and every
+applicable protection obligation still has to clear.
 
 ```toml
 [TorrentClient.seedbox]
@@ -33,18 +38,21 @@ MaxSeedingTime = -1
 RemoveTorrent = -1
 HitAndRunMode = 'disabled'
 
-[[TorrentClient.seedbox.Trackers]]
+[[Trackers]]
+ClientIds = ["seedbox"]
 Name = 'TorrentLeech Power User'
 URI = 'https://tracker.torrentleech.org'
 Priority = 0
 Protection = { Policy = 'torrentleech-power', AllowClientRatioClearance = false, AdditionalSeedHours = 6.0, AccountingGraceMinutes = 60, RecoveryReserveHours = 6.0 }
 
-[[TorrentClient.seedbox.Trackers]]
+[[Trackers]]
+ClientIds = ["seedbox"]
 Name = 'TorrentLeech alternate host'
 URI = 'https://tracker.tleechreload.org'
 Protection = { Policy = 'torrentleech-power', AllowClientRatioClearance = false }
 
-[[TorrentClient.seedbox.Trackers]]
+[[Trackers]]
+ClientIds = ["seedbox"]
 Name = 'OnlyEncodes'
 URI = 'https://tracker.onlyencodes.cc'
 Protection = { Policy = 'onlyencodes', AllowClientRatioClearance = false, FulfillmentHours = 168.0, DeadlineStart = 'added', AdditionalSeedHours = 6.0, AccountingGraceMinutes = 60, RecoveryReserveHours = 6.0 }
@@ -68,6 +76,9 @@ TorrentLeech rules are documented in its [HnR rules](https://wiki.torrentleech.o
 and [user classes](https://wiki.torrentleech.org/doku.php/user_classes). Freeleech
 remains protected. OnlyEncodes rules above are supplied by the account owner; its
 0.4 overall account-ratio requirement is separate from per-torrent seed-time clearance.
+A tracker that is configured with `HitAndRunMode = 'disabled'` and no `Protection`
+has no clearance obligation and is treated as eligible. Only a private tracker with
+no matching configuration stays `unknown` and is preserved.
 
 ### Protection controls
 
@@ -122,14 +133,14 @@ A missed deadline preserves protection and triggers reporting/recovery.
 Protection checks normally run at least every five minutes when enabled, with
 targeted one-minute inspection for deadline or native stop-limit risk. Monitoring runs independently of long maintenance jobs. Outages may delay these checks;
 failures back off and preserve protection. These checks cannot guarantee service
-availability or tracker-side acceptance. Authorized Torrentarr-owned pauses may be
-recovered; deliberate user pauses remain blockers unless explicit paused-repair
-resume permission was selected.
+availability or tracker-side acceptance. H&R only restricts torrent/content deletion and recycling. Imports, pause/resume, tracker/category changes, and repair follow their configured policies and ownership checks independently.
 
 Per-torrent native ratio, seed-time and inactive seed-time stop limits can interrupt
-protected seeding. Explicit protection temporarily overrides conflicting limits and
-records their original values, restoring them after clearance if the user has not
-changed them. Global client preferences are unchanged. See the [official qBittorrent
+protected seeding. Protection temporarily overrides conflicting limits and records
+their original values, restoring them after clearance if the user has not changed
+them. Private torrents are reconciled even when no tracker policy is configured, so
+qBittorrent cannot natively remove an unmatched private torrent before review.
+Global client preferences are unchanged. See the [official qBittorrent
 share-limit contract](https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-%28qBittorrent-5.0%29#set-torrent-share-limit).
 
 ## Global seeding settings
@@ -167,12 +178,15 @@ separate from mandatory completion-based protection observations.
 Legacy compatibility flag. True reports matching tracker failures and preserves
 the torrent; direct dead-tracker torrent deletion is disabled. False permits
 tracker URL removal through RemoveTrackerWithMessage, subject to fresh protection.
-Ordinary tracker handling preserves and reports failures. Manage recovery may recycle content only after explicit configuration, confirmed repair, sustained failure, and all protection checks.
+Ordinary tracker handling preserves and reports failures. Maintenance recovery may recycle content only after explicit configuration, confirmed repair, sustained failure, and all protection checks.
 
 ### RemoveTrackerWithMessage
 
 Tracker-message matching for ordinary tracker handling. Removing a configured
-tracker remains subject to fresh protection checks.
+tracker remains subject to fresh protection checks. Private torrents keep the
+configured tracker URL and their last remaining announce URL even when a message
+matches; removing either would destroy the only way to re-announce. Explicit
+`RemoveIfExists` actions are unchanged.
 
 ## Per-tracker configuration
 
@@ -227,7 +241,10 @@ New policies expose AccountingGraceMinutes and AdditionalSeedHours independently
 When protection is explicitly configured, conflicting managed per-torrent stop
 limits are recorded and temporarily disabled to preserve seeding. After clearance,
 previous values are restored only if the unlimited values still belong to Torrentarr;
-later user changes are retained. Global qBittorrent preferences are never changed.
+later user changes are retained. Private torrents without a matching tracker policy
+are also treated as unresolved and keep their native stop limits disabled until
+configuration or manual review resolves them. Global qBittorrent preferences are
+never changed.
 A stopped torrent with unknown pause ownership is reported rather than assumed safe
 to resume. Review client global stop/queue settings separately.
 
@@ -240,5 +257,5 @@ OnlyEncodes mandatory time begins at completion, not when a torrent was added.
 Client upload/download counters and screenshots cannot establish the exact cause
 of a tracker warning. Do not remove/re-add a torrent to try to erase an obligation.
 
-See [Manage recovery](../features/torrent-maintenance.md) and
+See [Maintenance recovery](../features/torrent-maintenance.md) and
 [maintenance configuration](maintenance.md) for safe repair and storage controls.

@@ -60,9 +60,10 @@ public sealed class StorageMigrationTests : IDisposable
             string? migrated = null;
             for (var pass = 0; pass < 2; pass++)
             {
-                var client = loader.Load().QBitInstances["qBit"];
+                var config = loader.Load();
+                var client = config.QBitInstances["qBit"];
                 client.CategorySeeding.MaxSeedingTime.Should().Be(1209600);
-                client.Trackers.Should().HaveCount(3).And.OnlyContain(t => t.MaxSeedingTime == 1209600);
+                config.Trackers.Should().HaveCount(3).And.OnlyContain(t => t.MaxSeedingTime == 1209600);
                 client.DownloadPath.Should().Be(withEnvironment ? "/remote/runtime" : "/remote/file");
                 var monitor = client.FreeSpace.Single();
                 monitor.Path.Should().Be(root + (withEnvironment ? "/runtime" : "/file"));
@@ -72,9 +73,10 @@ public sealed class StorageMigrationTests : IDisposable
                 var persisted = File.ReadAllText(_file);
                 if (migrated != null) persisted.Should().Be(migrated);
                 migrated = persisted;
-                var table = (TomlTable)TomlSerializer.Deserialize<TomlTable>(persisted)!["qBit"];
+                var configTable = TomlSerializer.Deserialize<TomlTable>(persisted)!;
+                var table = (TomlTable)configTable["qBit"];
                 ((TomlTable)table["CategorySeeding"])["MaxSeedingTime"].Should().Be("2w");
-                ((TomlTableArray)table["Trackers"]).Should().HaveCount(3)
+                ((TomlTableArray)configTable["Trackers"]).Should().HaveCount(3)
                     .And.OnlyContain(t => (string)t["MaxSeedingTime"] == "2w");
                 persisted.Should().NotContain("42G").And.NotContain(root + "/runtime");
             }
@@ -118,6 +120,36 @@ public sealed class StorageMigrationTests : IDisposable
         new ConfigurationLoader(_file).Load();
         File.ReadAllText(_file).Should().Be(migrated);
         File.ReadAllText(_file + ".bak").Should().Be(original);
+    }
+
+    [Fact]
+    public void UnmappableEnvironmentOverrideIsLiveAndClearsWhenCorrected()
+    {
+        const string key = "TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER";
+        var prior = Environment.GetEnvironmentVariable(key);
+        var root = Path.GetTempPath().Replace('\\', '/').TrimEnd('/');
+        try
+        {
+            Environment.SetEnvironmentVariable(key, root + "-unmapped");
+            var config = Load($"""
+                [Settings]
+                ConfigVersion = "{ConfigurationLoader.ExpectedConfigVersion}"
+                [qBit]
+                Host = "localhost"
+                FreeSpace = []
+                [[qBit.Maintenance.PathMappings]]
+                ClientPath = "/remote"
+                LocalPath = '{root}'
+                """);
+            config.QBitInstances["qBit"].Migration.EnvironmentDownloadPathFailed.Should().BeTrue();
+            config.QBitInstances["qBit"].Migration.Notices.Should().Contain(StorageConfigMigration.DownloadPathNotice);
+            File.ReadAllText(_file).Should().NotContain("EnvironmentDownloadPathFailed").And.NotContain("Migration.Notices");
+            Environment.SetEnvironmentVariable(key, root + "/completed");
+            var corrected = new ConfigurationLoader(_file).Load().QBitInstances["qBit"];
+            corrected.DownloadPath.Should().Be("/remote/completed");
+            corrected.Migration.EnvironmentDownloadPathFailed.Should().BeFalse();
+        }
+        finally { Environment.SetEnvironmentVariable(key, prior); }
     }
 
     [Theory]
@@ -174,6 +206,71 @@ public sealed class StorageMigrationTests : IDisposable
         config.QBitInstances["qBit-one"].FreeSpace.Single().Enabled.Should().BeTrue();
         config.TorrentClients["two"].DownloadPath.Should().BeNull();
         config.TorrentClients["two"].FreeSpace.Should().OnlyContain(m => !m.Enabled);
+        config.QBitInstances["qBit-one"].Migration.Notices.Should().BeEmpty();
+        config.TorrentClients["two"].Migration.Notices.Should().ContainSingle().Which.Should().Contain("ambiguous");
+        var persisted = File.ReadAllText(_file);
+        var loader = new ConfigurationLoader(_file);
+        loader.Load().TorrentClients["two"].Migration.Notices.Should().Equal(config.TorrentClients["two"].Migration.Notices);
+        File.ReadAllText(_file).Should().Be(persisted);
+        config.TorrentClients["two"].Migration.Notices.Clear();
+        loader.SaveConfig(config);
+        loader.Load().TorrentClients["two"].Migration.Notices.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("qBit")]
+    [InlineData("TorrentClient.named")]
+    public void MissingLegacyStoragePaths_PersistAnActionableMigrationNotice(string section)
+    {
+        var config = Load($"""
+            [Settings]
+            FreeSpace = "10G"
+            [{section}]
+            Host = "localhost"
+            """);
+        var client = config.GetAllTorrentClients().Values.Single();
+        client.FreeSpace.Should().BeEmpty();
+        client.Migration.Notices.Should().ContainSingle().Which.Should().Contain("free-space protection remains disabled until configured");
+        new ConfigurationLoader(_file).Load().GetAllTorrentClients().Values.Single().Migration.Notices.Should().Equal(client.Migration.Notices);
+    }
+
+    [Theory]
+    [InlineData("qBit")]
+    [InlineData("TorrentClient.named")]
+    public void FailedEnvironmentPathOverride_IsReevaluatedAndNeverSavedAsAnActiveFailure(string section)
+    {
+        const string key = "TORRENTARR_SETTINGS_COMPLETED_DOWNLOAD_FOLDER";
+        var previous = Environment.GetEnvironmentVariable(key);
+        var root = Path.Combine(Path.GetTempPath(), "mapped").Replace('\\', '/');
+        try
+        {
+            Environment.SetEnvironmentVariable(key, root + "-outside");
+            var config = Load($"""
+                [Settings]
+                [{section}]
+                Host = "localhost"
+                DownloadPath = "/remote/working"
+                [{section}.Migration]
+                Notices = ["{StorageConfigMigration.EnvironmentDownloadPathNotice}"]
+                [[{section}.Maintenance.PathMappings]]
+                ClientPath = "/remote"
+                LocalPath = '{root}'
+                """);
+            config.GetAllTorrentClients().Values.Single().Migration.EnvironmentDownloadPathFailed.Should().BeTrue();
+            var loader = new ConfigurationLoader(_file);
+            loader.SaveConfig(config);
+            File.ReadAllText(_file).Should().NotContain("EnvironmentDownloadPathFailed");
+
+            Environment.SetEnvironmentVariable(key, root + "/corrected");
+            var client = loader.Load().GetAllTorrentClients().Values.Single();
+            client.DownloadPath.Should().Be("/remote/corrected");
+            client.Migration.EnvironmentDownloadPathFailed.Should().BeFalse();
+            client.Migration.Notices.Should().Contain(StorageConfigMigration.EnvironmentDownloadPathNotice);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(key, previous);
+        }
     }
 
     [Theory]

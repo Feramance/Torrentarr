@@ -279,7 +279,7 @@ public class ArrThumbnailServiceTests : IDisposable
     [Theory]
     [InlineData(false, "ArrOpen")]
     [InlineData(true, "ArrOpenSkipTls")]
-    public async Task ThumbnailUsesInstanceTlsClient_AndCachedReadsDoNotConfirmRecovery(bool skip, string expected)
+    public async Task MissingThumbnailReturnsNoImage_AndSuccessfulFetchUsesInstanceTlsClient(bool skip, string expected)
     {
         var id = skip ? 8501 : 8502;
         ClearThumbnailCache("radarr", "radarr", id);
@@ -289,18 +289,13 @@ public class ArrThumbnailServiceTests : IDisposable
         var failed = true;
         var factory = new StubHttpClientFactory(_ => failed ? new HttpResponseMessage(HttpStatusCode.NotFound)
             : new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(FakeJpegBytes()) });
-        var issues = new Moq.Mock<Torrentarr.Core.Services.IOperationalIssueReporter>();
-        issues.Setup(r => r.ReportAsync(Moq.It.IsAny<Torrentarr.Core.Services.OperationalIssueReport>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-        issues.Setup(r => r.ResolveAsync(Moq.It.IsAny<Torrentarr.Core.Services.OperationalIssueReport>(), Moq.It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-        var service = new ArrThumbnailService(db, config, factory, issues.Object);
+        var service = new ArrThumbnailService(db, config, factory);
         (await service.GetThumbnailAsync("radarr", "radarr", id)).Should().BeNull();
-        issues.Verify(r => r.ReportAsync(Moq.It.Is<Torrentarr.Core.Services.OperationalIssueReport>(i => i.Code == "thumbnail.fetch" && i.Impact.Contains("HTTP 404")), Moq.It.IsAny<CancellationToken>()), Moq.Times.Once());
         failed = false;
         (await service.GetThumbnailAsync("radarr", "radarr", id)).Should().NotBeNull();
         var remoteCalls = factory.Names.Count;
         (await service.GetThumbnailAsync("radarr", "radarr", id)).Should().NotBeNull();
         factory.Names.Should().HaveCount(remoteCalls).And.OnlyContain(n => n == expected);
-        issues.Verify(r => r.ResolveAsync(Moq.It.IsAny<Torrentarr.Core.Services.OperationalIssueReport>(), Moq.It.IsAny<CancellationToken>()), Moq.Times.Once());
     }
 
     private static string Sha256Hex(string input)

@@ -80,18 +80,35 @@ public sealed class SafeDeletionService : ISafeDeletionService
 
         var inventory = validatedInventory ?? await _inventory.BuildAsync(ct: ct);
         if (!inventory.IsComplete)
-            return new(false, true, 0, $"Content deletion blocked because inventory is incomplete: {string.Join("; ", inventory.Warnings)}");
+        {
+            var mappings = inventory.Diagnostics.Where(d => d.Code is "missing-mapping" or "unmatched-prefix" or "invalid-mapping" or "inaccessible-local-root")
+                .Select(d => $"Client '{d.ClientInstanceId}', client path '{d.Examples.FirstOrDefault()?.ClientPath ?? "unavailable"}': configure this client's Maintenance.PathMappings (ClientPath -> LocalPath) and ensure the local root is mounted and accessible inside Torrentarr. Identical client/local paths also require an explicit mapping.");
+            return new(false, true, 0, DiagnosticText.Safe($"Recycling blocked because global file ownership inventory is incomplete: {string.Join("; ", inventory.Warnings)} {string.Join(" ", mappings)}"));
+        }
         var item = inventory.Torrents.FirstOrDefault(t =>
             t.Torrent.ClientInstanceId.Equals(clientInstanceId, StringComparison.OrdinalIgnoreCase)
             && t.Torrent.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
         if (item == null) return new(false, true, 0, "Torrent no longer exists.");
 
-        var localFiles = item.Files.Select(f => f.LocalPath).Where(p => p != null).Cast<string>().ToList();
-        if (localFiles.Count == 0 || item.Files.Any(f => f.LocalPath == null))
-            return new(false, true, 0, "No validated local file paths are available.");
-        foreach (var source in CollapseRoots(localFiles))
+        if (!item.CanRecycleFiles)
+            return new(false, true, 0, "No complete set of validated local file paths is available.");
+        var localFiles = new List<string>();
+        var skippedFiles = new List<TorrentFileInventoryItem>();
+        try
         {
-            var validation = ValidateSource(source, cfg);
+            foreach (var file in item.Files)
+            {
+                var source = GetRecycleSource(file, cfg);
+                if (source == null) skippedFiles.Add(file);
+                else localFiles.Add(source);
+            }
+        }
+        catch (IOException ex) { return new(false, true, 0, ex.Message); }
+        if (localFiles.Count == 0)
+            return new(false, true, 0, "No validated local files are available to move.");
+        foreach (var source in localFiles)
+        {
+            var validation = ValidateFileSource(source, cfg);
             if (validation != null) return new(false, true, 0, validation);
         }
 
@@ -139,9 +156,10 @@ public sealed class SafeDeletionService : ISafeDeletionService
                 expected.State = current.State;
             }
             await RequireProtectionAsync(clientInstanceId, hash, ct, expected, stateBeforeOwnedPause, intent);
-            foreach (var source in CollapseRoots(localFiles))
+            var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+            foreach (var source in localFiles.Distinct(comparer))
             {
-                var validation = ValidateSource(source, cfg);
+                var validation = ValidateFileSource(source, cfg);
                 if (validation != null) throw new IOException(validation);
                 var destination = BuildRecycleDestination(source, clientInstanceId, item.Torrent.Category, cfg);
                 entries.Add(Ledger.Prepare(clientInstanceId, source, destination, hash));
@@ -156,14 +174,14 @@ public sealed class SafeDeletionService : ISafeDeletionService
             }
             ct.ThrowIfCancellationRequested();
             await RequireProtectionAsync(clientInstanceId, hash, ct, expected, stateBeforeOwnedPause, intent);
+            if (skippedFiles.Any(file => GetRecycleSource(file, cfg) != null))
+                throw new IOException("A previously missing file appeared during recycling. Refresh inventory before retrying.");
             removalAttempted = true;
             if (!await client.DeleteTorrentsAsync([hash], false, ct))
             {
                 removalRejected = true;
                 throw new IOException("Torrent client rejected removal.");
             }
-            foreach (var entry in entries) Ledger.Write(entry with { State = "committed", RecycledAt = DateTimeOffset.UtcNow });
-            return new(true, false, moved);
         }
         catch (Exception ex)
         {
@@ -184,7 +202,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
             }
             var restored = errors.Count == 0;
             foreach (var entry in entries)
-                Ledger.Write(entry with { State = restored && (!removalAttempted || removalRejected) ? "restored" : "needs-recovery" });
+                TryWriteRecycleState(entry with { State = restored && (!removalAttempted || removalRejected) ? "restored" : "needs-recovery" });
             if (pausedForRecycle && restored && (!removalAttempted || removalRejected))
             {
                 try
@@ -197,6 +215,39 @@ public sealed class SafeDeletionService : ISafeDeletionService
             var uncertain = removalAttempted && !removalRejected ? " Remote removal outcome is uncertain." : "";
             return new(false, restored, restored ? 0 : moved,
                 $"Recycle failed: {ex.Message}.{uncertain}" + (errors.Count == 0 ? " Moved content restored." : " " + string.Join("; ", errors)));
+        }
+
+        foreach (var entry in entries)
+            TryWriteRecycleState(entry with { State = "committed", RecycledAt = DateTimeOffset.UtcNow });
+        return new(true, false, moved);
+    }
+
+    private string? GetRecycleSource(TorrentFileInventoryItem file, TorrentClientInstanceConfig cfg)
+    {
+        var source = file.LocalPath ?? throw new IOException("No validated local path is available for a torrent file.");
+        if (!file.ExpectedMissing) return source;
+
+        var mapping = _paths.Resolve(file.ClientPath, cfg.Maintenance.PathMappings);
+        if (mapping.LocalRoot is not { } root)
+            throw new IOException("An expected torrent path no longer has a usable mapping.");
+        var issue = _paths.ValidateLocalPath(source, root, requireFile: true);
+        if (issue == "missing-file" && !Directory.Exists(source) && cfg.Type.Equals("qbittorrent", StringComparison.OrdinalIgnoreCase))
+        {
+            source += ".!qB";
+            issue = _paths.ValidateLocalPath(source, root, requireFile: true);
+        }
+        if (issue == "missing-file" && !Directory.Exists(source)) return null;
+        if (issue != null) throw new IOException($"An expected torrent path is no longer safe: {source}");
+        return source;
+    }
+
+    private void TryWriteRecycleState(RecycleEntry entry)
+    {
+        try { Ledger.Write(entry); }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Could not record recycle state {State} for {Client}/{Hash}: {Source} -> {Destination}",
+                entry.State, entry.ClientInstanceId, entry.TorrentHash, entry.Source, entry.Destination);
         }
     }
 
@@ -259,19 +310,20 @@ public sealed class SafeDeletionService : ISafeDeletionService
         }
         var cfg = _config.GetTorrentClient(instanceId);
         if (cfg == null) return Denied("Client is unconfigured.");
-        var validation = ValidateSource(path, cfg);
+        var validation = ValidateFileSource(path, cfg);
         if (validation != null) return Denied(validation);
         var inventory = await _inventory.BuildAsync(ct: ct);
         if (!inventory.IsComplete || !inventory.LocalPathReferences.TryGetValue(Path.GetFullPath(path), out var owners)
             || !owners.Any(o => o.Torrent.ClientInstanceId.Equals(instanceId, StringComparison.OrdinalIgnoreCase)
                 && o.Torrent.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase))) return Denied("Complete file ownership could not be established.");
-        foreach (var owner in owners)
-        {
-            var decision = await ProtectionDecisionAsync(owner.Torrent.ClientInstanceId, owner.Torrent.Hash, ct, owner.Torrent,
-                intent: TorrentRemovalIntent.RejectedByAllowlist, ownedFileCleanup: true);
-            if (!decision.Allowed) return Denied(decision.Reason);
-        }
-        validation = ValidateSource(path, cfg);
+        if (owners.Any(o => !o.Torrent.ClientInstanceId.Equals(instanceId, StringComparison.OrdinalIgnoreCase)
+            || !o.Torrent.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase)))
+            return Denied("Another torrent owns this file.");
+        var owner = owners[0];
+        var decision = await ProtectionDecisionAsync(owner.Torrent.ClientInstanceId, owner.Torrent.Hash, ct, owner.Torrent,
+            intent: TorrentRemovalIntent.RejectedByAllowlist, ownedFileCleanup: true);
+        if (!decision.Allowed) return Denied(decision.Reason);
+        validation = ValidateFileSource(path, cfg);
         if (validation != null) return Denied(validation);
         ct.ThrowIfCancellationRequested();
         File.Delete(path);
@@ -288,6 +340,8 @@ public sealed class SafeDeletionService : ISafeDeletionService
             if (root != null && paths.IsSafeDescendant(path, root)) return true;
             if (storage.RecycleBin.ResumeDataPath.Length > 0 && paths.IsSafeDescendant(path, storage.RecycleBin.ResumeDataPath)) return true;
         }
+        if (Path.GetFullPath(path).Equals(Path.GetFullPath(ConfigurationLoader.GetDefaultConfigPath()),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)) return true;
         var data = ConfigurationLoader.GetDataDirectoryPath();
         if (paths.IsSafeDescendant(path, Path.Combine(data, "logs"))) return true;
         return new[] { "torrentarr.db", "torrentarr.db-wal", "torrentarr.db-shm", "maintenance-history.jsonl", "active-config.json", ".torrentarr-host.lock" }
@@ -342,7 +396,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
     {
         var cfg = _config.GetTorrentClient(clientInstanceId);
         if (cfg == null) return new(false, true, 0, "Torrent client is unconfigured.");
-        var validation = ValidateSource(localPath, cfg);
+        var validation = ValidateFileSource(localPath, cfg);
         if (validation != null) return new(false, true, 0, validation);
         var destination = BuildRecycleDestination(localPath, clientInstanceId, "orphans", cfg);
         var entry = Ledger.Prepare(clientInstanceId, localPath, destination);
@@ -462,23 +516,8 @@ public sealed class SafeDeletionService : ISafeDeletionService
         return Task.FromResult(bytes);
     }
 
-    public async Task<int> CleanupExpiredAsync(string clientInstanceId, CancellationToken ct = default)
-    {
-        var cfg = _config.GetTorrentClient(clientInstanceId);
-        if (cfg == null || !cfg.Maintenance.RecycleBin.Enabled || !cfg.Maintenance.RecycleBin.RetentionEnabled) return 0;
-        var remaining = cfg.Maintenance.RecycleBin.MaxFilesDeletedPerRun;
-        var deleted = 0;
-        foreach (var entry in InspectRecycleEntries(clientInstanceId))
-        {
-            if (entry.State == "legacy") { RegisterLegacyRecycleEntry(clientInstanceId, entry.Destination); continue; }
-            if (entry.State != "committed" || (DateTimeOffset.UtcNow - entry.RecycledAt).TotalDays < cfg.Maintenance.RecycleBin.RetentionDays) continue;
-            var files = InspectRecycleFiles(entry).Take(remaining).ToList();
-            await PurgeRecycleEntryAsync(clientInstanceId, entry.Key, files, ct);
-            remaining -= files.Count; deleted += files.Count;
-            if (remaining == 0) break;
-        }
-        return deleted;
-    }
+    private string? ValidateFileSource(string source, TorrentClientInstanceConfig cfg)
+        => ValidateSource(source, cfg) ?? (File.Exists(source) ? null : $"Expected a file at {source}.");
 
     private string? ValidateSource(string source, TorrentClientInstanceConfig cfg)
     {
@@ -533,93 +572,44 @@ public sealed class SafeDeletionService : ISafeDeletionService
     private async Task<long> MoveToRecycleAsync(string source, string destination, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        try
+        var bytes = new FileInfo(source).Length;
+        // File.Move can copy across filesystems before failing to unlink the source.
+        var sourceMount = FreeSpaceService.StorageIdentity(Path.GetDirectoryName(source)!, distinguishMounts: true);
+        var destinationMount = FreeSpaceService.StorageIdentity(Path.GetDirectoryName(destination)!, distinguishMounts: true);
+        var renamed = false;
+        if (sourceMount == destinationMount)
         {
-            if (Directory.Exists(source)) Directory.Move(source, destination); else File.Move(source, destination);
+            try { File.Move(source, destination); renamed = true; }
+            catch (IOException) { }
         }
-        catch (IOException)
+        if (!renamed)
         {
-            // Publish a private copy with a non-overwriting move; collisions never own the destination.
+            // Publish a private copy with a non-overwriting move.
             var temporary = destination + "." + Guid.NewGuid().ToString("N") + ".partial";
-            var copied = false;
             try
             {
-                if (Directory.Exists(source))
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                await using (var input = File.OpenRead(source))
+                await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                 {
-                    await CopyDirectoryAsync(source, temporary, ct);
-                    foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-                        if (new FileInfo(file).Length != new FileInfo(Path.Combine(temporary, Path.GetRelativePath(source, file))).Length)
-                            throw new IOException("Recycle directory copy verification failed.");
-                    ct.ThrowIfCancellationRequested();
-                    Directory.Move(temporary, destination);
-                    copied = true;
-                    Directory.Delete(source, true);
+                    await input.CopyToAsync(output, ct);
+                    await output.FlushAsync(ct);
                 }
-                else
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                    await using (var input = File.OpenRead(source))
-                    await using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                    {
-                        await input.CopyToAsync(output, ct);
-                        await output.FlushAsync(ct);
-                    }
-                    if (new FileInfo(source).Length != new FileInfo(temporary).Length)
-                        throw new IOException("Recycle copy verification failed.");
-                    ct.ThrowIfCancellationRequested();
-                    File.Move(temporary, destination);
-                    copied = true;
-                    File.Delete(source);
-                }
-            }
-            catch
-            {
-                if (copied) throw new RecyclePublishedException(destination);
-                throw;
+                if (new FileInfo(source).Length != new FileInfo(temporary).Length)
+                    throw new IOException("Recycle copy verification failed.");
+                ct.ThrowIfCancellationRequested();
+                File.Move(temporary, destination);
+                try { File.Delete(source); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                { throw new RecyclePublishedException(destination); }
             }
             finally
             {
                 if (File.Exists(temporary)) File.Delete(temporary);
-                else if (Directory.Exists(temporary)) Directory.Delete(temporary, true);
             }
         }
-        var bytes = Directory.Exists(destination)
-            ? Directory.EnumerateFiles(destination, "*", SearchOption.AllDirectories).Sum(f => new FileInfo(f).Length)
-            : new FileInfo(destination).Length;
         _logger.LogInformation("Moved {Source} to recycle bin {Destination}", source, destination);
         return bytes;
-    }
-
-    private static async Task CopyDirectoryAsync(string source, string destination, CancellationToken ct)
-    {
-        Directory.CreateDirectory(destination);
-        foreach (var directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
-        {
-            ct.ThrowIfCancellationRequested();
-            var relative = Path.GetRelativePath(source, directory);
-            Directory.CreateDirectory(Path.Combine(destination, relative));
-        }
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-        {
-            ct.ThrowIfCancellationRequested();
-            if ((File.GetAttributes(file) & FileAttributes.ReparsePoint) != 0)
-                throw new IOException($"Refusing to copy reparse point: {file}");
-            var target = Path.Combine(destination, Path.GetRelativePath(source, file));
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            await using var input = File.OpenRead(file);
-            await using var output = File.Create(target);
-            await input.CopyToAsync(output, ct);
-        }
-    }
-
-    private static IEnumerable<string> CollapseRoots(IEnumerable<string> paths)
-    {
-        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-        return paths.Select(Path.GetFullPath).Distinct(comparer)
-            .Where(candidate => !paths.Any(other =>
-                !candidate.Equals(Path.GetFullPath(other), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
-                && candidate.StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(other)) + Path.DirectorySeparatorChar,
-                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)));
     }
 
     private static string Sanitize(string value)

@@ -20,6 +20,7 @@ vi.mock("../../api/client", () => ({
   updateConfig: vi.fn(),
   getStatus: vi.fn(),
   getQbitOverview: vi.fn(),
+  getTransferHistory: vi.fn(async () => ({ series: [] })),
 }));
 const torrent = (
   name = "Example",
@@ -86,6 +87,7 @@ function view(active = true) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  sessionStorage.clear();
   vi.mocked(api.getConfig).mockResolvedValue({ WebUI: { LiveArr: false } });
   vi.mocked(api.getStatus).mockResolvedValue({
     qbitInstances: {
@@ -100,6 +102,25 @@ beforeEach(() => {
   });
 });
 describe("torrent overview parity", () => {
+  it("refreshes transfer history when live updates are disabled", async () => {
+    view();
+    await waitFor(() => expect(api.getTransferHistory).toHaveBeenCalled());
+    const refresh = await screen.findByRole("button", { name: "Refresh" });
+    await waitFor(() => expect(refresh).toBeEnabled());
+    vi.mocked(api.getTransferHistory).mockClear();
+    fireEvent.click(refresh);
+    await waitFor(() =>
+      expect(api.getTransferHistory).toHaveBeenCalledTimes(1),
+    );
+  });
+
+  it("loads the only configured instance instead of the aggregate view", async () => {
+    view();
+    await waitFor(() =>
+      expect(api.getQbitOverview).toHaveBeenCalledWith("qBit-home"),
+    );
+    expect(screen.queryByText(/All qBittorrent/)).not.toBeInTheDocument();
+  });
   it("expands a category into torrent metrics and retains aggregate statistics", async () => {
     view();
     fireEvent.click(await screen.findByRole("button", { name: /movies.*Arr/ }));
@@ -192,11 +213,15 @@ it("fetches the newly selected instance while an old overview is pending", async
           old = resolve;
         }),
   );
-  view();
+  const { rerender } = view();
   await waitFor(() => expect(api.getQbitOverview).toHaveBeenCalled());
-  fireEvent.change(screen.getByLabelText("Instance"), {
-    target: { value: "qBit-remote" },
-  });
+  rerender(
+    <ToastProvider>
+      <WebUIProvider>
+        <QbitCategoriesView active selectedInstance="qBit-remote" />
+      </WebUIProvider>
+    </ToastProvider>,
+  );
   await screen.findByRole("button", { name: /remote-only/ });
   await act(async () =>
     old({ ready: true, instances: [], categories: [category()] }),
@@ -204,4 +229,50 @@ it("fetches the newly selected instance while an old overview is pending", async
   expect(
     screen.queryByRole("button", { name: /movies.*Arr/ }),
   ).not.toBeInTheDocument();
+});
+
+it("clears an old search and opens shared categories across all clients", async () => {
+  vi.mocked(api.getStatus).mockResolvedValue({
+    ready: true,
+    arrs: [],
+    qbitInstances: {
+      "qBit-home": { alive: true, host: "fixture", port: 1, version: null },
+      "qBit-remote": { alive: false, host: "fixture", port: 2, version: null },
+    },
+  });
+  vi.mocked(api.getQbitOverview).mockImplementation(async (instance) => ({
+    ready: true,
+    instances: ["qBit-home", "qBit-remote"],
+    categories: [
+      { ...category(), qbitInstance: "qBit-home" },
+      { ...category(), qbitInstance: "qBit-remote" },
+    ].filter((cat) => !instance || cat.qbitInstance === instance),
+  }));
+  const node = (active: boolean, selectedInstance = "qBit-home") => (
+    <ToastProvider>
+      <WebUIProvider>
+        <QbitCategoriesView
+          active={active}
+          selectedInstance={selectedInstance}
+        />
+      </WebUIProvider>
+    </ToastProvider>
+  );
+  const result = render(node(true));
+  await screen.findAllByRole("button", { name: /movies.*Arr/ });
+  fireEvent.change(screen.getByLabelText("Search"), {
+    target: { value: "not-a-match" },
+  });
+  result.rerender(node(false));
+  sessionStorage.setItem("qbitrr:focusQbitCategory", "movies");
+  sessionStorage.removeItem("torrentarr:focusQbitInstance");
+  result.rerender(node(true, "aggregate"));
+  await waitFor(() => expect(screen.getByLabelText("Search")).toHaveValue(""));
+  expect(screen.queryByLabelText("Instance")).not.toBeInTheDocument();
+  await waitFor(() => {
+    const buttons = screen.getAllByRole("button", { name: /movies.*Arr/ });
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons)
+      expect(button).toHaveAttribute("aria-expanded", "true");
+  });
 });

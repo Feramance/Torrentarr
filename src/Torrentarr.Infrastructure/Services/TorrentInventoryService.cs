@@ -12,11 +12,6 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
     public Task<TorrentInventory> BuildAsync(IEnumerable<string>? instanceIds = null, CancellationToken ct = default)
         => CollectAsync((instanceIds ?? config.GetAllTorrentClients().Keys).Distinct(StringComparer.OrdinalIgnoreCase)
             .ToDictionary(id => id, _ => InventoryRequirements.All, StringComparer.OrdinalIgnoreCase), ct);
-    public Task<TorrentInventory> RefreshAsync(TorrentInventory previous, string? candidateInstance = null, string? candidateHash = null, CancellationToken ct = default)
-        => BuildAsync(ct: ct);
-    public Task<TorrentInventory> RefreshCandidateAsync(string instanceId, string hash, CancellationToken ct = default)
-        => CollectAsync(new Dictionary<string, InventoryRequirements> { [instanceId] = InventoryRequirements.All & ~InventoryRequirements.GlobalOwnership }, ct, hash);
-
     public async Task<TorrentInventory> CollectAsync(IReadOnlyDictionary<string, InventoryRequirements> requirements, CancellationToken ct = default, string? candidateHash = null)
     {
         var ownership = requirements.Values.Any(r => r.HasFlag(InventoryRequirements.GlobalOwnership));
@@ -55,10 +50,29 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
                 Issue("torrent-list-failed", "Torrent listing failed; ownership is unknown."); continue;
             }
             result.InspectedClients.Add(id);
-            foreach (var torrent in torrents)
+            var candidates = torrents.Where(t => candidateHash == null || t.Hash.Equals(candidateHash, StringComparison.OrdinalIgnoreCase));
+            var prefetchFiles = result.OwnershipRequested && required.HasFlag(InventoryRequirements.Files)
+                && client.Capabilities.FileEnumeration;
+            if (prefetchFiles)
+            {
+                foreach (var batch in candidates.Chunk(4))
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var requests = batch.Select(FetchFilesAsync).ToArray();
+                    await Task.WhenAll(requests);
+                    for (var index = 0; index < batch.Length; index++)
+                        await InspectTorrentAsync(batch[index], requests[index]);
+                }
+            }
+            else
+            {
+                foreach (var torrent in candidates)
+                    await InspectTorrentAsync(torrent);
+            }
+
+            async Task InspectTorrentAsync(TorrentInfo torrent, Task<List<TorrentFileRecord>?>? fileList = null)
             {
                 ct.ThrowIfCancellationRequested();
-                if (candidateHash != null && !torrent.Hash.Equals(candidateHash, StringComparison.OrdinalIgnoreCase)) continue;
                 torrent.ClientInstanceId = id;
                 var item = new TorrentInventoryItem { Torrent = torrent, Client = new(client.Identity, client.Capabilities) };
                 result.Torrents.Add(item);
@@ -75,9 +89,12 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
                     {
                         try
                         {
-                            var files = await client.GetTorrentFilesAsync(torrent.Hash, ct);
+                            var files = fileList == null
+                                ? await client.GetTorrentFilesAsync(torrent.Hash, ct)
+                                : await fileList;
+                            if (files == null) throw new IOException("Torrent file enumeration failed.");
                             item.FilesComplete = files.Count > 0 || torrent.Size == 0;
-                            item.LocalFilesComplete = local && item.FilesComplete;
+                            item.RecycleFilesComplete = item.LocalFilesComplete = local && item.FilesComplete;
                             if (!item.FilesComplete) Issue("empty-file-list", "File ownership is unavailable for a nonempty torrent.", torrent);
                             foreach (var file in files)
                             {
@@ -88,6 +105,7 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
                                 var mapping = local && !invalidName ? paths.Resolve(clientPath, cfg.Maintenance.PathMappings) : null;
                                 var localPath = mapping?.LocalPath;
                                 var expectedLocalPath = localPath;
+                                var expectedMissing = false;
                                 if (local)
                                 {
                                     var code = invalidName ? "unsafe-path" : mapping?.Code;
@@ -101,18 +119,21 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
                                     if (code != null)
                                     {
                                         item.LocalFilesComplete = false;
-                                        var expectedMissing = code == "missing-file" && (file.Priority == 0 || file.Progress < 1 && !file.IsSeed);
+                                        expectedMissing = code == "missing-file" && (file.Priority == 0 || file.Progress < 1 && !file.IsSeed);
                                         if (!expectedMissing)
+                                        {
+                                            item.RecycleFilesComplete = false;
                                             Issue(code, mapping?.Error ?? LocalError(code), torrent, clientPath, localPath ?? mapping?.LocalRoot, true, code != "missing-file");
+                                        }
                                         if (code != "missing-file") localPath = null;
                                     }
                                 }
-                                item.Files.Add(new() { File = file, ClientPath = clientPath, LocalPath = localPath, ExpectedLocalPath = localPath != null ? expectedLocalPath : null });
+                                item.Files.Add(new() { File = file, ClientPath = clientPath, LocalPath = localPath, ExpectedLocalPath = localPath != null ? expectedLocalPath : null, ExpectedMissing = expectedMissing });
                             }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
                         {
-                            item.FilesComplete = false; item.LocalFilesComplete = false;
+                            item.FilesComplete = false; item.LocalFilesComplete = false; item.RecycleFilesComplete = false;
                             Issue("file-list-failed", "Torrent file enumeration failed.", torrent);
                         }
                     }
@@ -124,6 +145,13 @@ public sealed class TorrentInventoryService(ITorrentClientRegistry registry, Tor
                     { Issue("tracker-list-failed", "Tracker inspection failed.", torrent, blocksOwnership: false); }
                 }
             }
+
+            async Task<List<TorrentFileRecord>?> FetchFilesAsync(TorrentInfo torrent)
+            {
+                try { return await client.GetTorrentFilesAsync(torrent.Hash, ct); }
+                catch (Exception ex) when (ex is not OperationCanceledException) { return null; }
+            }
+
             void Issue(string code, string message, TorrentInfo? torrent = null, string? clientPath = null,
                 string? localPath = null, bool file = false, bool blocksOwnership = true)
             {
