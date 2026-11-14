@@ -2612,11 +2612,6 @@ details > summary:focus-visible {
   gap: 8px;
 }
 
-.tracker-grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
-}
 .tracker-card.card {
   background: rgba(255, 255, 255, 0.03);
   border-color: rgba(255, 255, 255, 0.08);
@@ -3048,11 +3043,6 @@ details > summary:focus-visible {
 }
 
 /* Tracker & Modal Additional Compact Styles */
-[data-density="compact"] .tracker-grid {
-  gap: 10px;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-}
-
 [data-density="compact"] .tracker-card .card-header {
   gap: 8px;
   font-size: 13px;
@@ -7141,6 +7131,14 @@ select,
   .config-instance-layout:has(> .config-workspace__editor) .config-arr-name {
     grid-column: 1 / -1;
   }
+}
+
+.config-instance-layout .config-arr-row.config-tracker-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.config-instance-layout .config-tracker-row .config-arr-name {
+  grid-column: auto;
 }
 
 .tracker-scope-options {

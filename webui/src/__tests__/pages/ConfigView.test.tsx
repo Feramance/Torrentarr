@@ -1937,3 +1937,63 @@ it("edits tracker scopes with the keyboard and saves only the chosen scope", asy
   ]);
   expect(tracker.getByText(/Legacy Hit & Run is off/)).toBeInTheDocument();
 });
+
+it("opens one tracker at a time and returns to an invalid draft on save", async () => {
+  const user = userEvent.setup();
+  server.use(
+    http.get("/web/config", () =>
+      HttpResponse.json({
+        ...configWithInstances,
+        Trackers: [
+          { Name: "First", URI: "https://first.example", ClientIds: ["qBit"] },
+          {
+            Name: "Second",
+            URI: "https://second.example",
+            ClientIds: ["qBit"],
+          },
+        ],
+      }),
+    ),
+  );
+
+  renderConfig();
+  await user.click(screen.getByRole("button", { name: "Trackers" }));
+  const trackers = within(
+    await screen.findByRole("region", { name: "Tracker rules" }),
+  );
+  const first = trackers.getByRole("button", { name: /^First/ });
+  const second = trackers.getByRole("button", { name: /^Second/ });
+  const uri = () => trackers.getByRole("textbox", { name: "URI" });
+
+  expect(trackers.queryByRole("textbox", { name: "URI" })).toBeNull();
+  await user.click(first);
+  await user.clear(uri());
+  await user.type(uri(), "https://draft.example");
+  await user.click(second);
+  expect(uri()).toHaveValue("https://second.example");
+  await user.click(first);
+  expect(uri()).toHaveValue("https://draft.example");
+
+  await user.clear(uri());
+  await user.click(trackers.getByRole("button", { name: "Close" }));
+  expect(first).toHaveFocus();
+  expect(trackers.queryByRole("textbox", { name: "URI" })).toBeNull();
+  await user.click(second);
+  await user.click(trackers.getByRole("button", { name: "Save Trackers" }));
+  expect(first).toHaveAttribute("aria-pressed", "true");
+  expect(uri()).toHaveFocus();
+
+  await user.click(trackers.getByRole("button", { name: "Remove First" }));
+  expect(
+    trackers.getByRole("group", { name: "Configured trackers" }),
+  ).toHaveFocus();
+  await user.click(trackers.getByRole("button", { name: /^Second/ }));
+  expect(uri()).toHaveValue("https://second.example");
+
+  await user.click(trackers.getByRole("button", { name: "Add Tracker" }));
+  expect(trackers.getByRole("button", { name: /^Tracker 2/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(uri()).toHaveValue("");
+});

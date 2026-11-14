@@ -888,6 +888,8 @@ export function FieldGroup({
 }
 
 export function TrackerCard({
+  title,
+  onClose,
   children,
   fields,
   state,
@@ -895,6 +897,8 @@ export function TrackerCard({
   onChange,
   onDelete,
 }: {
+  title: string;
+  onClose: () => void;
   children?: React.ReactNode;
   fields: FieldDefinition[];
   state: ConfigDocument | null;
@@ -902,7 +906,6 @@ export function TrackerCard({
   onChange: (path: string[], def: FieldDefinition, value: unknown) => void;
   onDelete: () => void;
 }): JSX.Element {
-  const trackerName = (getValue(state, ["Name"]) as string) || "New Tracker";
   // state is the individual tracker object, so read with basePath=[]
   // but onChange needs the full basePath to update the correct location in formState
   const wrappedOnChange = useCallback(
@@ -914,11 +917,14 @@ export function TrackerCard({
   return (
     <section className="card tracker-card">
       <header className="card-header">
-        <h4>{trackerName}</h4>
+        <h4>{title}</h4>
+        <button className="btn ghost" type="button" onClick={onClose}>
+          Close
+        </button>
         <button
           className="btn danger ghost"
           type="button"
-          aria-label={`Remove ${trackerName}`}
+          aria-label={`Remove ${title}`}
           onClick={onDelete}
         >
           <IconImage src={DeleteIcon} />

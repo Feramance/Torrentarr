@@ -971,7 +971,11 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
   ]);
 
   const saveSection = useCallback(
-    async (sectionKey: string, keepProtectionOff = false): Promise<boolean> => {
+    async (
+      sectionKey: string,
+      keepProtectionOff = false,
+      onValidationError?: (error: ValidationError) => void,
+    ): Promise<boolean> => {
       if (!formState) return false;
       setSavingSection(sectionKey);
       try {
@@ -1006,7 +1010,8 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
         }
         if (validationErrors.length) {
           push(formatValidationErrors(validationErrors), "error");
-          focusFirstValidationError(validationErrors);
+          if (onValidationError) onValidationError(validationErrors[0]);
+          else focusFirstValidationError(validationErrors);
           return false;
         }
 
@@ -1070,7 +1075,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           const apiErrors = validationErrorsFromApi(error.validationErrors);
           setServerValidationErrors(apiErrors);
           push(error.message, "error");
-          focusFirstValidationError(apiErrors);
+          if (onValidationError && apiErrors.length)
+            onValidationError(apiErrors[0]);
+          else focusFirstValidationError(apiErrors);
           return false;
         }
         push(
@@ -1380,7 +1387,9 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
               onReplace={(rules) =>
                 handleFieldChange(["Trackers"], {} as FieldDefinition, rules)
               }
-              onSave={() => void saveSection("Trackers")}
+              onSave={(onValidationError) =>
+                void saveSection("Trackers", false, onValidationError)
+              }
               dirty={!equal(formState.Trackers, originalConfig?.Trackers)}
               saving={savingSection === "Trackers"}
             />
