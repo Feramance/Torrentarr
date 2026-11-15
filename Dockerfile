@@ -57,7 +57,7 @@ RUN dotnet publish src/Torrentarr.Workers/Torrentarr.Workers.csproj \
     --no-restore
 
 # Stage 3: Runtime Image
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS runtime
 ARG VERSION="6.20.0-1"
 LABEL Name="Torrentarr"
 LABEL Maintainer="feramance"
