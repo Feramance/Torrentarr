@@ -2,6 +2,20 @@ import type { ConfigDocument } from "../../api/types";
 import type { FieldDefinition } from "./configTypes";
 import { ARR_TRACKER_FIELDS, getTrackerProtectionFields } from "./configFields";
 
+const removalModes = [
+  "Inherit",
+  "Never remove",
+  "Ratio",
+  "Time",
+  "Ratio or time",
+  "Ratio and time",
+];
+const removalValues = [null, -1, 1, 2, 3, 4];
+
+export function trackerRemovalLabel(value: unknown): string {
+  return removalModes[removalValues.indexOf(Number(value))] ?? "Inherit";
+}
+
 export function trackerRuleFields(rule: ConfigDocument): FieldDefinition[] {
   const legacy =
     !rule.Protection ||
@@ -16,23 +30,13 @@ export function trackerRuleFields(rule: ConfigDocument): FieldDefinition[] {
     "HitAndRunPartialSeedRatio",
     "TrackerUpdateBuffer",
   ];
-  const removalModes = [
-    "Inherit",
-    "Never remove",
-    "Ratio",
-    "Time",
-    "Ratio or time",
-    "Ratio and time",
-  ];
-  const removalValues = [null, -1, 1, 2, 3, 4];
   return [
     {
       label: "Remove Torrent",
       path: ["RemoveTorrent"],
       type: "select",
       options: removalModes,
-      format: (value) =>
-        removalModes[removalValues.indexOf(Number(value))] ?? "Inherit",
+      format: trackerRemovalLabel,
       parse: (value) =>
         removalValues[removalModes.indexOf(String(value))] ?? null,
     },

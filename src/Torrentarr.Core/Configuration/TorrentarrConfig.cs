@@ -231,6 +231,7 @@ public class UnregisteredMaintenanceConfig
     public int GraceMinutes { get; set; } = 10;
     public int MaxPerTrackerPerRun { get; set; } = 10;
     public bool CompletedOnly { get; set; }
+    public bool ParkIncomplete { get; set; }
     public List<string> Messages { get; set; } = new()
     {
         "unregistered torrent", "torrent not registered", "torrent not found", "torrent not authorized"

@@ -25,6 +25,8 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
     private readonly ConcurrentDictionary<string, (DateTimeOffset At, List<TorrentTracker> Trackers, bool? IsPrivate, long AddedOn)> _trackerInspections = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _nextFullInspection = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastInspection = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _lastInventory = new(StringComparer.OrdinalIgnoreCase);
+    internal DateTimeOffset LastInventoryStartedAt(string client) => _lastInventory.GetValueOrDefault(client);
     private long _inspectionRevision = -1;
     private long _appliedRevision;
 
@@ -86,7 +88,7 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
         using var configuration = _config.BeginOperation();
         using var processing = ConfigMutationGuard.EnterProcessing();
         if (_inspectionRevision != _config.Revision)
-        { _nextInspection.Clear(); _nextFullInspection.Clear(); _trackerInspections.Clear(); _inspectionRevision = _config.Revision; }
+        { _nextInspection.Clear(); _nextFullInspection.Clear(); _trackerInspections.Clear(); _lastInventory.Clear(); _inspectionRevision = _config.Revision; }
         await Task.WhenAll(_config.GetAllTorrentClients().Select(async configuredClient =>
         {
             var (id, cfg) = configuredClient;
@@ -112,6 +114,7 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 var full = _nextFullInspection.GetValueOrDefault(id) <= Clock.GetUtcNow();
                 var inspectionCt = inspection.Token;
                 var torrents = await client.GetTorrentsAsync(cancellationToken: inspectionCt);
+                _lastInventory[id] = inspectionStarted;
                 var allHashes = torrents.Select(t => t.Hash).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 List<ProtectionDecision> Previous(TorrentInfo torrent) =>
                     _protection.GetValueOrDefault(id + "|" + torrent.Hash) ?? [];
@@ -159,7 +162,7 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                         foreach (var operation in new[] { MaintenanceOperation.ErrorRecovery, MaintenanceOperation.UnregisteredCleanup, MaintenanceOperation.RepairPaused })
                         {
                             var failed = operation == MaintenanceOperation.ErrorRecovery ? MaintenanceRecovery.IsError(torrent, cfg.Maintenance)
-                                : operation == MaintenanceOperation.UnregisteredCleanup && trackers.Any(t => cfg.Maintenance.Unregistered.Messages.Any(m => t.Msg.Contains(m, StringComparison.OrdinalIgnoreCase)));
+                                : operation == MaintenanceOperation.UnregisteredCleanup && trackers.Any(t => MaintenanceRecovery.MatchesUnregistered(t, cfg.Maintenance.Unregistered));
                             if (failed || MaintenanceRecovery.Read(db, torrent, operation.ToString()).Stage != "new")
                                 MaintenanceRecovery.Observe(db, torrent, operation.ToString(), failed, cfg.Maintenance.ErrorRecovery, Clock.GetUtcNow());
                         }

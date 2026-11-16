@@ -65,7 +65,10 @@ public class TrackerProtectionTests
         TrackerProtectionEvaluator.Evaluate(Torrent(), policy, state, Now, true).State.Should().Be("protected");
         state.EligibleSince = Now.AddMinutes(-60);
         TrackerProtectionEvaluator.Evaluate(Torrent(), policy, state, Now, true).State.Should().Be("eligible");
-        TrackerProtectionEvaluator.Evaluate(Torrent(), policy, state, Now, false).State.Should().Be("unknown");
+        var unconfirmed = TrackerProtectionEvaluator.Evaluate(Torrent(), policy, state, Now, false);
+        unconfirmed.State.Should().Be("unknown");
+        unconfirmed.UnknownReason.Should().Be("tracker-accounting-unconfirmed");
+        unconfirmed.Reason.Should().Contain("Local requirements are met");
     }
 
     [Fact]

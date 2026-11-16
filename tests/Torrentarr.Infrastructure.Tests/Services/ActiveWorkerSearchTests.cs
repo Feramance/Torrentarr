@@ -151,8 +151,10 @@ public class ActiveWorkerSearchTests
         public override DateTimeOffset GetUtcNow() => Now;
     }
 
-    [Fact]
-    public async Task SharedDeadline_YieldPreservesMetricsAndSkipsAdditiveUpgrade()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DeferredSearch_PreservesMetricsAndSkipsAdditiveUpgrade(bool capacityUnavailable)
     {
         var config = new ArrInstanceConfig
         {
@@ -167,7 +169,13 @@ public class ActiveWorkerSearchTests
         using var harness = new Harness(config);
         var deadline = DateTimeOffset.UtcNow.AddMinutes(30);
         harness.Media.Setup(m => m.SearchMissingMediaAsync("movies", deadline, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new SearchResult { SearchesTriggered = 2, ItemsSearched = 2, BudgetExhausted = true });
+            .ReturnsAsync(new SearchResult
+            {
+                SearchesTriggered = 2,
+                ItemsSearched = 2,
+                BudgetExhausted = !capacityUnavailable,
+                CapacityUnavailable = capacityUnavailable
+            });
         await harness.Worker.ProcessSearchAsync(CancellationToken.None, deadline);
         harness.Metrics.SearchSummary.Should().Contain("2 searches triggered");
         harness.Media.Verify(m => m.SearchQualityUpgradesAsync(It.IsAny<string>(), It.IsAny<DateTimeOffset?>(), It.IsAny<CancellationToken>()), Times.Never);

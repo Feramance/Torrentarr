@@ -34,7 +34,7 @@ import AddIcon from "../../icons/plus.svg";
 import DeleteIcon from "../../icons/trash.svg";
 import RefreshIcon from "../../icons/refresh-arrow.svg";
 import VisibilityIcon from "../../icons/visibility.svg";
-import { extractTooltipSummary } from "./configFields";
+import { extractTooltipSummary, hitAndRunModeLabel } from "./configFields";
 import {
   fieldErrorDataPath,
   findFieldErrorMessage,
@@ -663,13 +663,7 @@ export function FieldGroup({
 
       const optionLabel = (value: string) =>
         field.path?.at(-1) === "HitAndRunMode"
-          ? {
-              and: "Ratio and seeding time",
-              or: "Ratio or seeding time",
-              ratio: "Ratio only",
-              time: "Seeding time only",
-              disabled: "Disabled",
-            }[value] ?? value
+          ? hitAndRunModeLabel(value) ?? value
           : field.path?.at(-1) === "SearchBySeries"
             ? {
                 smart: "Smart",

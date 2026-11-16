@@ -4,12 +4,18 @@ import type { ConfigDocument } from "../../api/types";
 import { getTrackerSummary } from "../../config/torrentHandlingSummary";
 import { ShellDialog } from "../../components/ShellDialog";
 import { TrackerCard } from "./configFieldComponents";
-import { getSchemaDefaults } from "./configFields";
+import { getSchemaDefaults, hitAndRunModeLabel } from "./configFields";
 import {
   createDefaultTrackerEntry,
   focusFirstValidationError,
 } from "./configDocumentUtils";
-import { trackerRuleFields, trackerScope } from "./trackerRuleFields";
+import {
+  trackerRemovalLabel,
+  trackerRuleFields,
+  trackerScope,
+} from "./trackerRuleFields";
+import { ConfigOverviewCard } from "./ConfigOverviewCard";
+import { configOverviewUrl } from "./configOverviewAddress";
 import type { FieldDefinition, ValidationError } from "./configTypes";
 
 export function TrackerSettings({
@@ -88,48 +94,68 @@ export function TrackerSettings({
   };
 
   return (
-    <section
-      className="config-workspace__layout config-instance-layout"
-      aria-label="Tracker rules"
-    >
-      <section className="config-arr-group">
-        <header className="config-instance-header">
-          <h3>
-            Tracker rules <span>{rules.length}</span>
-          </h3>
-        </header>
-        {rules.length === 0 && (
-          <p className="hint">No tracker rules configured.</p>
-        )}
+    <section className="config-workspace__layout" aria-label="Tracker rules">
+      <div>
         <div
-          className="config-arr-list"
+          className="config-overview-grid"
           ref={list}
           tabIndex={-1}
           aria-label="Configured trackers"
           role="group"
         >
+          {rules.length === 0 && (
+            <p className="config-overview-empty hint">
+              No tracker rules configured.
+            </p>
+          )}
           {rules.map((item, position) => {
             const name = String(item.Name || `Tracker ${position + 1}`);
             const scope = trackerScope(item);
-            const active = index === position;
+            const protection = item.Protection as ConfigDocument | undefined;
+            const policy = protection?.Policy ?? "custom";
+            const policyLabel =
+              policy === "onlyencodes"
+                ? "OnlyEncodes"
+                : policy === "torrentleech-power"
+                  ? "TorrentLeech Power"
+                  : "Custom";
+            const mode =
+              item.HitAndRunMode === true
+                ? "and"
+                : item.HitAndRunMode === false
+                  ? "disabled"
+                  : String(item.HitAndRunMode ?? "");
+            const facts: [string, string][] = [
+              [
+                scope.key === "ClientIds"
+                  ? "Torrent clients"
+                  : "Arr integrations",
+                scope.ids.join(", ") || "None selected",
+              ],
+            ];
+            if (protection) facts.push(["Protection policy", policyLabel]);
+            if (!protection || protection.RequireLegacyClearance) {
+              facts.push([
+                "Hit-and-run mode",
+                hitAndRunModeLabel(mode) ?? "Inherit",
+              ]);
+            }
+            facts.push([
+              "Torrent removal",
+              trackerRemovalLabel(item.RemoveTorrent),
+            ]);
             return (
-              <button
+              <ConfigOverviewCard
                 key={position}
-                type="button"
-                className={`config-arr-row config-tracker-row${active ? " active" : ""}`}
-                aria-pressed={active}
-                onClick={() => select(position)}
-              >
-                <span className="config-arr-name">{name}</span>
-                <span className="config-arr-cell">
-                  <small>
-                    {scope.key === "ClientIds"
-                      ? "Torrent clients"
-                      : "Arr integrations"}
-                  </small>
-                  <span>{scope.ids.join(", ") || "None selected"}</span>
-                </span>
-              </button>
+                name={name}
+                subtitle={
+                  configOverviewUrl(item.URI)?.hostname ??
+                  "Tracker address not configured"
+                }
+                active={index === position}
+                onEdit={() => select(position)}
+                facts={facts}
+              />
             );
           })}
         </div>
@@ -164,7 +190,7 @@ export function TrackerSettings({
             Save Trackers
           </button>
         </div>
-      </section>
+      </div>
       {rule && (
         <div className="config-workspace__editor" ref={editor} tabIndex={-1}>
           <TrackerCard

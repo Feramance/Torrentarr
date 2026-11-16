@@ -281,6 +281,7 @@ public class FreeSpaceService(
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     safe = false;
+                    actionFailed = true;
                     resumesWithheld = true;
                     if (TorrentPolicyHelper.IsFreeSpaceDownloadState(item.Torrent.State)
                         && !TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(item.Torrent.State))
@@ -303,12 +304,12 @@ public class FreeSpaceService(
             var reason = rows.Any(m => m.Space == null) ? "Storage is unavailable."
                 : !inventory.Complete ? "A torrent client's inventory is unavailable; resumes withheld."
                 : !allocationComplete ? "An active download's storage path could not be matched; resumes withheld."
-                : !safe || actionFailed ? "A client action or marker update failed; resumes withheld."
+                : actionFailed ? "A client action or marker update failed; resumes withheld."
                 : capacityBlocked || remaining < 0 ? "Remaining downloads exceed the space available above the reserve."
                 : null;
             foreach (var row in rows)
                 observations?.Set(row.Client, row.Config.Path, new(Math.Max(0, available - reserve - Math.Max(0, remaining)),
-                    Math.Max(0, remaining), DateTimeOffset.UtcNow, reason));
+                    Math.Max(0, remaining), DateTimeOffset.UtcNow, reason, !allocationComplete || actionFailed));
         }
         if (due != null) schedule!.Complete(due, intervals);
         var markedCount = 0;

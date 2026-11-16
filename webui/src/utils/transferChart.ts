@@ -7,13 +7,14 @@ export function rateLabel(rate: number): string {
 }
 
 export const TRANSFER_LEFT = 70;
-export const TRANSFER_RIGHT = 780;
+export const TRANSFER_RIGHT_INSET = 20;
 
 /** Missing or incomplete buckets break the line, rather than suggesting zero traffic. */
 export function transferPath(
   points: TransferBucket[],
   field: "downloadRate" | "uploadRate",
   maximum: number,
+  width = 800,
 ): string {
   let connected = false;
   return points
@@ -26,7 +27,7 @@ export function transferPath(
       const x =
         TRANSFER_LEFT +
         (index / Math.max(1, points.length - 1)) *
-          (TRANSFER_RIGHT - TRANSFER_LEFT);
+          (width - TRANSFER_RIGHT_INSET - TRANSFER_LEFT);
       const y = 130 - (value / maximum) * 110;
       const command = `${connected ? "L" : "M"}${x.toFixed(2)},${y.toFixed(2)}`;
       connected = true;

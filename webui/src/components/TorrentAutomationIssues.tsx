@@ -3,6 +3,23 @@ import { getTorrentAutomationStatus } from "../api/client";
 import type { TorrentAutomationStatus } from "../api/types";
 import { useInterval } from "../hooks/useInterval";
 
+const unknownReasons = {
+  "tracker-accounting-unconfirmed": {
+    label: "Tracker accounting unconfirmed",
+  },
+  "no-tracker-reported": {
+    label: "No tracker reported",
+    guidance: "Check the torrent’s Trackers tab in qBittorrent.",
+  },
+  "no-matching-tracker-rule": {
+    label: "No matching tracker rule",
+    guidance: "Check tracker rules for the listed hostname and client.",
+  },
+} satisfies Record<
+  NonNullable<TorrentAutomationStatus["protection"][number]["unknownReason"]>,
+  { label: string; guidance?: string }
+>;
+
 export function TorrentAutomationIssues({ clientId }: { clientId: string }) {
   const [status, setStatus] = useState<TorrentAutomationStatus>();
   const [error, setError] = useState("");
@@ -24,7 +41,7 @@ export function TorrentAutomationIssues({ clientId }: { clientId: string }) {
   }, 15000);
   const selected = (item: { clientInstanceId: string }) =>
     !clientId || clientId === "aggregate" || item.clientInstanceId === clientId;
-  const risks =
+  const protection =
     status?.protection
       .filter(selected)
       .filter(
@@ -35,12 +52,18 @@ export function TorrentAutomationIssues({ clientId }: { clientId: string }) {
       ) ?? [];
   const recovery = status?.recovery?.filter(selected) ?? [];
   const trackerIssues = status?.trackerIssues?.filter(selected) ?? [];
+  const issueCount =
+    protection.filter(
+      (item) =>
+        item.nativeStopLimitRisk ||
+        ["warning", "critical", "unachievable"].includes(item.deadlineRisk),
+    ).length +
+    recovery.filter((item) => item.stage !== "new" && item.stage !== "checked")
+      .length +
+    trackerIssues.filter((issue) => issue.requiresAttention !== false).length;
   return (
     <details className="config-section">
-      <summary>
-        Torrent automation ·{" "}
-        {risks.length + recovery.length + trackerIssues.length} issues
-      </summary>
+      <summary>Torrent automation · {issueCount} issues</summary>
       {error && <p role="status">{error}</p>}
       {status?.inspections?.filter(selected).map((i) => (
         <p key={i.clientInstanceId}>
@@ -55,19 +78,34 @@ export function TorrentAutomationIssues({ clientId }: { clientId: string }) {
           .
         </p>
       ))}
-      {[...risks, ...recovery, ...trackerIssues].map((item, index) => (
-        <p key={`${item.clientInstanceId}-${item.torrentHash}-${index}`}>
-          <strong>{item.torrentName || item.torrentHash}</strong> ·{" "}
-          {item.clientInstanceId} · {"stage" in item ? `${item.stage}: ` : ""}
-          {item.reason}
-        </p>
-      ))}
-      {status && !risks.length && !recovery.length && !trackerIssues.length && (
-        <p>
-          No reported recovery or protection issues. This is not a storage
-          cleanup check.
-        </p>
-      )}
+      {[...protection, ...recovery, ...trackerIssues].map((item, index) => {
+        const explanation =
+          "unknownReason" in item && item.unknownReason
+            ? unknownReasons[item.unknownReason]
+            : undefined;
+        return (
+          <p key={`${item.clientInstanceId}-${item.torrentHash}-${index}`}>
+            <strong>{item.torrentName || item.torrentHash}</strong> ·{" "}
+            {item.clientInstanceId} · {"stage" in item ? `${item.stage}: ` : ""}
+            {"tracker" in item && item.tracker ? `${item.tracker} · ` : ""}
+            {explanation && (
+              <>
+                <strong>{explanation.label}</strong> ·{" "}
+              </>
+            )}
+            {item.reason}
+            {explanation &&
+              "guidance" in explanation &&
+              ` ${explanation.guidance}`}
+          </p>
+        );
+      })}
+      {status &&
+        protection.length === 0 &&
+        recovery.length === 0 &&
+        trackerIssues.length === 0 && (
+          <p>No reported recovery or protection issues.</p>
+        )}
     </details>
   );
 }

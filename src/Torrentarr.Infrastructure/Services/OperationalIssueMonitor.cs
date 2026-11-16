@@ -72,8 +72,17 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
                 var issue = new OperationalIssueReport("worker.lifecycle", "system", "Worker is not making healthy progress", $"Worker={id}; PID={state.ProcessId}; alive={state.IsAlive}; status={state.Status}; last exit={state.LastExitCode}; last failure={state.LastFailure ?? "none recorded"}; restarts={state.RestartCount}; started={state.StartTime:O}; heartbeat={state.LastHeartbeat:O}; config revision={state.ConfigRevision}. Torrent loop={state.Torrent?.Phase ?? "unavailable"}, last success={state.Torrent?.LastSuccess:O}; search loop={state.Search?.Phase ?? "unavailable"}, last success={state.Search?.LastSuccess:O}.", "Check worker logs and connection settings; restart after correcting the cause.", ArrInstance: id, Target: "processes");
                 if (!state.IsAlive) await issues.ReportAsync(issue, ct); else if (healthy) await issues.ResolveAsync(issue, ct);
             }
+        var storageObservations = services.GetService<FreeSpaceObservations>();
         foreach (var disk in disks)
-            await Observe(new("storage.reserve", "system", "Download storage needs attention", $"Client={disk.ClientInstanceId}; path={disk.Path}; free={disk.FreeBytes} bytes; reserve={disk.ThresholdBytes} bytes; total={disk.TotalBytes} bytes; below threshold={disk.BelowThreshold}; inspection error={disk.Error ?? "none"}. Downloads may remain paused until the reserve is restored.", "Restore access to the monitored directory or free space above its configured reserve.", ClientInstance: disk.ClientInstanceId, SubjectType: "storage", SubjectId: disk.Path, Severity: "warning", Target: "config"), disk.Error != null || disk.BelowThreshold, ct);
+        {
+            var allocation = storageObservations?.Get(disk.ClientInstanceId, disk.Path);
+            var failure = disk.Error ?? (allocation is { EnforcementFailed: true } ? allocation.BlockedReason : null);
+            await Observe(new("storage.reserve", "system", "Download storage needs attention",
+                $"Client={disk.ClientInstanceId}; path={disk.Path}; free={disk.FreeBytes} bytes; reserve={disk.ThresholdBytes} bytes; failure={DiagnosticText.Safe(failure)}.",
+                "Check the monitored path, torrent client connectivity, and free space manager logs.",
+                ClientInstance: disk.ClientInstanceId, SubjectType: "storage", SubjectId: disk.Path, Severity: "warning", Target: "config"),
+                disk.Error != null || allocation is { EnforcementFailed: true }, ct);
+        }
         if (services.GetService<TorrentarrDbContext>() is { } storageDb)
         {
             var activeReserves = await storageDb.OperationalIssues.AsNoTracking()
@@ -91,7 +100,7 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
         {
             var state = automation.GetStatus();
             var current = new List<OperationalIssueReport>();
-            foreach (var tracker in state.TrackerIssues)
+            foreach (var tracker in state.TrackerIssues.Where(t => t.RequiresAttention))
                 current.Add(new("automation.tracker", "automation", "Tracker reports a torrent problem", $"Torrent={tracker.TorrentName}; hash={tracker.TorrentHash}; client={tracker.ClientInstanceId}; added={tracker.AddedOn}; {tracker.Reason}", "Inspect tracker status and protection settings before taking action.", ClientInstance: tracker.ClientInstanceId, SubjectType: "torrent", SubjectId: tracker.TorrentHash, Severity: "warning", Target: "maintenance"));
             foreach (var recovery in state.Recovery.Where(r => r.Stage is not ("new" or "checked")))
                 current.Add(new("automation.recovery", "automation", "Torrent recovery is pending", $"Torrent={recovery.TorrentName}; hash={recovery.TorrentHash}; operation={recovery.Operation}; stage={recovery.Stage}; attempts={recovery.Attempts}; failure since={recovery.FailureSince:O}; {recovery.Reason}", "Inspect the recovery status and storage access; do not remove protection evidence.", ClientInstance: recovery.ClientInstanceId, SubjectType: "torrent", SubjectId: recovery.TorrentHash, Severity: "warning", Target: "maintenance"));
@@ -107,6 +116,10 @@ public sealed class OperationalIssueMonitor(IServiceScopeFactory scopes, IOperat
             var db = services.GetRequiredService<TorrentarrDbContext>();
             var previous = await db.OperationalIssues.AsNoTracking().Where(i => i.ResolvedAt == null && inspected.Contains(i.ClientInstance) && (i.Code == "automation.tracker" || i.Code == "automation.recovery" || i.Code == "automation.protection")).ToListAsync(ct);
             foreach (var old in previous.Where(i => state.Inspections.Any(s => s.ClientInstanceId == i.ClientInstance && s.LastSucceededAt > new DateTimeOffset(i.LastObserved, TimeSpan.Zero)) && !current.Any(r => r.Code == i.Code && r.ClientInstance == i.ClientInstance && r.SubjectId == i.SubjectId)))
+                await issues.ResolveAsync(new(old.Code, old.Category, old.Title, old.Impact, old.Remediation, old.ArrInstance, old.ClientInstance, old.SubjectType, old.SubjectId, old.Severity, old.Target), ct);
+            var listingFailures = await db.OperationalIssues.AsNoTracking()
+                .Where(i => i.ResolvedAt == null && i.Code == "maintenance.preview.torrent-list-failed").ToListAsync(ct);
+            foreach (var old in listingFailures.Where(i => automation.LastInventoryStartedAt(i.ClientInstance) > new DateTimeOffset(i.LastObserved, TimeSpan.Zero)))
                 await issues.ResolveAsync(new(old.Code, old.Category, old.Title, old.Impact, old.Remediation, old.ArrInstance, old.ClientInstance, old.SubjectType, old.SubjectId, old.Severity, old.Target), ct);
         }
         if (services.GetService<IMaintenanceCoordinator>() is { } maintenance)

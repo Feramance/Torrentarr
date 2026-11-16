@@ -19,6 +19,7 @@ public static class SonarrApiDiscovery
     }
 
     private static readonly ConcurrentDictionary<string, Entry> Cache = new();
+    private static readonly TimeSpan[] RetryDelays = [TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(1)];
 
     public static Task<SonarrApiInfo> ResolveAsync(string baseUrl, string apiKey, bool skipTlsVerify,
         CancellationToken ct = default, HttpClient? client = null) =>
@@ -45,13 +46,24 @@ public static class SonarrApiDiscovery
 
             async Task<string?> ReadAsync(string path, bool allowNotFound = false)
             {
-                using var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/{path}");
-                request.Headers.Add("X-Api-Key", apiKey);
-                using var response = await http.SendAsync(request, ct);
-                if (allowNotFound && response.StatusCode == HttpStatusCode.NotFound) return null;
-                if (!response.IsSuccessStatusCode)
-                    throw new ArrApiException($"Sonarr discovery GET /{path} failed: HTTP {(int)response.StatusCode}", response.StatusCode);
-                return await response.Content.ReadAsStringAsync(ct);
+                for (var attempt = 0; ; attempt++)
+                {
+                    try
+                    {
+                        using var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/{path}");
+                        request.Headers.Add("X-Api-Key", apiKey);
+                        using var response = await http.SendAsync(request, ct);
+                        if (allowNotFound && response.StatusCode == HttpStatusCode.NotFound) return null;
+                        if (!response.IsSuccessStatusCode)
+                            throw new ArrApiException($"Sonarr discovery GET /{path} failed: HTTP {(int)response.StatusCode}", response.StatusCode);
+                        return await response.Content.ReadAsStringAsync(ct);
+                    }
+                    catch (HttpRequestException ex) when (attempt < RetryDelays.Length && !ct.IsCancellationRequested
+                        && ex.HttpRequestError is HttpRequestError.NameResolutionError or HttpRequestError.ConnectionError)
+                    {
+                        await Task.Delay(RetryDelays[attempt], clock, ct);
+                    }
+                }
             }
 
             async Task<SystemInfo> StatusAsync(string version)

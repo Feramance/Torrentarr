@@ -31,6 +31,7 @@ public enum MaintenanceActionKind
     DeleteContent = 15,
     DeleteOrphanFile = 16,
     DeleteEmptyOrphanDirectory = 17,
+    ParkTorrent = 18,
     DeleteExpiredRecycleItem = 13
 }
 
@@ -290,4 +291,7 @@ public sealed class CleanupClientStatus
 
 public sealed record RecycleFileSnapshot(string Path, long Bytes, long LastWriteTicks);
 
-public sealed record TorrentAutomationIssue(string ClientInstanceId, string TorrentHash, string TorrentName, string Reason, long AddedOn);
+public sealed record TorrentAutomationIssue(string ClientInstanceId, string TorrentHash, string TorrentName, string Reason, long AddedOn)
+{
+    public bool RequiresAttention { get; init; } = true;
+}

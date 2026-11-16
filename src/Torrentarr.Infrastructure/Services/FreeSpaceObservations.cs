@@ -5,7 +5,8 @@ namespace Torrentarr.Infrastructure.Services;
 /// <summary>Last completed allocations, shared between the scoped allocator and WebUI.</summary>
 public sealed class FreeSpaceObservations
 {
-    public sealed record Allocation(long CommittedBytes, long RemainingBytes, DateTimeOffset CompletedAt, string? BlockedReason);
+    public sealed record Allocation(long CommittedBytes, long RemainingBytes, DateTimeOffset CompletedAt, string? BlockedReason,
+        bool EnforcementFailed = false);
     private readonly ConcurrentDictionary<string, Allocation> _allocations = new(StringComparer.OrdinalIgnoreCase);
     private static string Key(string client, string path) => $"{client}\n{path}";
     public Allocation? Get(string client, string path) => _allocations.GetValueOrDefault(Key(client, path));

@@ -1096,7 +1096,7 @@ public class TorrentProcessor : ITorrentProcessor
         string? cause = null, RemovalDecision? decision = null)
     {
         _activeRemovalBlocks.Add(intent);
-        var expectedWait = decision?.IsExpectedProtectionWait() == true;
+        var expectedWait = decision?.IsExpectedPolicyDeferral() == true;
         var identity = decision == null ? cause ?? Regex.Replace(reason, @"\b\d+(?:[.,]\d+)*\b", "#")
             : string.Join(",", decision.Blockers.Select(b => b.Code).Distinct().Order());
         var changed = _cache.DiagnosticChanged(torrent.ClientInstanceId, torrent.Hash, "removal:" + intent,
@@ -1139,7 +1139,9 @@ public class TorrentProcessor : ITorrentProcessor
         }
         if (!SeedingService.SameRemovalCandidate(torrent, current))
         {
-            await Block(SeedingService.DescribeRemovalChanges(torrent, current));
+            var change = new RemovalDecision([new("torrent.changed", SeedingService.DescribeRemovalChanges(torrent, current),
+                "Retry with fresh torrent evidence.")]);
+            await Block(change.Reason, decision: change);
             return false;
         }
         current.ClientInstanceId = torrent.ClientInstanceId;
@@ -1176,7 +1178,7 @@ public class TorrentProcessor : ITorrentProcessor
                 : await _safeDeletion.RemoveTorrentForIntentAsync(torrent.ClientInstanceId, torrent.Hash, true, intent, ct);
             deleted = result.Success;
             if (!deleted)
-                await Block(result.Error ?? "Safe deletion rejected removal without a reason.");
+                await Block(result.Error ?? "Safe deletion rejected removal without a reason.", decision: result.RemovalDecision);
         }
         else
         {

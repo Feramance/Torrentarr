@@ -601,6 +601,12 @@ class ArrWorkerService : BackgroundService
                 var result = await ProcessSearchAsync(cycle.Token, DateTimeOffset.UtcNow + WorkerLoopProgress.CycleTimeout - System.Diagnostics.Stopwatch.GetElapsedTime(cycleStart));
                 if (result?.Errors.Count > 0)
                     throw new IOException($"Search cycle partially failed: {string.Join("; ", result.Errors)}");
+                if (result?.CapacityUnavailable == true)
+                {
+                    outcome = "waiting for search capacity";
+                    HandleSearchError();
+                    continue;
+                }
                 outcome = result is { LoopCompleted: false } ? "deferred" : "success";
                 _consecutiveSearchErrors = 0;
                 _runtimeMetrics.Search = _runtimeMetrics.Search with { LastSuccess = DateTimeOffset.UtcNow };
@@ -825,10 +831,10 @@ class ArrWorkerService : BackgroundService
             }
         }
 
-        if (_instanceConfig.ReSearch)
-            await SonarrRetryQueue.ExecuteAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(),
+        if (_instanceConfig.ReSearch && await SonarrRetryQueue.ExecuteAsync(scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(),
                 scope.ServiceProvider.GetRequiredService<ISearchExecutor>(), _context.InstanceName, _logger, cancellationToken,
-                _instanceConfig, scope.ServiceProvider.GetService<IOperationalIssueReporter>(), deadline);
+                _instanceConfig, scope.ServiceProvider.GetService<IOperationalIssueReporter>(), deadline))
+            return new SearchResult { CapacityUnavailable = true };
         if (CatalogSyncDue)
         {
             await syncService.SyncAsync(_context.InstanceName, cancellationToken);
@@ -868,7 +874,8 @@ class ArrWorkerService : BackgroundService
                 }
 
                 // QualityUnmetSearch / CustomFormatUnmetSearch are always additive
-                if (searchResult?.BudgetExhausted != true && (_instanceConfig.Search.QualityUnmetSearch || _instanceConfig.Search.CustomFormatUnmetSearch))
+                if (searchResult?.BudgetExhausted != true && searchResult?.CapacityUnavailable != true
+                    && (_instanceConfig.Search.QualityUnmetSearch || _instanceConfig.Search.CustomFormatUnmetSearch))
                 {
                     var upgradeResult = await (deadline.HasValue
                         ? arrMediaService.SearchQualityUpgradesAsync(_instanceConfig.Category, deadline, cancellationToken)
@@ -882,6 +889,7 @@ class ArrWorkerService : BackgroundService
                         searchResult.SearchedIds.AddRange(upgradeResult.SearchedIds);
                         searchResult.Errors.AddRange(upgradeResult.Errors);
                         searchResult.BudgetExhausted |= upgradeResult.BudgetExhausted;
+                        searchResult.CapacityUnavailable |= upgradeResult.CapacityUnavailable;
                         searchResult.LoopCompleted &= upgradeResult.LoopCompleted;
                     }
                     if (upgradeResult.SearchesTriggered > 0)

@@ -62,7 +62,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
         if (expected == null) return new(false, true, 0, "Torrent no longer exists in the client.");
         var clearance = await ProtectionDecisionAsync(clientInstanceId, hash, ct, expected, intent: intent);
         if (!clearance.Allowed)
-            return new(false, true, 0, clearance.Reason);
+            return new(false, true, 0, clearance.Reason) { RemovalDecision = clearance };
 
         if (!removeContent)
             return await client.DeleteTorrentsAsync([hash], false, ct)
@@ -119,7 +119,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
         if (shared)
         {
             var sharedClearance = await ProtectionDecisionAsync(clientInstanceId, hash, ct, expected, intent: intent);
-            if (!sharedClearance.Allowed) return new(false, true, 0, sharedClearance.Reason);
+            if (!sharedClearance.Allowed) return new(false, true, 0, sharedClearance.Reason) { RemovalDecision = sharedClearance };
             var removed = await client.DeleteTorrentsAsync([hash], false, ct);
             return removed
                 ? new(true, true, 0)
@@ -214,7 +214,11 @@ public sealed class SafeDeletionService : ISafeDeletionService
             }
             var uncertain = removalAttempted && !removalRejected ? " Remote removal outcome is uncertain." : "";
             return new(false, restored, restored ? 0 : moved,
-                $"Recycle failed: {ex.Message}.{uncertain}" + (errors.Count == 0 ? " Moved content restored." : " " + string.Join("; ", errors)));
+                $"Recycle failed: {ex.Message}.{uncertain}" + (errors.Count == 0 ? " Moved content restored." : " " + string.Join("; ", errors)))
+            {
+                RemovalDecision = errors.Count == 0 && !removalAttempted && ex is RemovalBlockedException blocked
+                    ? blocked.Decision : null
+            };
         }
 
         foreach (var entry in entries)
@@ -255,7 +259,12 @@ public sealed class SafeDeletionService : ISafeDeletionService
         string? stateBeforeOwnedPause = null, TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit)
     {
         var decision = await ProtectionDecisionAsync(instanceId, hash, ct, expected, stateBeforeOwnedPause, intent);
-        if (!decision.Allowed) throw new IOException(decision.Reason);
+        if (!decision.Allowed) throw new RemovalBlockedException(decision);
+    }
+
+    private sealed class RemovalBlockedException(RemovalDecision decision) : IOException(decision.Reason)
+    {
+        public RemovalDecision Decision { get; } = decision;
     }
 
     private async Task<bool> ProtectionAllowsAsync(string instanceId, string hash, CancellationToken ct, TorrentInfo? expected = null,

@@ -2,6 +2,11 @@ import { configSections, type ConfigSection } from "../config/settingsSections";
 import type { ConfigDestination } from "../utils/navigateTab";
 import { TrackerSettings } from "./config/TrackerSettings";
 import { trackerRuleFields, trackerScope } from "./config/trackerRuleFields";
+import { ConfigOverviewCard } from "./config/ConfigOverviewCard";
+import {
+  clientOverviewAddress,
+  configOverviewUrl,
+} from "./config/configOverviewAddress";
 import { ConfigFieldSearch } from "./config/ConfigFieldSearch";
 import React, {
   useCallback,
@@ -325,64 +330,13 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
     [formState],
   );
 
-  const groupedArrSections = useMemo(() => {
-    const groups: Array<{
-      label: string;
-      type: "radarr" | "sonarr" | "lidarr" | "readarr" | "other";
-      items: Array<[string, ConfigDocument]>;
-    }> = [];
-    const sorted = [...arrSections].sort((a, b) =>
-      a[0].localeCompare(b[0], undefined, {
-        numeric: true,
-        sensitivity: "base",
-      }),
-    );
-    const radarr: Array<[string, ConfigDocument]> = [];
-    const sonarr: Array<[string, ConfigDocument]> = [];
-    const lidarr: Array<[string, ConfigDocument]> = [];
-    const readarr: Array<[string, ConfigDocument]> = [];
-    const others: Array<[string, ConfigDocument]> = [];
-    for (const entry of sorted) {
-      const [key] = entry;
-      const keyLower = key.toLowerCase();
-      if (keyLower.startsWith("radarr")) {
-        radarr.push(entry);
-      } else if (keyLower.startsWith("sonarr")) {
-        sonarr.push(entry);
-      } else if (keyLower.startsWith("lidarr")) {
-        lidarr.push(entry);
-      } else if (keyLower.startsWith("readarr")) {
-        readarr.push(entry);
-      } else {
-        others.push(entry);
-      }
-    }
-
-    groups.push({
-      label: `${arrTypeLabel("radarr")} Instances`,
-      type: "radarr",
-      items: radarr,
-    });
-    groups.push({
-      label: `${arrTypeLabel("sonarr")} Instances`,
-      type: "sonarr",
-      items: sonarr,
-    });
-    groups.push({
-      label: `${arrTypeLabel("lidarr")} Instances`,
-      type: "lidarr",
-      items: lidarr,
-    });
-    groups.push({
-      label: `${arrTypeLabel("readarr")} Instances`,
-      type: "readarr",
-      items: readarr,
-    });
-    if (others.length) {
-      groups.push({ label: "Other Instances", type: "other", items: others });
-    }
-    return groups;
-  }, [arrSections]);
+  const sortedArrSections = useMemo(
+    () =>
+      [...arrSections].sort(([a], [b]) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }),
+      ),
+    [arrSections],
+  );
   const [activeClient, setActiveClient] = useState<string | null>(null);
   const clientValidationErrors = useMemo(() => {
     const errors: ValidationError[] = [];
@@ -1139,10 +1093,6 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           focusFirstValidationError(errors);
           return false;
         }
-        const host = String(value?.Host ?? "").trim();
-        const port = Number(value?.Port);
-        if (!host || !Number.isInteger(port) || port < 1 || port > 65535)
-          throw new Error("Enter a host and a port between 1 and 65535.");
       }
       const freeSpaceField = `TorrentClient.${name}.FreeSpace`;
       if (keepProtectionOff) changes[freeSpaceField] = value.FreeSpace ?? [];
@@ -1364,9 +1314,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           </p>
         )}
         {notices}
-        <div
-          className={`config-workspace__layout${instanceSection ? " config-instance-layout" : ""}`}
-        >
+        <div className="config-workspace__layout">
           {section === "trackers" && (
             <TrackerSettings
               rules={(formState.Trackers ?? []) as ConfigDocument[]}
@@ -1396,177 +1344,129 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           )}
           {section === "clients" && (
             <section
-              className="config-arr-overview"
+              className="config-overview-grid"
               aria-label="Configured torrent clients"
             >
-              {clientGroups.map(([type, clients]) => (
-                <section
-                  className="config-arr-group"
-                  key={type}
-                  aria-label={`${type === "qbittorrent" ? "qBittorrent" : type} Instances`}
-                >
-                  <header className="config-instance-header">
-                    <h3>
-                      {type === "qbittorrent" ? "qBittorrent" : type}{" "}
-                      <span>
-                        {clients.length}{" "}
-                        {clients.length === 1 ? "instance" : "instances"}
-                      </span>
-                    </h3>
-                  </header>
-                  {type !== "qbittorrent" && (
-                    <p className="hint">
-                      Connection requires a supported client type.
-                    </p>
-                  )}
-                  <div className="config-arr-list">
-                    {clients.length === 0 && (
-                      <p className="hint">No instances configured.</p>
-                    )}
-                    {clients.map(({ name, value, legacy }) => {
-                      const active = legacy
-                        ? activeQbitKey === name
-                        : activeClient === name;
-                      const original = legacy
-                        ? originalConfig?.[name]
-                        : get(originalConfig, ["TorrentClient", name]);
-                      const categories = Array.isArray(value.ManagedCategories)
-                        ? value.ManagedCategories
-                        : [];
-                      return (
-                        <button
-                          type="button"
-                          key={`${legacy}:${name}`}
-                          className={`config-arr-row${active ? " active" : ""}`}
-                          aria-label={`Configure ${name}${torrentClients.filter((client) => client.name === name).length > 1 ? (legacy ? " (legacy)" : " (TorrentClient)") : ""}`}
-                          aria-pressed={active}
-                          onClick={() =>
-                            chooseEditor(() => {
-                              if (legacy) setActiveQbitKey(name);
-                              else setActiveClient(name);
-                              setEditorRequest((request) => request + 1);
-                            })
-                          }
-                        >
-                          <span className="config-arr-name">
-                            {name}
-                            {!equal(value, original) && (
-                              <span className="config-arr-dirty">Unsaved</span>
-                            )}
-                          </span>
-                          <span className="config-arr-cell">
-                            <small>Address</small>
-                            <span>
-                              {String(value.Host || "Not configured")}
-                              {value.Port ? `:${value.Port}` : ""}
-                            </span>
-                          </span>
-                          <span className="config-arr-cell">
-                            <small>Categories</small>
-                            <span>
-                              {categories.join(", ") || "None assigned"}
-                            </span>
-                          </span>
-                          <span className="config-arr-cell">
-                            <small>Scan interval</small>
-                            <span>
-                              {String(value.TorrentScanIntervalSeconds ?? 30)} s
-                            </span>
-                          </span>
-                          <span
-                            className={`config-arr-state${value.Disabled === true ? " config-arr-state--disabled" : ""}`}
-                          >
-                            {value.Disabled === true ? "Disabled" : "Enabled"}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))}
+              {torrentClients.length === 0 && (
+                <p className="config-overview-empty hint">
+                  No torrent clients configured.
+                </p>
+              )}
+              {clientGroups.flatMap(([type, clients]) =>
+                clients.map(({ name, value, legacy }) => {
+                  const original = legacy
+                    ? originalConfig?.[name]
+                    : get(originalConfig, ["TorrentClient", name]);
+                  const categories = Array.isArray(value.ManagedCategories)
+                    ? value.ManagedCategories
+                    : [];
+                  const enabledMonitors = Array.isArray(value.FreeSpace)
+                    ? value.FreeSpace.filter(
+                        (monitor) => monitor?.Enabled === true,
+                      ).length
+                    : 0;
+                  const duplicate = torrentClients.some(
+                    (client) =>
+                      client.name === name && client.legacy !== legacy,
+                  );
+                  const typeLabel =
+                    type === "qbittorrent" ? "qBittorrent" : type;
+                  const source = legacy ? "legacy" : "TorrentClient";
+                  const facts: [string, string][] = [
+                    ["Address", clientOverviewAddress(value.Host, value.Port)],
+                    [
+                      "Scan interval",
+                      `${value.TorrentScanIntervalSeconds ?? 30} s`,
+                    ],
+                    [
+                      "Managed categories",
+                      categories.join(", ") || "None assigned",
+                    ],
+                    [
+                      "Include subcategories",
+                      value.MatchSubcategories === true ? "Yes" : "No",
+                    ],
+                    ["Free-space monitors", `${enabledMonitors} enabled`],
+                  ];
+                  if (type !== "qbittorrent") {
+                    facts.push([
+                      "Support",
+                      "Connection requires a supported client type.",
+                    ]);
+                  }
+                  return (
+                    <ConfigOverviewCard
+                      key={`${legacy}:${name}`}
+                      name={name}
+                      subtitle={
+                        duplicate ? `${typeLabel} · ${source}` : typeLabel
+                      }
+                      enabled={value.Disabled !== true}
+                      dirty={!equal(value, original)}
+                      active={
+                        legacy ? activeQbitKey === name : activeClient === name
+                      }
+                      editLabel={
+                        duplicate ? `Edit ${name} (${source})` : undefined
+                      }
+                      onEdit={() =>
+                        chooseEditor(() => {
+                          if (legacy) setActiveQbitKey(name);
+                          else setActiveClient(name);
+                          setEditorRequest((request) => request + 1);
+                        })
+                      }
+                      facts={facts}
+                    />
+                  );
+                }),
+              )}
             </section>
           )}
           {section === "integrations" && (
             <section
-              className="config-arr-overview"
+              className="config-overview-grid"
               aria-label="Configured integrations"
             >
-              {groupedArrSections.map((group) => (
-                <section
-                  className="config-arr-group"
-                  key={group.type}
-                  aria-label={group.label}
-                >
-                  <header className="config-instance-header">
-                    <h3>
-                      {group.label.replace(/ Instances$/, "")}{" "}
-                      <span>
-                        {group.items.length}{" "}
-                        {group.items.length === 1 ? "instance" : "instances"}
-                      </span>
-                    </h3>
-                  </header>
-                  <div className="config-arr-list">
-                    {group.items.length === 0 && (
-                      <p className="hint">No instances configured.</p>
-                    )}
-                    {group.items.map(([name, section]) => {
-                      const managed = section.Managed !== false;
-                      let address = "Not configured";
-                      try {
-                        const url = new URL(String(section.URI ?? ""));
-                        address = url.host + url.pathname.replace(/\/$/, "");
-                      } catch {
-                        /* The editor shows URL validation errors. */
-                      }
-                      return (
-                        <button
-                          key={name}
-                          type="button"
-                          className={`config-arr-row${activeArrKey === name ? " active" : ""}`}
-                          aria-label={`Configure ${name}`}
-                          aria-pressed={activeArrKey === name}
-                          onClick={() =>
-                            chooseEditor(() => {
-                              setActiveArrKey(name);
-                              setEditorRequest((request) => request + 1);
-                            })
-                          }
-                        >
-                          <span className="config-arr-name">
-                            {name}
-                            {sectionDirty(name) && (
-                              <span className="config-arr-dirty">Unsaved</span>
-                            )}
-                          </span>
-                          <span className="config-arr-cell">
-                            <small>Address</small>
-                            <span>{address}</span>
-                          </span>
-                          <span className="config-arr-cell">
-                            <small>Category</small>
-                            <span>{String(section.Category || "Not set")}</span>
-                          </span>
-                          <span className="config-arr-cell">
-                            <small>Mode</small>
-                            <span>
-                              {section.ProcessingOnly === true
-                                ? "Torrents only"
-                                : section.SearchOnly === true
-                                  ? "Search only"
-                                  : "Search + torrents"}
-                            </span>
-                          </span>
-                          <span
-                            className={`config-arr-state${managed ? "" : " config-arr-state--disabled"}`}
-                          >
-                            {managed ? "Enabled" : "Disabled"}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
+              {sortedArrSections.length === 0 && (
+                <p className="config-overview-empty hint">
+                  No integrations configured.
+                </p>
+              )}
+              {sortedArrSections.map(([name, integration]) => (
+                <ConfigOverviewCard
+                  key={name}
+                  name={name}
+                  subtitle={arrTypeLabel(name.split(/[.-]/, 1)[0])}
+                  enabled={integration.Managed !== false}
+                  dirty={sectionDirty(name)}
+                  active={activeArrKey === name}
+                  onEdit={() =>
+                    chooseEditor(() => {
+                      setActiveArrKey(name);
+                      setEditorRequest((request) => request + 1);
+                    })
+                  }
+                  facts={[
+                    [
+                      "Address",
+                      configOverviewUrl(integration.URI)?.host ??
+                        "Not configured",
+                    ],
+                    [
+                      "Torrent category",
+                      String(integration.Category || "Not set"),
+                    ],
+                    [
+                      "Operating mode",
+                      integration.ProcessingOnly === true
+                        ? "Torrents only"
+                        : integration.SearchOnly === true
+                          ? "Search only"
+                          : "Search + torrents",
+                    ],
+                  ]}
+                />
               ))}
             </section>
           )}

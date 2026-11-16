@@ -21,6 +21,8 @@ public class SearchResult
 {
     [System.Text.Json.Serialization.JsonIgnore]
     public bool BudgetExhausted { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool CapacityUnavailable { get; set; }
     public int ItemsSearched { get; set; }
     public int SearchesTriggered { get; set; }
     public List<int> SearchedIds { get; set; } = new();

@@ -1,3 +1,4 @@
+import { useElementSize } from "@mantine/hooks";
 import { useChartInspection } from "../hooks/useChartInspection";
 import { useEffect, useState } from "react";
 import { getArrActivity } from "../api/client";
@@ -9,6 +10,7 @@ import type {
 } from "../api/types";
 import { STATISTICS_UPDATED } from "../hooks/useStatisticsUpdates";
 import {
+  ACTIVITY_INSET,
   activityColor,
   activityCoverage,
   activityPath,
@@ -34,6 +36,14 @@ function ActivityPlot({
   inspection: ReturnType<typeof useChartInspection<number>>;
   colorOf: (series: ArrActivitySeries) => string;
 }) {
+  const { ref, width } = useElementSize();
+  const svgWidth = width > 2 * ACTIVITY_INSET ? width : 800;
+  const right = svgWidth - ACTIVITY_INSET;
+  const plotWidth = right - ACTIVITY_INSET;
+  const axisDateOptions: Intl.DateTimeFormatOptions | undefined =
+    svgWidth < 350
+      ? { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }
+      : undefined;
   const maximum = Math.max(
     1,
     ...series.map((s) =>
@@ -41,13 +51,15 @@ function ActivityPlot({
     ),
   );
   const count = series[0]?.points.length ?? 0;
+  const xAt = (pointIndex: number) =>
+    ACTIVITY_INSET + (pointIndex / Math.max(1, count - 1)) * plotWidth;
   const available = series.some((s) => s.points.some((p) => p[metric] != null));
   const coverageLabel = (point: ArrActivityPoint) =>
     activityCoverage(point, metric) === point.expectedSamples
       ? ""
       : ` (${activityCoverage(point, metric)}/${point.expectedSamples} samples)`;
   return (
-    <figure className="arr-activity__plot">
+    <figure ref={ref} className="arr-activity__plot">
       <figcaption>{title}</figcaption>
       {!available ? (
         <p className="hint">
@@ -58,7 +70,7 @@ function ActivityPlot({
       ) : (
         <>
           <svg
-            viewBox="0 0 800 166"
+            viewBox={`0 0 ${svgWidth} 166`}
             role="img"
             aria-label={`${title}, by ${grouping === "type" ? "Arr type" : "worker"}; gaps mark intervals with no observations`}
             onPointerLeave={inspection.leave}
@@ -73,8 +85,9 @@ function ActivityPlot({
                     0,
                     Math.min(
                       1,
-                      (((event.clientX - rect.left) / rect.width) * 800 - 24) /
-                        752,
+                      (((event.clientX - rect.left) / rect.width) * svgWidth -
+                        ACTIVITY_INSET) /
+                        plotWidth,
                     ),
                   ) *
                     (count - 1),
@@ -85,29 +98,35 @@ function ActivityPlot({
             {[30, 86, 142].map((y) => (
               <line
                 key={y}
-                x1="24"
-                x2="776"
+                x1={ACTIVITY_INSET}
+                x2={right}
                 y1={y}
                 y2={y}
                 className="chart-grid"
               />
             ))}
-            <text x="24" y="16">
+            <text x={ACTIVITY_INSET} y="16">
               {maximum.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </text>
-            <text x="24" y="160">
+            <text x={ACTIVITY_INSET} y="160">
               {series[0]?.points[0]
-                ? new Date(series[0].points[0].timestamp).toLocaleString()
+                ? new Date(series[0].points[0].timestamp).toLocaleString(
+                    undefined,
+                    axisDateOptions,
+                  )
                 : ""}
             </text>
-            <text x="776" y="160" textAnchor="end">
+            <text x={right} y="160" textAnchor="end">
               {series[0]?.points.at(-1)
-                ? new Date(series[0].points.at(-1)!.timestamp).toLocaleString()
+                ? new Date(series[0].points.at(-1)!.timestamp).toLocaleString(
+                    undefined,
+                    axisDateOptions,
+                  )
                 : ""}
             </text>
             <line
-              x1={24 + (index / Math.max(1, count - 1)) * 752}
-              x2={24 + (index / Math.max(1, count - 1)) * 752}
+              x1={xAt(index)}
+              x2={xAt(index)}
               y1="25"
               y2="142"
               className="activity-cursor"
@@ -115,7 +134,7 @@ function ActivityPlot({
             {series.map((s) => (
               <g key={s.instance} style={{ color: colorOf(s) }}>
                 <path
-                  d={activityPath(s.points, metric, maximum)}
+                  d={activityPath(s.points, metric, maximum, svgWidth)}
                   fill="none"
                   stroke="currentColor"
                   strokeWidth="2"
@@ -125,7 +144,7 @@ function ActivityPlot({
                   p[metric] != null ? (
                     <circle
                       key={p.timestamp}
-                      cx={24 + (i / Math.max(1, count - 1)) * 752}
+                      cx={xAt(i)}
                       cy={142 - (p[metric]! / maximum) * 112}
                       r="2"
                       fill="currentColor"

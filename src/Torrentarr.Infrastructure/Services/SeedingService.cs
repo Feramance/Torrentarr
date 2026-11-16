@@ -412,18 +412,25 @@ public class SeedingService : ISeedingService
             decision.ClientInstanceId = torrent.ClientInstanceId; decision.TorrentHash = torrent.Hash; decision.TorrentName = torrent.Name; decision.Tracker = TrackerLogHost(cfg.Uri);
             decisions.Add(decision);
         }
-        if (matched.Count == 0 || torrent.IsPrivate != false && torrentTrackers.Any(t =>
-            !matched.Any(c => TrackerHostMatches(ExtractTrackerHost(t.Url), ExtractTrackerHost(c.Uri)))))
+        var unmatchedHosts = torrentTrackers.Select(t => ExtractTrackerHost(t.Url)).Distinct()
+            .Where(host => !matched.Any(c => TrackerHostMatches(host, ExtractTrackerHost(c.Uri)))).ToArray();
+        if (matched.Count == 0 || torrent.IsPrivate != false && unmatchedHosts.Length > 0)
         {
             var category = GetEffectiveSeedingConfig(torrent, null);
             var knownPublic = torrent.IsPrivate == false;
             var legacy = IsHnREnabled(category.HitAndRunMode);
             var categoryConfigured = knownPublic && matched.Count == 0 && legacy;
             var healthy = torrentTrackers.Any(t => t.Status == 2 && string.IsNullOrWhiteSpace(t.Msg));
+            var publicWithoutObligations = knownPublic && !legacy;
+            var unidentified = !unmatchedHosts.Any(host => host.Length > 0);
             var decision = categoryConfigured ? ConfirmHnr(torrent, category, "", healthy, now, observe, 60, progress) : new ProtectionDecision
             {
-                State = knownPublic && !legacy ? "eligible" : "unknown",
-                Reason = knownPublic && !legacy ? "Public torrent without configured HnR obligations." : "Unmatched private/unknown tracker: preserve and report."
+                Tracker = string.Join(", ", unmatchedHosts.Where(host => host.Length > 0)),
+                State = publicWithoutObligations ? "eligible" : "unknown",
+                UnknownReason = publicWithoutObligations ? null : unidentified ? "no-tracker-reported" : "no-matching-tracker-rule",
+                Reason = publicWithoutObligations ? "Public torrent without configured HnR obligations."
+                    : unidentified ? "The torrent client returned no identifiable tracker hostname for this decision."
+                    : "No configured tracker rule applies to the listed hostname and this torrent."
             };
             decision.ClientInstanceId = torrent.ClientInstanceId;
             decision.TorrentHash = torrent.Hash;
@@ -558,6 +565,7 @@ public class SeedingService : ISeedingService
         if (exempt)
         {
             decision.State = "eligible";
+            decision.UnknownReason = null;
             decision.Reason += " Download threshold has not been reached.";
         }
         else if (decision.State == "eligible")
@@ -589,10 +597,12 @@ public class SeedingService : ISeedingService
         return new()
         {
             State = safe && healthy ? "eligible" : healthy ? "protected" : "unknown",
+            UnknownReason = healthy ? null : "tracker-accounting-unconfirmed",
             LocalEstimate = false,
             ObservedSeedSeconds = torrent.SeedingTime,
             RemainingSeedSeconds = timeApplies ? Math.Max(0, requiredSeconds + (double)config.TrackerUpdateBuffer - torrent.SeedingTime) : 0,
             Reason = $"Hit & Run mode={config.HitAndRunMode}; ratio={torrent.Ratio:F3}/{config.MinSeedRatio}; client-reported seed={torrent.SeedingTime}s/{requiredSeconds}s; tracker update buffer={config.TrackerUpdateBuffer}s; minimum download={config.HitAndRunMinimumDownloadPercent}%; partial ratio={config.HitAndRunPartialSeedRatio}; tracker healthy={healthy}; requirements met={safe}."
+                + (!healthy && safe ? " Waiting for a healthy tracker response to confirm accounting." : "")
         };
     }
 
@@ -1048,6 +1058,32 @@ public class SeedingService : ISeedingService
             try
             {
                 var torrents = await client.GetTorrentsAsync(category, cancellationToken: cancellationToken);
+                var skip = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                async Task RecordFailureAsync(TorrentInfo torrent, string operation, Exception error)
+                {
+                    if (error is HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound })
+                    {
+                        skip.Add(torrent.Hash);
+                        try
+                        {
+                            var current = await client.GetTorrentsAsync(cancellationToken: cancellationToken);
+                            if (!current.Any(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase)))
+                            {
+                                _stalledUploads.Evict(instanceName, torrent.Hash);
+                                _logger.LogInformation("Torrent {Hash} disappeared from {Instance}; skipping stale seeding inventory", torrent.Hash, instanceName);
+                                return;
+                            }
+                        }
+                        catch (Exception refreshError) when (refreshError is not OperationCanceledException)
+                        {
+                            error = new AggregateException("Unable to verify torrent disappearance against fresh inventory.", error, refreshError);
+                        }
+                    }
+                    failures.Add(error);
+                    _logger.LogError(error, "Error in {Operation} for torrent {Hash} on {Instance}", operation, torrent.Hash, instanceName);
+                }
+
                 foreach (var torrent in torrents) torrent.QBitInstanceName = instanceName;
                 var completedTorrents = torrents.Where(t =>
                     t.Progress >= 1.0 &&
@@ -1063,31 +1099,30 @@ public class SeedingService : ISeedingService
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        failures.Add(ex);
-                        _logger.LogError(ex, "Error updating seeding tag for torrent {Hash}", torrent.Hash);
+                        await RecordFailureAsync(torrent, "seeding tag update", ex);
                     }
                 }
 
                 // §3.1 / §3.2: Tracker actions + message scanning — run on all torrents
                 foreach (var torrent in torrents)
                 {
+                    if (skip.Contains(torrent.Hash)) continue;
                     try
                     {
                         await ApplyTrackerActionsAsync(client, torrent, cancellationToken);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        failures.Add(ex);
-                        _logger.LogError(ex, "Error applying tracker actions for {Hash}", torrent.Hash);
+                        await RecordFailureAsync(torrent, "tracker actions", ex);
                     }
+                    if (skip.Contains(torrent.Hash)) continue;
                     try
                     {
                         await ProcessTrackerMessagesAsync(client, torrent, cancellationToken);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        failures.Add(ex);
-                        _logger.LogError(ex, "Error processing tracker messages for {Hash}", torrent.Hash);
+                        await RecordFailureAsync(torrent, "tracker message processing", ex);
                     }
                 }
             }
@@ -1440,13 +1475,7 @@ public class SeedingService : ISeedingService
             t.RemoveIfExists || t.AddTrackerIfMissing || t.AddTags.Count > 0 || t.SuperSeedMode.HasValue).ToList();
         if (actionTrackers.Count == 0) return;
 
-        List<TorrentTracker> torrentTrackers;
-        try { torrentTrackers = await client.GetTorrentTrackersAsync(torrent.Hash, ct); }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogWarning(ex, "ApplyTrackerActions: failed to get trackers for {Hash}", torrent.Hash);
-            throw;
-        }
+        var torrentTrackers = await client.GetTorrentTrackersAsync(torrent.Hash, ct);
 
         var existingTagSet = (torrent.Tags ?? "")
             .Split(',', StringSplitOptions.RemoveEmptyEntries)
@@ -1509,12 +1538,81 @@ public class SeedingService : ISeedingService
     internal async Task ObserveTrackerIssueAsync(TorrentInfo torrent, IReadOnlyList<TorrentTracker> trackers, CancellationToken ct)
     {
         var issueKey = MaintenancePersistence.Key(torrent.ClientInstanceId, torrent.Hash, "tracker-issue");
-        var rejected = trackers.Any(t => TrackerMessageIndicatesDead(t.Msg));
+        var client = _config.GetTorrentClient(torrent.ClientInstanceId);
+        var matchesCleanup = client != null && trackers.Any(t => MaintenanceRecovery.MatchesUnregistered(t, client.Maintenance.Unregistered));
+        var rejected = matchesCleanup || trackers.Any(t => TrackerMessageIndicatesDead(t.Msg));
         var healthy = MaintenanceRecovery.HealthyTracker(trackers);
+        var parking = client != null && IsInAutomaticCleanupScope(torrent, client)
+            && MaintenanceRecovery.ShouldParkIncomplete(torrent, client.Maintenance.Unregistered);
+        if (parking && !healthy && TorrentPolicyHelper.IsPausedDownloadStateForFreeSpace(torrent.State))
+        {
+            var previous = await _dbContext.MaintenanceState.AsNoTracking().Where(s => s.Key == issueKey)
+                .Select(s => s.Data).SingleOrDefaultAsync(ct);
+            var lastRejection = previous == null ? null : Newtonsoft.Json.JsonConvert.DeserializeObject<TorrentAutomationIssue>(previous);
+            if (matchesCleanup || lastRejection?.AddedOn == torrent.AddedOn
+                && trackers.Where(t => t.Tier >= 0).All(t => string.IsNullOrWhiteSpace(t.Msg)))
+            {
+                var detail = matchesCleanup ? "The tracker rejection is still present." : "Last confirmed tracker rejection retained. Waiting for fresh tracker evidence.";
+                MaintenancePersistence.Write(_dbContext, issueKey, new TorrentAutomationIssue(torrent.ClientInstanceId,
+                    torrent.Hash, torrent.Name, $"Parked incomplete torrent. {detail}", torrent.AddedOn)
+                { RequiresAttention = false });
+                return;
+            }
+        }
         if (rejected && !healthy)
+        {
+            var (requiresAttention, reason) = parking && matchesCleanup && MaintenanceRecovery.CanParkDownload(torrent)
+                && client!.Maintenance.Unregistered.MaxPerTrackerPerRun > 0
+                ? (false, HnrAllowsDelete(torrent, trackers)
+                    ? "Automatic parking is waiting for the cleanup schedule or grace period."
+                    : "Tracker protection blocks parking. Torrentarr is preserving the torrent's current state.")
+                : DescribeTrackerRejection(torrent, client, matchesCleanup);
             MaintenancePersistence.Write(_dbContext, issueKey, new TorrentAutomationIssue(torrent.ClientInstanceId, torrent.Hash, torrent.Name,
-                "Tracker rejected this torrent. A file recheck cannot restore registration; keep and investigate.", torrent.AddedOn));
+                reason, torrent.AddedOn)
+            { RequiresAttention = requiresAttention });
+        }
         else if (healthy) await MaintenancePersistence.DeleteAsync(_dbContext, issueKey, ct);
+    }
+
+    private bool IsInAutomaticCleanupScope(TorrentInfo torrent, TorrentClientInstanceConfig client)
+        => MaintenanceCoordinator.IsAutomatic(_config, client, MaintenanceOperation.UnregisteredCleanup)
+            && MaintenanceCoordinator.IsCategoryAndTagInScope(torrent, client, _config)
+            && MaintenanceCoordinator.IsOperationScope(torrent, client.Maintenance, MaintenanceOperation.UnregisteredCleanup)
+            && torrent.AddedOn > 0 && torrent.AddedOn <= _clock.GetUtcNow().ToUnixTimeSeconds();
+
+    private (bool RequiresAttention, string Reason) DescribeTrackerRejection(
+        TorrentInfo torrent, TorrentClientInstanceConfig? client, bool matchesCleanup)
+    {
+        var now = _clock.GetUtcNow();
+        if (client == null || !matchesCleanup || !IsInAutomaticCleanupScope(torrent, client)
+            || client.Maintenance.Unregistered.CompletedOnly && torrent.Progress < 1
+            || MaintenanceRecovery.ShouldParkIncomplete(torrent, client.Maintenance.Unregistered))
+            return (true, "Tracker rejected this torrent and no authorized automatic cleanup rule applies.");
+
+        var maintenance = client.Maintenance;
+        var recovery = maintenance.ErrorRecovery;
+        var state = MaintenanceRecovery.Read(_dbContext, torrent, nameof(MaintenanceOperation.UnregisteredCleanup));
+        if (state.Stage == "rejected")
+            return (true, "The torrent client rejected the automatic cleanup recheck.");
+        if (state.Stage == "unconfirmed" || state.CompletedAt == null && state.RequestedAt is { } requested
+            && now - requested > TimeSpan.FromMinutes(recovery.RecheckTimeoutMinutes))
+            return (true, "The automatic cleanup recheck could not be confirmed.");
+
+        var capabilities = _qbitManager.GetClient(torrent.ClientInstanceId)?.Capabilities ?? TorrentClientCapabilities.None;
+        var canRecheck = capabilities.Recheck && recovery.MaxPerRun > 0 && state.Attempts < recovery.MaxRepairAttempts;
+        var recheckInProgress = state.Stage is "requested" or "checking";
+        var canCleanUp = maintenance.RecycleBin.Enabled
+            ? maintenance.RecycleBin.MaxTorrentMovesPerRun > 0
+            : capabilities.ContentDeletion;
+        var hasNextStep = state.Stage == "recurring" ? canCleanUp : canRecheck || recheckInProgress;
+        if (maintenance.Unregistered.MaxPerTrackerPerRun <= 0 || !hasNextStep)
+            return (true, "The tracker still rejects this torrent and no supported automatic cleanup step remains.");
+
+        var grace = Math.Max(Math.Max(maintenance.MinimumTorrentAgeMinutes, maintenance.Unregistered.GraceMinutes) * 60L,
+            _config.Settings.IgnoreTorrentsYoungerThan);
+        if (now.ToUnixTimeSeconds() - torrent.AddedOn < grace)
+            return (false, "Automatic cleanup is waiting for the configured torrent age or grace period.");
+        return (false, $"Automatic cleanup is handling this tracker rejection. Recovery stage: {state.Stage}.");
     }
 
     private bool PreservesPrivateAnnounceUrl(

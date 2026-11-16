@@ -42,7 +42,10 @@ public interface ISafeDeletionService
     void RegisterLegacyRecycleEntry(string clientInstanceId, string path) => throw new NotSupportedException();
 }
 
-public sealed record SafeDeletionResult(bool Success, bool ContentPreserved, long BytesMoved, string? Error = null, bool Deferred = false);
+public sealed record SafeDeletionResult(bool Success, bool ContentPreserved, long BytesMoved, string? Error = null, bool Deferred = false)
+{
+    public RemovalDecision? RemovalDecision { get; init; }
+}
 
 public interface IMaintenanceCoordinator
 {

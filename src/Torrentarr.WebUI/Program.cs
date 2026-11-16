@@ -967,8 +967,8 @@ static void RedactFlatField(Newtonsoft.Json.Linq.JObject obj, string key)
         .FirstOrDefault(p => p.Name.Equals(key, StringComparison.OrdinalIgnoreCase));
     if (prop != null
         && prop.Value.Type == Newtonsoft.Json.Linq.JTokenType.String
-        && !string.IsNullOrEmpty(prop.Value.ToString())
-        && prop.Value.ToString() != "CHANGE_ME")
+        && !string.IsNullOrWhiteSpace(prop.Value.ToString())
+        && prop.Value.ToString().Trim() != "CHANGE_ME")
     {
         prop.Value = "[redacted]";
     }

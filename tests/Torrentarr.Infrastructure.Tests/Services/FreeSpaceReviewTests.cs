@@ -288,8 +288,10 @@ public sealed class FreeSpaceReviewTests : IDisposable
         client.Setup(c => c.PauseTorrentAsync(torrent.Hash, It.IsAny<CancellationToken>())).ReturnsAsync(accepted);
         client.Setup(c => c.ResumeTorrentAsync(torrent.Hash, It.IsAny<CancellationToken>())).ReturnsAsync(accepted);
         var logger = new DiagnosticLogger();
-        var result = await new DiagnosticService(logger, _config, _registry.Object, _db)
+        var observations = new FreeSpaceObservations();
+        var result = await new DiagnosticService(logger, _config, _registry.Object, _db, observations)
             .ProcessAsync(new HashSet<string> { "movies" });
+        observations.Get("diagnostic-client", Path.GetTempPath())!.EnforcementFailed.Should().Be(!accepted);
         var summary = logger.Entries.Single(e => e.Message.Contains("cycle completed"));
         summary.Message.Should().Contain($"paused={(accepted && !resume ? 1 : 0)}")
             .And.Contain($"resumed={(accepted && resume ? 1 : 0)}")
@@ -306,7 +308,8 @@ public sealed class FreeSpaceReviewTests : IDisposable
     }
 
     private sealed class DiagnosticService(ILogger<FreeSpaceService> logger, TorrentarrConfig config,
-        ITorrentClientRegistry registry, TorrentarrDbContext db) : FreeSpaceService(logger, config, registry, db)
+        ITorrentClientRegistry registry, TorrentarrDbContext db, FreeSpaceObservations observations)
+        : FreeSpaceService(logger, config, registry, db, observations)
     {
         protected override string IdentifyStorage(string path) => "diagnostic-disk";
         protected override StorageSpace ReadSpace(string path) => new("diagnostic-disk", 1000, 100);

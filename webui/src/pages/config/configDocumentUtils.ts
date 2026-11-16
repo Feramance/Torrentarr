@@ -8,7 +8,9 @@ import type { FieldDefinition, ValidationError } from "./configTypes";
 export function parseFieldValue(field: FieldDefinition, raw: unknown): unknown {
   if (
     raw === null ||
-    (field.type === "number" && field.default === null && raw === "")
+    (field.type === "number" &&
+      (field.required || field.default === null) &&
+      raw === "")
   )
     return null;
   if (field.type === "tags" && Array.isArray(raw)) return raw;

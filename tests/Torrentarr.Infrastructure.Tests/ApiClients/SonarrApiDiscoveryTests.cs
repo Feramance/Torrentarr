@@ -6,6 +6,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database;
@@ -43,6 +44,7 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     private string _historyJson = "[]";
     private string? _commandResponseJson;
     private bool _limitAfterFirstSearch;
+    private bool _invalidInventoryAfterTwoSearches;
     private readonly string _key = Guid.NewGuid().ToString();
 
     public SonarrApiDiscoveryTests()
@@ -430,6 +432,66 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         _discoveryStatus = 200;
         _version = "v3";
         (await act()).ApiVersion.Should().Be("v3");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Discovery_RetriesTransientDnsOnRefresh(bool cancelDuringRetry)
+    {
+        var clock = new TestClock();
+        await SonarrApiDiscovery.ResolveAsync(_url, _key, false, clock);
+        clock.Now = clock.Now.AddMinutes(5);
+        _version = "v3";
+        using var stop = new CancellationTokenSource();
+        using var http = new HttpClient(new FailDiscoveryRead());
+        var refresh = SonarrApiDiscovery.ResolveAsync(_url, _key, false, clock, stop.Token, http);
+        if (cancelDuringRetry)
+        {
+            stop.Cancel();
+            await FluentActions.Awaiting(() => refresh).Should().ThrowAsync<OperationCanceledException>();
+            _requests.Count(r => r.Path == "/sonarr/api").Should().Be(1);
+        }
+        else
+        {
+            (await refresh).ApiVersion.Should().Be("v3");
+            _requests.Count(r => r.Path == "/sonarr/api").Should().Be(2);
+        }
+    }
+
+    [Fact]
+    public async Task FailedCapacityRead_PreservesTwoAcceptedSearchesAndResolvesOnlyCapacityOnRecovery()
+    {
+        _invalidInventoryAfterTwoSearches = true;
+        var config = new TorrentarrConfig();
+        var arr = new ArrInstanceConfig { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv" };
+        arr.Search.SearchBySeries = "episode";
+        config.Settings.SearchLoopDelay = 1;
+        config.ArrInstances["Sonarr-test"] = arr;
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        db.Episodes.AddRange(Enumerable.Range(1, 3).Select(id => new EpisodeFilesModel
+        { ArrId = id, ArrInstance = "Sonarr-test", ArrSeriesId = 7, Monitored = true }));
+        await db.SaveChangesAsync();
+        var reporter = new Mock<IOperationalIssueReporter>();
+        var coordinator = new DatabaseRestartCoordinator();
+        var executor = new SearchExecutor(NullLogger<SearchExecutor>.Instance, config, db,
+            new QualityProfileSwitcherService(NullLogger<QualityProfileSwitcherService>.Instance, db, coordinator), coordinator, reporter.Object);
+        var candidates = Enumerable.Range(1, 3).Select(id => new SearchCandidate { ArrId = id, SeriesId = 7, Type = "Episode" }).ToArray();
+        var result = await executor.ExecuteSearchesAsync("Sonarr-test", candidates);
+
+        result.CapacityUnavailable.Should().BeTrue();
+        result.LoopCompleted.Should().BeFalse();
+        result.Errors.Should().BeEmpty();
+        result.SearchedIds.Should().Equal(1, 2);
+        _requests.Count(r => r.Method == "POST").Should().Be(2);
+        reporter.Verify(r => r.ReportAsync(It.Is<OperationalIssueReport>(i => i.Code == "search.capacity"), It.IsAny<CancellationToken>()), Times.Once);
+        reporter.Verify(r => r.ReportAsync(It.Is<OperationalIssueReport>(i => i.Code == "search.submission"), It.IsAny<CancellationToken>()), Times.Never);
+
+        reporter.Invocations.Clear();
+        _invalidInventoryAfterTwoSearches = false;
+        (await executor.ExecuteSearchesAsync("Sonarr-test", [candidates[2]])).SearchedIds.Should().Equal(3);
+        reporter.Verify(r => r.ResolveAsync(It.Is<OperationalIssueReport>(i => i.Code == "search.capacity"), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
     [Theory]
@@ -964,7 +1026,8 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
                     seasons = new[] { new { seasonNumber = 0, monitored = _specialsSeasonMonitored }, new { seasonNumber = 1, monitored = true }, new { seasonNumber = 2, monitored = true } }
                 }))
                 : relative.EndsWith("/command") && ctx.Request.HttpMethod == "GET"
-                    ? _limitAfterFirstSearch && _requests.Any(r => r.Method == "POST")
+                    ? _invalidInventoryAfterTwoSearches && _requests.Count(r => r.Method == "POST") >= 2 ? "{}"
+                    : _limitAfterFirstSearch && _requests.Any(r => r.Method == "POST")
                         ? """[{"name":"SeasonSearch","status":"started"}]""" : _commandsJson
                 : relative.Contains("/episodefile?") || relative.EndsWith("/qualityprofile") ? "[]" : "{}";
             if (relative.Contains("/queue?") && ctx.Request.QueryString["includeUnknownSeriesItems"] == "false")
@@ -1021,5 +1084,17 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     {
         internal DateTimeOffset Now = DateTimeOffset.UtcNow;
         public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    private sealed class FailDiscoveryRead() : DelegatingHandler(new HttpClientHandler())
+    {
+        private bool _failed;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (_failed) return base.SendAsync(request, cancellationToken);
+            _failed = true;
+            throw new HttpRequestException(HttpRequestError.NameResolutionError, "Transient DNS failure",
+                new SocketException((int)SocketError.TryAgain));
+        }
     }
 }

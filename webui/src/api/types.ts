@@ -729,6 +729,11 @@ export interface MaintenanceStatus {
     torrentName: string;
     tracker: string;
     state: string;
+    unknownReason?:
+      | "tracker-accounting-unconfirmed"
+      | "no-tracker-reported"
+      | "no-matching-tracker-rule"
+      | null;
     reason: string;
     observedSeedSeconds: number;
     remainingSeedSeconds: number;
@@ -795,6 +800,7 @@ export interface TorrentAutomationStatus {
     torrentHash: string;
     torrentName: string;
     reason: string;
+    requiresAttention?: boolean;
   }[];
   protection: NonNullable<MaintenanceStatus["protection"]>;
   recovery: NonNullable<MaintenanceStatus["recovery"]>;

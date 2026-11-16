@@ -31,7 +31,12 @@ export function basicValidation(
       if (!isRequired) {
         return undefined;
       }
-      if (isEmptyValue(value)) {
+      if (
+        isEmptyValue(value) ||
+        (def.default === "CHANGE_ME" &&
+          typeof value === "string" &&
+          value.trim() === def.default)
+      ) {
         return `${label} is required.`;
       }
       return undefined;
@@ -160,14 +165,6 @@ export function validateFieldGroup(
   }
 }
 
-export function isManagedArrSection(section: ConfigDocument | null): boolean {
-  return Boolean(getValue(section, ["Managed"]));
-}
-
-export function isEnabledQbitSection(section: ConfigDocument | null): boolean {
-  return !getValue(section, ["Disabled"]);
-}
-
 export function validateSection(
   formState: ConfigDocument | null,
   sectionKey: string,
@@ -186,12 +183,11 @@ export function validateSection(
   };
 
   if (QBIT_SECTION_REGEX.test(sectionKey)) {
-    if (!isEnabledQbitSection(section)) {
-      return [];
-    }
     validateFieldGroup(
       errors,
-      QBIT_FIELDS,
+      getValue(section, ["Disabled"])
+        ? QBIT_FIELDS.filter((field) => field.required)
+        : QBIT_FIELDS,
       section,
       [sectionKey],
       sectionContext,
@@ -200,48 +196,20 @@ export function validateSection(
   }
 
   if (SERVARR_SECTION_REGEX.test(sectionKey)) {
-    if (!isManagedArrSection(section)) {
-      return [];
-    }
-    const fieldSets = getArrFieldSets(sectionKey);
+    const { qualityFields, ...fieldSets } = getArrFieldSets(sectionKey);
+    const fields = Object.values(fieldSets).flat();
     validateFieldGroup(
       errors,
-      fieldSets.generalFields,
+      getValue(section, ["Managed"]) === false
+        ? fields.filter((field) => field.required)
+        : fields,
       section,
       [sectionKey],
       sectionContext,
     );
     validateFieldGroup(
       errors,
-      fieldSets.entryFields,
-      section,
-      [sectionKey],
-      sectionContext,
-    );
-    validateFieldGroup(
-      errors,
-      fieldSets.entryOmbiFields,
-      section,
-      [sectionKey],
-      sectionContext,
-    );
-    validateFieldGroup(
-      errors,
-      fieldSets.entryOverseerrFields,
-      section,
-      [sectionKey],
-      sectionContext,
-    );
-    validateFieldGroup(
-      errors,
-      fieldSets.torrentFields,
-      section,
-      [sectionKey],
-      sectionContext,
-    );
-    validateFieldGroup(
-      errors,
-      fieldSets.seedingFields,
+      qualityFields.filter((field) => field.required),
       section,
       [sectionKey],
       sectionContext,

@@ -1879,6 +1879,25 @@ export const CONFIG_SCHEMA = {
         "path": [
           "Maintenance",
           "Unregistered",
+          "ParkIncomplete"
+        ],
+        "key": "Maintenance.Unregistered.ParkIncomplete",
+        "label": "Park incomplete rejected torrents",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Park incomplete rejected torrents. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Keep stopped incomplete torrents and their files. Pause active incomplete torrents only after a confirmed tracker rejection and protection clearance."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Unregistered",
           "Messages"
         ],
         "key": "Maintenance.Unregistered.Messages",
@@ -5174,6 +5193,25 @@ export const CONFIG_SCHEMA = {
         "uiExpose": true,
         "applyLive": true,
         "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Unregistered",
+          "ParkIncomplete"
+        ],
+        "key": "Maintenance.Unregistered.ParkIncomplete",
+        "label": "Park incomplete rejected torrents",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Park incomplete rejected torrents. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Keep stopped incomplete torrents and their files. Pause active incomplete torrents only after a confirmed tracker rejection and protection clearance."
       },
       {
         "section": "TorrentClient",

@@ -363,8 +363,8 @@ public sealed class OperationalIssueMonitorTests
         var config = new Mock<IConfigReloader>(); config.Setup(c => c.GetStatus()).Returns(() => state);
         var online = false;
         var network = new Mock<IConnectivityService>(); network.SetupGet(n => n.LastChecked).Returns(DateTime.UtcNow); network.SetupGet(n => n.IsConnected).Returns(() => online);
-        var low = true;
-        var storage = new Mock<IFreeSpaceService>(); storage.Setup(s => s.GetFreeSpaceStatsAsync(It.IsAny<CancellationToken>())).Returns(() => Task.FromResult<IReadOnlyList<FreeSpaceStats>>([new() { ClientInstanceId = "client", Path = "/downloads", BelowThreshold = low }]));
+        string? storageError = "Storage path is unreadable";
+        var storage = new Mock<IFreeSpaceService>(); storage.Setup(s => s.GetFreeSpaceStatsAsync(It.IsAny<CancellationToken>())).Returns(() => Task.FromResult<IReadOnlyList<FreeSpaceStats>>([new() { ClientInstanceId = "client", Path = "/downloads", BelowThreshold = true, Error = storageError }]));
         await using var services = new ServiceCollection().AddSingleton(config.Object).AddSingleton(network.Object).AddSingleton(storage.Object).BuildServiceProvider();
         using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(), reporter.Object, new TorrentarrConfig(), NullLogger<OperationalIssueMonitor>.Instance);
         await monitor.InspectAsync(default);
@@ -375,8 +375,31 @@ public sealed class OperationalIssueMonitorTests
         resolved.Should().BeEmpty();
         state = state with { State = "pending" }; await monitor.InspectAsync(default);
         resolved.Should().NotContain(r => r.Code == "config.apply");
-        state = state with { State = "applied", Error = null }; online = true; low = false; await monitor.InspectAsync(default);
+        state = state with { State = "applied", Error = null }; online = true; storageError = null; await monitor.InspectAsync(default);
         resolved.Select(r => r.Code).Should().Contain(["config.apply", "network.internet", "storage.reserve"]);
+    }
+
+    [Fact]
+    public async Task LowStorage_OnlyReportsAnIssueWhileEnforcementIsFailing()
+    {
+        var reporter = new Mock<IOperationalIssueReporter>();
+        var observations = new FreeSpaceObservations();
+        var storage = new Mock<IFreeSpaceService>();
+        storage.Setup(s => s.GetFreeSpaceStatsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { ClientInstanceId = "client", Path = "/downloads", BelowThreshold = true }]);
+        await using var services = new ServiceCollection().AddSingleton(storage.Object).AddSingleton(observations).BuildServiceProvider();
+        using var monitor = new OperationalIssueMonitor(services.GetRequiredService<IServiceScopeFactory>(),
+            reporter.Object, new(), NullLogger<OperationalIssueMonitor>.Instance);
+
+        observations.Set("client", "/downloads", new(0, 0, DateTimeOffset.UtcNow, "Client rejected pause.", EnforcementFailed: true));
+        await monitor.InspectAsync(default);
+        reporter.Verify(r => r.ReportAsync(It.Is<OperationalIssueReport>(i => i.Code == "storage.reserve"
+            && i.Impact.Contains("Client rejected pause.")), It.IsAny<CancellationToken>()), Times.Once);
+
+        observations.Set("client", "/downloads", new(0, 0, DateTimeOffset.UtcNow, "Insufficient space above the reserve."));
+        await monitor.InspectAsync(default);
+        reporter.Verify(r => r.ResolveAsync(It.Is<OperationalIssueReport>(i => i.Code == "storage.reserve"),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
     private sealed class TemporaryDirectory : IDisposable
     {

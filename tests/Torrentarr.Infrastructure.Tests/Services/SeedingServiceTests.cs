@@ -38,6 +38,68 @@ public class SeedingServiceTests
     }
 
     [Fact]
+    public async Task SeedingMaintenance_SkipsOnlyTheTorrentConfirmedMissing()
+    {
+        var (service, client) = SetupTrackerInventoryRace();
+        await service.UpdateSeedingTagsAsync("movies");
+        client.Verify(c => c.GetTorrentTrackersAsync("first", It.IsAny<CancellationToken>()), Times.Once);
+        client.Verify(c => c.GetTorrentTrackersAsync("second", It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SeedingMaintenance_Reports404IfDisappearanceCannotBeConfirmed(bool refreshFails)
+    {
+        var (service, client) = SetupTrackerInventoryRace();
+        var refresh = client.Setup(c => c.GetTorrentsAsync(null, null, It.IsAny<CancellationToken>()));
+        if (refreshFails) refresh.ThrowsAsync(new IOException("Fresh inventory unavailable."));
+        else refresh.ReturnsAsync([new TorrentInfo { Hash = "FIRST", Category = "changed" }]);
+
+        var failure = await FluentActions.Awaiting(() => service.UpdateSeedingTagsAsync("movies"))
+            .Should().ThrowAsync<AggregateException>();
+        var causes = failure.Which.Flatten().InnerExceptions;
+        causes.OfType<HttpRequestException>().Should().ContainSingle(e => e.StatusCode == System.Net.HttpStatusCode.NotFound);
+        if (refreshFails) causes.Should().Contain(e => e.Message == "Fresh inventory unavailable.");
+        client.Verify(c => c.GetTorrentTrackersAsync("second", It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task SeedingMaintenance_PropagatesCancellationDuringInventoryRefresh()
+    {
+        var (service, client) = SetupTrackerInventoryRace();
+        client.Setup(c => c.GetTorrentsAsync(null, null, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new OperationCanceledException());
+        await FluentActions.Awaiting(() => service.UpdateSeedingTagsAsync("movies"))
+            .Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    private static (SeedingService Service, Mock<ITorrentClient> Client) SetupTrackerInventoryRace()
+    {
+        var config = new TorrentarrConfig();
+        config.Settings.Tagless = true;
+        config.TorrentClients["client"] = new()
+        {
+            Trackers = [new() { Uri = "tracker.example", SuperSeedMode = false }]
+        };
+        var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var first = new TorrentInfo { Hash = "first", Category = "movies", Progress = 0.5 };
+        var second = new TorrentInfo { Hash = "second", Category = "movies", Progress = 0.5 };
+        var client = new Mock<ITorrentClient>();
+        client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
+        client.Setup(c => c.GetTorrentsAsync("movies", null, It.IsAny<CancellationToken>())).ReturnsAsync([first, second]);
+        client.Setup(c => c.GetTorrentsAsync(null, null, It.IsAny<CancellationToken>())).ReturnsAsync([second]);
+        client.Setup(c => c.GetTorrentTrackersAsync("first", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("Trackers not found.", null, System.Net.HttpStatusCode.NotFound));
+        client.Setup(c => c.GetTorrentTrackersAsync("second", It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce", Status = 2 }]);
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["client"] = client.Object });
+        return (new SeedingService(NullLogger<SeedingService>.Instance, db, config, registry.Object), client);
+    }
+
+    [Fact]
     public async Task ScopedRulesKeepProtectionIndependentAndPreferArrOverrides()
     {
         var config = new TorrentarrConfig
@@ -255,7 +317,7 @@ public class SeedingServiceTests
             SeedingTimeLimit = -1
         }, TorrentRemovalIntent.RejectedByAllowlist);
         decision.Blockers.Should().ContainSingle().Which.Code.Should().Be(code);
-        decision.IsExpectedProtectionWait().Should().Be(code is "hnr.protected" or "hnr.protected.native-stop-risk");
+        decision.IsExpectedPolicyDeferral().Should().Be(code is "hnr.protected" or "hnr.protected.native-stop-risk" or "hnr.unknown");
         decision.Reason.Should().Contain("Client-reported seed=480000s").And.Contain("remaining time requirement=211200s");
     }
 
@@ -292,7 +354,7 @@ public class SeedingServiceTests
         protection.RemainingSeedSeconds.Should().Be(54 * 3600);
         protection.DeadlineRisk.Should().Be("unachievable");
         var decision = await service.EvaluateRemovalAsync(torrent, TorrentRemovalIntent.RejectedByAllowlist);
-        decision.IsExpectedProtectionWait().Should().BeFalse();
+        decision.IsExpectedPolicyDeferral().Should().BeFalse();
         decision.Blockers.Should().Contain(b => b.Code == "hnr.protected.deadline-unachievable");
         decision.Reason.Should().Contain("Locally observed seed=0s").And.Contain("deadline risk=unachievable");
     }
@@ -1010,6 +1072,40 @@ public class SeedingServiceTests
             [new() { Url = "https://unknown.example/announce", Status = 2 }]).Should().ContainSingle().Subject;
 
         decision.State.Should().Be("unknown");
-        decision.Reason.Should().Contain("Unmatched private/unknown tracker");
+        decision.UnknownReason.Should().Be("no-matching-tracker-rule");
+        decision.Tracker.Should().Be("unknown.example");
+    }
+
+    [Fact]
+    public void PrivateTorrentWithOnlySyntheticTrackers_HasNoTrackerReported()
+    {
+        var svc = CreateService();
+        var torrent = new TorrentInfo { IsPrivate = true, Progress = 1 };
+        List<TorrentTracker> trackers = [new() { Url = "** [DHT] **", Tier = -1 }];
+        svc.GetProtectionDecisions(torrent, trackers).Should().ContainSingle()
+            .Which.UnknownReason.Should().Be("no-tracker-reported");
+        svc.HnrAllowsDelete(torrent, trackers).Should().BeFalse();
+    }
+
+    [Fact]
+    public void MatchedUnhealthyAndUnmatchedTrackers_BothKeepPrivateTorrentProtected()
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["client"] = new()
+        {
+            Trackers = [new() { Uri = "tracker.example", HitAndRunMode = "ratio", MinSeedRatio = 1 }]
+        };
+        var svc = CreateService(config);
+        var torrent = new TorrentInfo { ClientInstanceId = "client", IsPrivate = true, Progress = 1, Ratio = 2 };
+        List<TorrentTracker> trackers =
+        [
+            new() { Url = "https://announce.tracker.example/path", Status = 1 },
+            new() { Url = "https://unmatched.example/path?passkey=secret", Status = 2 }
+        ];
+        var decisions = svc.GetProtectionDecisions(torrent, trackers);
+        decisions.Should().Contain(d => d.Tracker == "tracker.example" && d.State == "unknown"
+            && d.UnknownReason == "tracker-accounting-unconfirmed" && d.Reason.Contains("requirements met=True"));
+        decisions.Should().Contain(d => d.Tracker == "unmatched.example" && d.UnknownReason == "no-matching-tracker-rule");
+        svc.HnrAllowsDelete(torrent, trackers).Should().BeFalse();
     }
 }

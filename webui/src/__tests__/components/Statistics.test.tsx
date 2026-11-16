@@ -24,10 +24,12 @@ describe("statistics", () => {
       ],
       "downloadRate",
       100,
+      1920,
     );
     expect(path.match(/M/g)).toHaveLength(3);
     expect(path.match(/L/g)).toHaveLength(1);
     expect(path).toContain("M70.00,130.00");
+    expect(path).toMatch(/M1900\.00,75\.00$/);
   });
   it("shows text equivalents for breakdowns including empty results", () => {
     render(

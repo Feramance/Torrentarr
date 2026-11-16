@@ -110,7 +110,16 @@ public class SearchExecutor : ISearchExecutor
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 RequireCurrentConfiguration();
-                var active = await GetActiveCommandCountAsync(instanceName, cancellationToken);
+                int active;
+                try { active = await GetActiveCommandCountAsync(instanceName, cancellationToken); }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch (ConfigurationBusyException) { throw; }
+                catch (Exception)
+                {
+                    // The inventory read reports its own issue. No command was submitted.
+                    result.CapacityUnavailable = true;
+                    return false;
+                }
                 RequireCurrentConfiguration();
                 _logger.LogDebug("Search capacity for {Instance}: active={Active}/{Limit}", instanceName, active, searchLimit);
                 if (CanSearch(active, searchLimit)) return true;

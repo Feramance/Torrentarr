@@ -527,8 +527,14 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
 
     [Theory]
     [InlineData("hnr.protected", LogLevel.Information)]
-    [InlineData("hnr.unknown", LogLevel.Warning)]
+    [InlineData("hnr.unknown", LogLevel.Information)]
     [InlineData("hnr.protected.native-stop-risk", LogLevel.Information)]
+    [InlineData("hnr.protected,seeding.limit", LogLevel.Information)]
+    [InlineData("stalled.grace", LogLevel.Information)]
+    [InlineData("torrent.minimum-age,seeding.minimum,seeding.removal-disabled", LogLevel.Information)]
+    [InlineData("hnr.unknown,seeding.limit", LogLevel.Information)]
+    [InlineData("torrent.changed", LogLevel.Information)]
+    [InlineData("hnr.protected.deadline-warning,stalled.grace", LogLevel.Warning)]
     [InlineData("storage.mapping", LogLevel.Warning)]
     public async Task RemovalDiagnostics_ReportIssuesIndependentlyOfLogSuppression(string code, LogLevel firstLevel)
     {
@@ -540,7 +546,8 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         var method = typeof(TorrentProcessor).GetMethod("LogRemovalBlocked", BindingFlags.NonPublic | BindingFlags.Instance)!;
         async Task Block(string reason, string blocker = "")
         {
-            var decision = new RemovalDecision([new(blocker.Length == 0 ? code : blocker, reason, "Review settings")]);
+            var decision = new RemovalDecision((blocker.Length == 0 ? code : blocker).Split(',')
+                .Select(code => new RemovalBlocker(code, reason, "Review settings")).ToArray());
             await (Task)method.Invoke(processor, [torrent, TorrentRemovalIntent.RejectedByAllowlist, decision.Reason, null, decision])!;
         }
         await Block("ratio=0.048; seed=480000s");
@@ -549,7 +556,7 @@ public sealed class TorrentProcessorImportAllowlistTests : IDisposable
         await Block("ratio=0.050; seed=480600s");
         var logs = logger.Invocations.Where(i => i.Method.Name == "Log").ToList();
         logs.Select(i => (LogLevel)i.Arguments[0]!).Should().Equal(firstLevel, LogLevel.Debug, firstLevel);
-        var expectedWait = code is "hnr.protected" or "hnr.protected.native-stop-risk";
+        var expectedWait = firstLevel == LogLevel.Information;
         issues.Verify(i => i.ReportAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()), expectedWait ? Times.Never() : Times.Exactly(3));
         issues.Verify(i => i.ResolveAsync(It.IsAny<OperationalIssueReport>(), It.IsAny<CancellationToken>()), expectedWait ? Times.Exactly(3) : Times.Never());
         await Block("new blocker", "client.disconnected");

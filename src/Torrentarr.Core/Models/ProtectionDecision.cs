@@ -9,6 +9,7 @@ public sealed class ProtectionDecision
     public string TorrentName { get; set; } = "";
     public string Tracker { get; set; } = "";
     public string State { get; set; } = "unknown";
+    public string? UnknownReason { get; set; }
     public string Reason { get; set; } = "Protection evidence is unavailable.";
     public double ObservedSeedSeconds { get; set; }
     public double RemainingSeedSeconds { get; set; }
@@ -105,7 +106,14 @@ public static class TrackerProtectionEvaluator
         if (!hasObligation) { result.State = "eligible"; result.Reason = "Download threshold has not been reached."; }
         else if (meets && healthy && (checkingRequirements || continuous && observation.EligibleSince is { } since && confirmedAt >= since.AddMinutes(policy.AccountingGraceMinutes)))
         { result.State = "eligible"; result.Reason = "Configured requirements and accounting grace met using conservative local observations."; }
-        else if (!healthy) { result.State = "unknown"; result.Reason = "Tracker health or accounting is unknown; preserve seeding."; }
+        else if (!healthy)
+        {
+            result.State = "unknown";
+            result.UnknownReason = "tracker-accounting-unconfirmed";
+            result.Reason = meets
+                ? "Local requirements are met. Waiting for a healthy tracker response to confirm accounting."
+                : "Local requirements remain unmet, and the tracker is not reporting healthy accounting.";
+        }
         var hours = policy.FulfillmentHours ?? (policy.Policy == "onlyencodes" ? 168 : (double?)null);
         var start = policy.DeadlineStart == "completed" ? torrent.CompletionOn : torrent.AddedOn;
         if (hours.HasValue && start > 0 && start <= now.ToUnixTimeSeconds())

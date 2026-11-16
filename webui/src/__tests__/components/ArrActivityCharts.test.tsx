@@ -64,9 +64,11 @@ describe("Arr activity", () => {
       [point(0), point(1, 30), point(3)],
       "queueDepth",
       10,
+      1920,
     );
     expect(relaxed.match(/M/g)).toHaveLength(1);
     expect(relaxed.match(/L/g)).toHaveLength(2);
+    expect(relaxed).toMatch(/L1896\.00,/);
     expect(
       activityPath(
         [point(0), point(null, 0), point(3)],

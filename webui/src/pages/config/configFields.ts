@@ -157,7 +157,23 @@ export function configureConfigFields(
 }
 configureConfigFields(schema);
 export function getClientFields(): FieldDefinition[] {
-  return fields("TorrentClient");
+  return fields("TorrentClient").map((field) => {
+    const key = field.path?.[0];
+    if (key === "Type" || key === "Host") return { ...field, required: true };
+    if (key === "Port") {
+      return {
+        ...field,
+        required: true,
+        validate: (value, context) => {
+          const port = Number(value);
+          return !Number.isInteger(port) || port < 1 || port > 65535
+            ? "Port must be a whole number between 1 and 65535."
+            : field.validate?.(value, context);
+        },
+      };
+    }
+    return field;
+  });
 }
 export function getSchemaDefaults(
   section: string,
@@ -177,6 +193,20 @@ export function getSchemaDefaults(
 export function extractTooltipSummary(tooltip?: string): string | undefined {
   return tooltip?.split(/(?<=[.!?])\s/)[0];
 }
+const HIT_AND_RUN_MODE_LABELS: Record<string, string> = {
+  and: "Ratio and seeding time",
+  or: "Ratio or seeding time",
+  ratio: "Ratio only",
+  time: "Seeding time only",
+  disabled: "Disabled",
+};
+
+export function hitAndRunModeLabel(value: string): string | undefined {
+  return Object.hasOwn(HIT_AND_RUN_MODE_LABELS, value)
+    ? HIT_AND_RUN_MODE_LABELS[value]
+    : undefined;
+}
+
 export const ARR_TRACKER_FIELDS: FieldDefinition[] = [
   { label: "Name", path: ["Name"], type: "text", required: true },
   { label: "URI", path: ["URI"], type: "text", required: true },

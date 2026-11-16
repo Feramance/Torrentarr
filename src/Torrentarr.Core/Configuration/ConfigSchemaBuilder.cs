@@ -135,6 +135,10 @@ public static class ConfigSchemaBuilder
         Field("Maintenance.Unregistered.GraceMinutes", "number", "Unregistered grace period (minutes)", 10, minimum: 0),
         Field("Maintenance.Unregistered.MaxPerTrackerPerRun", "number", "Maximum removals per tracker per run", 10, minimum: 0),
         Field("Maintenance.Unregistered.CompletedOnly", "checkbox", "Only clean up completed torrents", false),
+        Field("Maintenance.Unregistered.ParkIncomplete", "checkbox", "Park incomplete rejected torrents", false) with
+        {
+            description = "Keep stopped incomplete torrents and their files. Pause active incomplete torrents only after a confirmed tracker rejection and protection clearance."
+        },
         Field("Maintenance.Unregistered.Messages", "tags", "Unregistered tracker messages", new[] { "unregistered torrent", "torrent not registered", "torrent not found", "torrent not authorized" }),
         Field("Maintenance.RecycleBin.Enabled", "checkbox", "Enable recycle bin and retention", false),
         Field("Maintenance.RecycleBin.Path", "text", "Recycle bin path", "") with { description = "Absolute path visible to Torrentarr. Blank uses .torrentarr-recycle inside the first mapped local root." },

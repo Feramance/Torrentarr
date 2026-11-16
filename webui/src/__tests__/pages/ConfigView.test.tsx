@@ -132,7 +132,7 @@ async function openSection(name: string): Promise<void> {
     screen.getByRole("button", { name: "Torrent Clients", exact: true }),
   );
   let button = screen.queryByRole("button", {
-    name: `Configure ${name}`,
+    name: `Edit ${name}`,
     exact: true,
   });
   if (!button) {
@@ -140,7 +140,7 @@ async function openSection(name: string): Promise<void> {
       screen.getByRole("button", { name: "Integrations", exact: true }),
     );
     button = screen.getByRole("button", {
-      name: `Configure ${name}`,
+      name: `Edit ${name}`,
       exact: true,
     });
   }
@@ -1263,7 +1263,7 @@ it("filters inline setting fields without locking page scrolling or losing draft
   );
 });
 
-it("shows grouped Arr application summaries and opens the selected inline editor", async () => {
+it("shows Arr application cards and opens the selected inline editor", async () => {
   server.use(
     http.get("/web/config", () =>
       HttpResponse.json({
@@ -1288,32 +1288,113 @@ it("shows grouped Arr application summaries and opens the selected inline editor
   );
   expect(screen.queryByLabelText("Library instance")).not.toBeInTheDocument();
   const radarr = screen.getByRole("button", {
-    name: "Configure Radarr-1080",
+    name: "Edit Radarr-1080",
     exact: true,
   });
-  expect(radarr).toHaveTextContent("radarr:7878/base");
-  expect(radarr).toHaveTextContent("Search + torrents");
-  expect(radarr).not.toHaveTextContent("secret");
-  expect(radarr).not.toHaveTextContent("hidden");
+  const radarrCard = screen.getByRole("article", { name: "Radarr-1080" });
+  expect(radarrCard).toHaveTextContent("radarr:7878");
+  expect(radarrCard).toHaveTextContent("Search + torrents");
+  expect(radarrCard).not.toHaveTextContent("secret");
+  expect(radarrCard).not.toHaveTextContent("hidden");
   expect(radarr).toHaveAttribute("aria-pressed", "false");
   expect(
     screen.queryByRole("region", { name: /^Configure / }),
   ).not.toBeInTheDocument();
   const sonarr = screen.getByRole("button", {
-    name: "Configure Sonarr-TV",
+    name: "Edit Sonarr-TV",
     exact: true,
   });
-  expect(sonarr).toHaveTextContent("tv");
-  expect(sonarr).toHaveTextContent("Search only");
-  expect(sonarr).toHaveTextContent("Disabled");
+  const sonarrCard = screen.getByRole("article", { name: "Sonarr-TV" });
+  expect(sonarrCard).toHaveTextContent("tv");
+  expect(sonarrCard).toHaveTextContent("Search only");
+  expect(sonarrCard).toHaveTextContent("Disabled");
   await userEvent.click(sonarr);
   expect(sonarr).toHaveAttribute("aria-pressed", "true");
   expect(
-    screen.getByRole("heading", { name: /Sonarr-TV/ }),
+    screen.getByRole("heading", { name: "Configure Sonarr-TV" }),
   ).toBeInTheDocument();
 });
 
-it("shows empty type sections and creates integrations from the top-level picker while retaining drafts", async () => {
+it.each([
+  {
+    name: "qBit",
+    fields: [
+      ["Host", "CHANGE_ME"],
+      ["Port", ""],
+    ],
+  },
+  {
+    name: "seedbox",
+    fields: [
+      ["Client Type", " "],
+      ["Host", ""],
+      ["Port", ""],
+    ],
+  },
+  {
+    name: "Radarr-1080",
+    fields: [
+      ["URI", " "],
+      ["API Key", "CHANGE_ME"],
+      ["Category", ""],
+    ],
+  },
+])(
+  "blocks saving $name when any required field is missing",
+  async ({ name, fields }) => {
+    let saves = 0;
+    server.use(
+      http.get("/web/config", () =>
+        HttpResponse.json({
+          ...configWithInstances,
+          qBit: { ...configWithInstances.qBit, Disabled: true },
+          TorrentClient: {
+            seedbox: { Type: "qbittorrent", Host: "seedbox", Port: 8080 },
+          },
+          "Radarr-1080": {
+            ...configWithInstances["Radarr-1080"],
+            Managed: false,
+          },
+        }),
+      ),
+      http.post("/web/config", () => {
+        saves++;
+        return HttpResponse.json(okUpdateResponse);
+      }),
+    );
+    renderConfig();
+    await openSection(name);
+    const editor = within(
+      screen.getByRole("region", { name: `Configure ${name}` }),
+    );
+    for (const [label, missing] of fields) {
+      const input = editor.getByLabelText(label, {
+        exact: true,
+      }) as HTMLInputElement;
+      const configured = input.value;
+      fireEvent.change(input, { target: { value: missing } });
+      expect(input).toHaveAttribute("aria-invalid", "true");
+      await userEvent.click(
+        editor.getByRole("button", { name: "Save", exact: true }),
+      );
+      expect(saves).toBe(0);
+      const corrected =
+        label === "Host"
+          ? "updated.local"
+          : label === "Category"
+            ? "updated"
+            : configured;
+      fireEvent.change(input, { target: { value: corrected } });
+      expect(input).not.toHaveAttribute("aria-invalid", "true");
+    }
+    await userEvent.click(
+      editor.getByRole("button", { name: "Save", exact: true }),
+    );
+    await waitFor(() => expect(saves).toBe(1));
+  },
+);
+
+it("shows one empty state and creates integrations from the top-level picker while retaining drafts", async () => {
   server.use(
     http.get("/web/config", () =>
       HttpResponse.json({ Settings: {}, WebUI: {} }),
@@ -1322,12 +1403,14 @@ it("shows empty type sections and creates integrations from the top-level picker
   renderConfig();
   await openSection("Integrations");
   expect(screen.queryByLabelText("Integration type")).not.toBeInTheDocument();
+  const overview = screen.getByRole("region", {
+    name: "Configured integrations",
+  });
+  expect(
+    within(overview).getByText("No integrations configured."),
+  ).toBeVisible();
+  expect(within(overview).queryByRole("article")).not.toBeInTheDocument();
   for (const type of ["Radarr", "Sonarr", "Lidarr", "Readarr"]) {
-    const section = screen.getByRole("region", { name: `${type} Instances` });
-    expect(within(section).getByText("0 instances")).toBeInTheDocument();
-    expect(
-      within(section).queryByRole("button", { name: "Add Instance" }),
-    ).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Add Instance" }));
     const picker = screen.getByRole("dialog", { name: "Add integration" });
     await userEvent.click(
@@ -1344,21 +1427,25 @@ it("shows empty type sections and creates integrations from the top-level picker
       { name: "Radarr", exact: true },
     ),
   );
-  expect(
-    screen.getByRole("button", { name: "Configure Radarr-1" }),
-  ).toHaveTextContent("Unsaved");
+  expect(screen.getByRole("article", { name: "Radarr-1" })).toHaveTextContent(
+    "Unsaved",
+  );
   expect(
     screen.getByRole("region", { name: "Configure Radarr-2" }),
   ).toBeInTheDocument();
   await userEvent.click(
     screen.getByRole("button", { name: "Torrent Clients", exact: true }),
   );
-  const group = screen.getByRole("region", { name: "qBittorrent Instances" });
-  expect(within(group).getByText("0 instances")).toBeInTheDocument();
+  const group = screen.getByRole("region", {
+    name: "Configured torrent clients",
+  });
+  expect(
+    within(group).getByText("No torrent clients configured."),
+  ).toBeVisible();
   expect(screen.queryByLabelText("Torrent client")).not.toBeInTheDocument();
 });
 
-it("groups mixed client storage by normalized type without conflating identities", async () => {
+it("shows mixed client types in one grid without conflating identities", async () => {
   server.use(
     http.get("/web/config", () =>
       HttpResponse.json({
@@ -1370,6 +1457,8 @@ it("groups mixed client storage by normalized type without conflating identities
             Port: 8080,
             ManagedCategories: ["movies"],
             TorrentScanIntervalSeconds: 60,
+            MatchSubcategories: true,
+            FreeSpace: [{ Path: "/media", Limit: "10G", Enabled: true }],
           },
           custom: { Type: "Custom", Host: "custom", Port: 1234 },
           transmission: { Type: "transmission", Host: "other", Port: 9091 },
@@ -1381,19 +1470,24 @@ it("groups mixed client storage by normalized type without conflating identities
   await userEvent.click(
     await screen.findByRole("button", { name: "Torrent Clients", exact: true }),
   );
-  const group = screen.getByRole("region", { name: "qBittorrent Instances" });
-  expect(within(group).getByText("2 instances")).toBeInTheDocument();
+  const group = screen.getByRole("region", {
+    name: "Configured torrent clients",
+  });
+  expect(within(group).getAllByRole("article")).toHaveLength(4);
+  expect(within(group).getByText("qBittorrent · TorrentClient")).toBeVisible();
+  expect(within(group).getByText("1 enabled")).toBeVisible();
+  expect(within(group).getByText("Yes", { exact: true })).toBeVisible();
   expect(within(group).getByText("movies")).toBeInTheDocument();
   expect(within(group).getByText("60 s")).toBeInTheDocument();
   await userEvent.click(
-    within(group).getByRole("button", { name: "Configure qBit (legacy)" }),
+    within(group).getByRole("button", { name: "Edit qBit (legacy)" }),
   );
   expect(
     screen.getByRole("textbox", { name: "Host", exact: true }),
   ).toHaveValue("localhost");
   await userEvent.click(
     within(group).getByRole("button", {
-      name: "Configure qBit (TorrentClient)",
+      name: "Edit qBit (TorrentClient)",
     }),
   );
   expect(
@@ -1425,10 +1519,8 @@ it("groups mixed client storage by normalized type without conflating identities
     target: { value: "transmission" },
   });
   expect(
-    within(
-      screen.getByRole("region", { name: "transmission Instances" }),
-    ).getByText("2 instances"),
-  ).toBeInTheDocument();
+    within(group).getAllByText("transmission", { selector: "span" }),
+  ).toHaveLength(2);
 });
 
 it.each([
@@ -1620,7 +1712,7 @@ it.each([
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
     const row = () =>
-      screen.getByRole("button", { name: `Configure ${name}`, exact: true });
+      screen.getByRole("button", { name: `Edit ${name}`, exact: true });
     await userEvent.click(row());
     expect(
       screen.getByRole("region", { name: `Configure ${name}`, exact: true }),
@@ -1648,7 +1740,9 @@ it.each([
       screen.queryByRole("region", { name: /^Configure / }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
-    expect(row()).toHaveTextContent("Unsaved");
+    const card = screen.getByRole("article", { name });
+    expect(card).toHaveTextContent("Unsaved");
+    expect(card).toHaveTextContent(draft.replace("http://", ""));
     await userEvent.click(row());
     expect(
       screen.getByRole("textbox", { name: field, exact: true }),
@@ -1711,7 +1805,7 @@ it("focuses and scrolls after the requested editor mounts, without jumping on or
       expect(scroll).toHaveBeenCalledTimes(calls);
       // Selecting the same row is still an explicit navigation request.
       await userEvent.click(
-        screen.getByRole("button", { name: `Configure ${name}`, exact: true }),
+        screen.getByRole("button", { name: `Edit ${name}`, exact: true }),
       );
       expect(scroll).toHaveBeenCalledTimes(calls + 1);
     }
@@ -1949,11 +2043,18 @@ it("opens one tracker at a time and returns to an invalid draft on save", async 
       HttpResponse.json({
         ...configWithInstances,
         Trackers: [
-          { Name: "First", URI: "https://first.example", ClientIds: ["qBit"] },
+          {
+            Name: "First",
+            URI: "https://user:secret@first.example/announce/passkey?token=hidden",
+            ClientIds: ["qBit"],
+            Protection: { Policy: "onlyencodes" },
+            RemoveTorrent: -1,
+          },
           {
             Name: "Second",
             URI: "https://second.example",
-            ClientIds: ["qBit"],
+            ArrInstances: ["Radarr-1080"],
+            HitAndRunMode: "ratio",
           },
         ],
       }),
@@ -1965,19 +2066,33 @@ it("opens one tracker at a time and returns to an invalid draft on save", async 
   const trackers = within(
     await screen.findByRole("region", { name: "Tracker rules" }),
   );
-  const first = trackers.getByRole("button", { name: /^First/ });
-  const second = trackers.getByRole("button", { name: /^Second/ });
+  const first = trackers.getByRole("button", { name: "Edit First" });
+  const second = trackers.getByRole("button", { name: "Edit Second" });
   const uri = () => trackers.getByRole("textbox", { name: "URI" });
 
+  const firstCard = trackers.getByRole("article", { name: "First" });
+  const secondCard = trackers.getByRole("article", { name: "Second" });
+  expect(firstCard).toHaveTextContent("first.example");
+  expect(firstCard).toHaveTextContent("OnlyEncodes");
+  expect(firstCard).toHaveTextContent("Never remove");
+  expect(firstCard).not.toHaveTextContent(
+    /user|secret|announce|passkey|hidden/,
+  );
+  expect(secondCard).toHaveTextContent("Arr integrationsRadarr-1080");
+  expect(secondCard).toHaveTextContent("Ratio only");
   expect(trackers.queryByRole("textbox", { name: "URI" })).toBeNull();
   await user.click(first);
   await user.clear(uri());
   await user.type(uri(), "https://draft.example");
+  expect(firstCard).toHaveTextContent("draft.example");
   await user.click(second);
   expect(uri()).toHaveValue("https://second.example");
   await user.click(first);
   expect(uri()).toHaveValue("https://draft.example");
 
+  fireEvent.change(uri(), { target: { value: "invalid secret" } });
+  expect(firstCard).toHaveTextContent("Tracker address not configured");
+  expect(firstCard).not.toHaveTextContent("invalid secret");
   await user.clear(uri());
   await user.click(trackers.getByRole("button", { name: "Close" }));
   expect(first).toHaveFocus();
@@ -1991,13 +2106,12 @@ it("opens one tracker at a time and returns to an invalid draft on save", async 
   expect(
     trackers.getByRole("group", { name: "Configured trackers" }),
   ).toHaveFocus();
-  await user.click(trackers.getByRole("button", { name: /^Second/ }));
+  await user.click(trackers.getByRole("button", { name: "Edit Second" }));
   expect(uri()).toHaveValue("https://second.example");
 
   await user.click(trackers.getByRole("button", { name: "Add Tracker" }));
-  expect(trackers.getByRole("button", { name: /^Tracker 2/ })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
+  expect(
+    trackers.getByRole("button", { name: "Edit Tracker 2" }),
+  ).toHaveAttribute("aria-pressed", "true");
   expect(uri()).toHaveValue("");
 });

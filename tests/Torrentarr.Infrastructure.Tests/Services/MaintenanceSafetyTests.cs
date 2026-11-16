@@ -1872,6 +1872,115 @@ public sealed class MaintenanceSafetyTests : IDisposable
     }
 
     [Fact]
+    public async Task Parking_KeepsAnExistingStopWhenTrackerMessagesDisappear()
+    {
+        var torrent = AddTorrent();
+        torrent.State = "stoppedDL";
+        torrent.Progress = 0.25;
+        var maintenance = ClientConfig.Maintenance;
+        maintenance.Operations["UnregisteredCleanup"] = new() { Enabled = true, ExecutionMode = "automatic" };
+        maintenance.Unregistered.CompletedOnly = true;
+        await _seeding.ObserveTrackerIssueAsync(torrent, [new() { Msg = "unregistered torrent" }], default);
+        using var automation = new TorrentAutomationService(_config, _registry.Object,
+            _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
+        automation.GetStatus().TrackerIssues.Should().ContainSingle().Which.RequiresAttention.Should().BeTrue();
+
+        maintenance.Unregistered.ParkIncomplete = true;
+        await _seeding.ObserveTrackerIssueAsync(torrent, [new() { Status = 1 }], default);
+        var parked = automation.GetStatus().TrackerIssues.Should().ContainSingle().Which;
+        parked.RequiresAttention.Should().BeFalse();
+        parked.Reason.Should().Contain("Last confirmed tracker rejection");
+
+        (await Preview(MaintenanceOperation.UnregisteredCleanup)).Actions.Should().BeEmpty();
+        await _seeding.ObserveTrackerIssueAsync(torrent, [new() { Status = 2 }], default);
+        automation.GetStatus().TrackerIssues.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task BackgroundInventory_ResolvesAnOlderPreviewListingFailure()
+    {
+        using var automation = new TorrentAutomationService(_config, _registry.Object,
+            _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
+        using var services = new ServiceCollection().AddSingleton(_db).AddSingleton(automation).BuildServiceProvider();
+        var scopes = services.GetRequiredService<IServiceScopeFactory>();
+        using var reporter = new OperationalIssueReporter(scopes, NullLogger<OperationalIssueReporter>.Instance, _config);
+        using var monitor = new OperationalIssueMonitor(scopes, reporter, _config, NullLogger<OperationalIssueMonitor>.Instance);
+        await reporter.ReportAsync(new("maintenance.preview.torrent-list-failed", "automation", "Preview listing failed", "", "",
+            ClientInstance: "one", SubjectType: "preview", SubjectId: "UnregisteredCleanup"));
+        await monitor.InspectAsync(default);
+        (await _db.OperationalIssues.AsNoTracking().SingleAsync(i => i.Code == "maintenance.preview.torrent-list-failed")).ResolvedAt.Should().BeNull();
+
+        AddTorrent();
+        await Inspect(automation, default);
+        await monitor.InspectAsync(default);
+        (await _db.OperationalIssues.AsNoTracking().SingleAsync(i => i.Code == "maintenance.preview.torrent-list-failed")).ResolvedAt.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData(false, true, false, 1, 0)]
+    [InlineData(false, false, false, 0, 1)]
+    [InlineData(true, true, false, 0, 0)]
+    [InlineData(false, true, true, 0, 0)]
+    public async Task Parking_AppliesOnlyWithCurrentTrackerEvidenceAndProtectionClearance(
+        bool protect, bool accepted, bool trackerRecovers, int applied, int failed)
+    {
+        var torrent = AddTorrent();
+        torrent.State = "downloading";
+        torrent.Progress = 0.25;
+        torrent.IsPrivate = protect;
+        var maintenance = ClientConfig.Maintenance;
+        maintenance.Unregistered.Enabled = true;
+        maintenance.Unregistered.CompletedOnly = true;
+        maintenance.Unregistered.ParkIncomplete = true;
+        var trackers = new List<TorrentTracker> { new() { Url = "https://tracker.example/announce", Status = 4, Msg = "unregistered torrent" } };
+        _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>())).ReturnsAsync(() => trackers);
+        _client.Setup(c => c.PauseTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(accepted);
+
+        var plan = await Preview(MaintenanceOperation.UnregisteredCleanup);
+        var action = plan.Actions.Should().ContainSingle().Which;
+        action.Kind.Should().Be(MaintenanceActionKind.ParkTorrent);
+        (action.BlockedReason != null).Should().Be(protect);
+        if (trackerRecovers) trackers = [new() { Status = 2 }];
+        var run = await Apply(plan);
+        run.Applied.Should().Be(applied);
+        run.Failed.Should().Be(failed);
+        _client.Verify(c => c.PauseTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Exactly(applied + failed));
+        _client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("new", "automatic", true, "movies", false)]
+    [InlineData("new", "manual", true, "movies", true)]
+    [InlineData("new", "automatic", false, "movies", true)]
+    [InlineData("new", "automatic", true, "excluded", true)]
+    [InlineData("checking", "automatic", true, "movies", false)]
+    [InlineData("rejected", "automatic", true, "movies", true)]
+    [InlineData("unconfirmed", "automatic", true, "movies", true)]
+    [InlineData("checked", "automatic", true, "movies", true)]
+    [InlineData("recurring", "automatic", true, "movies", false)]
+    public async Task TrackerRejection_OnlyNeedsAttentionWithoutAViableAutomaticStep(
+        string stage, string mode, bool matches, string category, bool requiresAttention)
+    {
+        var torrent = AddTorrent();
+        torrent.Category = category;
+        var maintenance = _config.TorrentClients["one"].Maintenance;
+        maintenance.Operations["UnregisteredCleanup"] = new() { Enabled = true, ExecutionMode = mode };
+        maintenance.Unregistered.Messages = matches ? ["unregistered torrent"] : ["another failure"];
+        MaintenancePersistence.Write(_db, MaintenancePersistence.Key("one", torrent.Hash, "recovery:UnregisteredCleanup"),
+            new RecoveryIncident
+            {
+                AddedOn = torrent.AddedOn,
+                Stage = stage,
+                Attempts = stage == "new" ? 0 : maintenance.ErrorRecovery.MaxRepairAttempts,
+                CompletedAt = stage is "recurring" or "checked" ? DateTimeOffset.UtcNow : null
+            });
+        await _seeding.ObserveTrackerIssueAsync(torrent, [new() { Msg = "unregistered torrent" }], default);
+        using var automation = new TorrentAutomationService(_config, _registry.Object,
+            _services.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
+        automation.GetStatus().TrackerIssues.Should().ContainSingle().Which.RequiresAttention.Should().Be(requiresAttention);
+    }
+
+    [Fact]
     public async Task TrackerCache_ExpiresAndRefreshesAfterReaddition()
     {
         var torrent = AddTorrent(); torrent.IsPrivate = null; torrent.Ratio = 0;

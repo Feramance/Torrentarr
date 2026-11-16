@@ -26,6 +26,17 @@ public sealed class RecoveryIncident
 public static class MaintenanceRecovery
 {
     public static bool IsError(TorrentInfo torrent, MaintenanceConfig cfg) => cfg.ErrorRecovery.States.Any(s => torrent.State.Equals(s, StringComparison.OrdinalIgnoreCase));
+    internal static bool MatchesUnregistered(TorrentTracker tracker, UnregisteredMaintenanceConfig config)
+        => tracker.Tier >= 0 && !string.IsNullOrWhiteSpace(tracker.Msg)
+            && config.Messages.Any(message => !string.IsNullOrWhiteSpace(message)
+                && tracker.Msg.Contains(message, StringComparison.OrdinalIgnoreCase));
+
+    internal static bool ShouldParkIncomplete(TorrentInfo torrent, UnregisteredMaintenanceConfig config)
+        => config.ParkIncomplete && double.IsFinite(torrent.Progress) && torrent.Progress is >= 0 and < 1;
+
+    internal static bool CanParkDownload(TorrentInfo torrent) => torrent.State is "downloading" or "stalledDL" or "metaDL"
+        && !torrent.SuperSeeding
+        && !torrent.Tags.Split(',', StringSplitOptions.TrimEntries).Contains("qBitrr-ignored", StringComparer.OrdinalIgnoreCase);
     public static bool HealthyTracker(IEnumerable<TorrentTracker> trackers) => trackers.Any(t => t.Tier >= 0 && t.Status == 2 && string.IsNullOrWhiteSpace(t.Msg));
     public static RecoveryIncident Read(TorrentarrDbContext db, TorrentInfo torrent, string kind)
     {

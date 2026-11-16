@@ -1,3 +1,4 @@
+import { useElementSize, useMergedRef } from "@mantine/hooks";
 import { useChartInspection } from "../hooks/useChartInspection";
 import { useEffect, useState } from "react";
 import { getTransferHistory } from "../api/client";
@@ -10,7 +11,7 @@ import type {
 import {
   rateLabel,
   TRANSFER_LEFT,
-  TRANSFER_RIGHT,
+  TRANSFER_RIGHT_INSET,
   transferPath,
 } from "../utils/transferChart";
 
@@ -21,6 +22,14 @@ export function TransferHistory({
   instance?: string;
   active: boolean;
 }) {
+  const { ref, width } = useElementSize();
+  const svgWidth = width > TRANSFER_LEFT + TRANSFER_RIGHT_INSET ? width : 800;
+  const right = svgWidth - TRANSFER_RIGHT_INSET;
+  const chartWidth = right - TRANSFER_LEFT;
+  const axisDateOptions: Intl.DateTimeFormatOptions | undefined =
+    svgWidth < 350
+      ? { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }
+      : undefined;
   const [range, setRange] = useState<TransferRange>("24h");
   const [result, setResult] = useState<{
     key: string;
@@ -32,6 +41,7 @@ export function TransferHistory({
     instance: string;
     point: TransferBucket;
   }>(key, active);
+  const sectionRef = useMergedRef(ref, inspection.ref);
   const data = result?.key === key ? result.data : null;
   const error =
     failedKey === key ? "Transfer history unavailable. Try again shortly." : "";
@@ -88,7 +98,7 @@ export function TransferHistory({
   );
   return (
     <section
-      ref={inspection.ref}
+      ref={sectionRef}
       className="transfer-history"
       aria-label="Transfer history"
     >
@@ -137,7 +147,6 @@ export function TransferHistory({
         const shown = inspected ?? latest;
         const shownComplete =
           shown != null && shown.samples === shown.expectedSamples;
-        const chartWidth = TRANSFER_RIGHT - TRANSFER_LEFT;
         const xAt = (index: number) =>
           TRANSFER_LEFT +
           (index / Math.max(1, series.points.length - 1)) * chartWidth;
@@ -172,7 +181,8 @@ export function TransferHistory({
                         0,
                         Math.min(
                           1,
-                          (((event.clientX - rect.left) / rect.width) * 800 -
+                          (((event.clientX - rect.left) / rect.width) *
+                            svgWidth -
                             TRANSFER_LEFT) /
                             chartWidth,
                         ),
@@ -184,7 +194,7 @@ export function TransferHistory({
                       point: series.points[index],
                     });
                   }}
-                  viewBox="0 0 800 155"
+                  viewBox={`0 0 ${svgWidth} 155`}
                   role="img"
                   aria-label={`${series.instance} download and upload rates over ${range}; missing or incomplete intervals appear as gaps`}
                 >
@@ -192,7 +202,7 @@ export function TransferHistory({
                     <g key={y}>
                       <line
                         x1={TRANSFER_LEFT}
-                        x2={TRANSFER_RIGHT}
+                        x2={right}
                         y1={y}
                         y2={y}
                         className="chart-grid"
@@ -203,11 +213,21 @@ export function TransferHistory({
                     </g>
                   ))}
                   <path
-                    d={transferPath(series.points, "downloadRate", maximum)}
+                    d={transferPath(
+                      series.points,
+                      "downloadRate",
+                      maximum,
+                      svgWidth,
+                    )}
                     className="chart-download"
                   />
                   <path
-                    d={transferPath(series.points, "uploadRate", maximum)}
+                    d={transferPath(
+                      series.points,
+                      "uploadRate",
+                      maximum,
+                      svgWidth,
+                    )}
                     className="chart-upload"
                   />
                   {series.points.map((point, index) =>
@@ -252,10 +272,16 @@ export function TransferHistory({
                     ) : null,
                   )}
                   <text x={TRANSFER_LEFT} y="150">
-                    {new Date(series.points[0]!.timestamp).toLocaleString()}
+                    {new Date(series.points[0]!.timestamp).toLocaleString(
+                      undefined,
+                      axisDateOptions,
+                    )}
                   </text>
-                  <text x={TRANSFER_RIGHT} y="150" textAnchor="end">
-                    {new Date(series.points.at(-1)!.timestamp).toLocaleString()}
+                  <text x={right} y="150" textAnchor="end">
+                    {new Date(series.points.at(-1)!.timestamp).toLocaleString(
+                      undefined,
+                      axisDateOptions,
+                    )}
                   </text>
                 </svg>
                 <div className="breakdown__legend">

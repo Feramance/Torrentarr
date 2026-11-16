@@ -56,10 +56,13 @@ export function activityCoverage(
 ): number {
   return metric === "queueDepth" ? point.queueSamples : point.completionSamples;
 }
+export const ACTIVITY_INSET = 24;
+
 export function activityPath(
   points: ArrActivityPoint[],
   metric: ActivityMetric,
   maximum: number,
+  width = 800,
 ): string {
   let joined = false;
   return points
@@ -68,7 +71,10 @@ export function activityPath(
         joined = false;
         return "";
       }
-      const segment = `${joined ? "L" : "M"}${(24 + (index / Math.max(1, points.length - 1)) * 752).toFixed(2)},${(142 - (point[metric]! / maximum) * 112).toFixed(2)}`;
+      const x =
+        ACTIVITY_INSET +
+        (index / Math.max(1, points.length - 1)) * (width - 2 * ACTIVITY_INSET);
+      const segment = `${joined ? "L" : "M"}${x.toFixed(2)},${(142 - (point[metric]! / maximum) * 112).toFixed(2)}`;
       joined = true;
       return segment;
     })
