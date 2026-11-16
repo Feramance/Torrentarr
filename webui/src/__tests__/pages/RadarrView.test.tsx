@@ -296,9 +296,14 @@ it("paginates, searches, filters missing movies, and opens details in the active
   fireEvent.change(screen.getByLabelText("Search"), {
     target: { value: "Wanted" },
   });
+  await waitFor(() =>
+    expect(
+      requests
+        .find((url) => url.searchParams.get("q") === "Wanted")
+        ?.searchParams.get("page"),
+    ).toBe("0"),
+  );
   await screen.findByText("Wanted");
-  expect(requests.at(-1)?.searchParams.get("page")).toBe("0");
-  expect(requests.at(-1)?.searchParams.get("q")).toBe("Wanted");
   fireEvent.change(screen.getByLabelText("Status"), {
     target: { value: "missing" },
   });
