@@ -229,8 +229,7 @@
                   "RegisterRecycleEntry",
                   "DeleteContent",
                   "DeleteOrphanFile",
-                  "DeleteEmptyOrphanDirectory",
-                  "ParkTorrent"
+                  "DeleteEmptyOrphanDirectory"
                 ],
                 "type": "string"
               },
@@ -1226,11 +1225,6 @@
             "type": "string"
           },
           "unknownReason": {
-            "enum": [
-              "tracker-accounting-unconfirmed",
-              "no-tracker-reported",
-              "no-matching-tracker-rule"
-            ],
             "nullable": true,
             "type": "string"
           }
@@ -1327,7 +1321,8 @@
           },
           "trackerIssues": {
             "items": {
-              "$ref": "#/components/schemas/TorrentAutomationIssue"
+              "additionalProperties": true,
+              "type": "object"
             },
             "type": "array"
           }

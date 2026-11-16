@@ -112,7 +112,12 @@ public sealed class ReauditRegressionTests
         var reports = new List<string>(); var resolved = new List<string>(); var reporter = Reporter(reports, resolved);
         var executor = new SearchExecutor(NullLogger<SearchExecutor>.Instance, cfg, db, new QualityProfileSwitcherService(NullLogger<QualityProfileSwitcherService>.Instance, db, new()), new(), reporter.Object);
         await FluentActions.Awaiting(() => executor.GetActiveCommandCountAsync("Arr")).Should().ThrowAsync<Exception>();
-        if (type == "radarr") await FluentActions.Awaiting(() => executor.ExecuteSearchesAsync("Arr", [new() { ArrId = 42, Reason = "Missing" }])).Should().ThrowAsync<Exception>();
+        if (type == "radarr")
+        {
+            var result = await executor.ExecuteSearchesAsync("Arr", [new() { ArrId = 42, Reason = "Missing" }]);
+            result.CapacityUnavailable.Should().BeTrue();
+            result.LoopCompleted.Should().BeFalse();
+        }
         stub.Puts.Should().Be(0); stub.Searches.Should().Be(0); reports.Should().Contain("search.capacity");
         stub.RejectCapacity = false;
         (await executor.GetActiveCommandCountAsync("Arr")).Should().Be(0);

@@ -654,6 +654,16 @@ public class TorrentProcessor : ITorrentProcessor
             ? DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn)
             : (DateTimeOffset?)null;
         var pendingImport = !libraryEntry.Imported && submittedAt.HasValue;
+        var completedForImport = arrCfg != null && torrent.AddedOn > 0
+            && torrent.CompletionOn > 0
+            && torrent.AmountLeft == 0
+            && IsCompleteState(state)
+            && !string.IsNullOrEmpty(torrent.ContentPath)
+            && torrent.CompletionOn < timeNow - 60;
+        if (!libraryEntry.Imported && (pendingImport || completedForImport)
+            && state == TorrentState.PausedUploading && leaveAlone && !HasTag(torrent, FreeSpacePausedTag))
+            await ResumeOwnedPauseAsync(client, torrent, ct);
+
         if (pendingImport || libraryEntry.AutoDeletePendingAddedOn.HasValue)
         {
             var ownerConfig = _config.ArrInstances.GetValueOrDefault(libraryEntry.ArrInstance);
@@ -678,12 +688,6 @@ public class TorrentProcessor : ITorrentProcessor
             }
         }
 
-        var completedForImport = arrCfg != null && torrent.AddedOn > 0
-            && torrent.CompletionOn > 0
-            && torrent.AmountLeft == 0
-            && IsCompleteState(state)
-            && !string.IsNullOrEmpty(torrent.ContentPath)
-            && torrent.CompletionOn < timeNow - 60;
         if (pendingImport && !completedForImport) return;
         if (completedForImport && !pendingImport && !libraryEntry.Imported && addedAt is { } importHistoryStart
             && await TryFinalizeImportedTorrentAsync(torrent, libraryEntry, importHistoryStart,

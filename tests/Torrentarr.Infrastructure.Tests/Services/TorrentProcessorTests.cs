@@ -588,21 +588,11 @@ public sealed class TorrentProcessorTests : IDisposable
             .Setup(s => s.MarkAsImportedAsync("qBit", hash, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
-        var manager = new QBittorrentConnectionManager(
-            NullLogger<QBittorrentConnectionManager>.Instance);
-        RegisterTestClient(manager, instance, new StubQBittorrentClient(new TorrentInfo
-        {
-            Hash = hash,
-            Name = "Ready For Import",
-            Category = category,
-            State = "uploading",
-            Progress = 1.0,
-            CompletionOn = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds(),
-            AddedOn = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds(),
-            AmountLeft = 0,
-            ContentPath = Path.GetTempFileName(),
-            QBitInstanceName = instance
-        }));
+        var client = new Mock<ITorrentClient>();
+        client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
+        client.Setup(c => c.ResumeTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var manager = new Mock<ITorrentClientRegistry>();
+        manager.Setup(r => r.GetClient(instance)).Returns(client.Object);
 
         var cache = new TorrentCacheService(NullLogger<TorrentCacheService>.Instance);
         cache.MarkFileFiltered(instance, hash);
@@ -611,7 +601,7 @@ public sealed class TorrentProcessorTests : IDisposable
 
         var processor = new TorrentProcessor(
             NullLogger<TorrentProcessor>.Instance,
-            manager,
+            manager.Object,
             _db,
             config,
             cache,
@@ -624,7 +614,7 @@ public sealed class TorrentProcessorTests : IDisposable
             Hash = hash,
             Name = "Ready For Import",
             Category = category,
-            State = "uploading",
+            State = "stoppedUP",
             Progress = 1.0,
             CompletionOn = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds(),
             AddedOn = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds(),
@@ -637,10 +627,16 @@ public sealed class TorrentProcessorTests : IDisposable
             "ProcessSingleTorrentAsync",
             BindingFlags.NonPublic | BindingFlags.Instance)!;
 
+        var pauseKey = MaintenancePersistence.Key(instance, hash, "routine-pause");
+        MaintenancePersistence.Write(_db, pauseKey, new PauseOwnership { Owned = true, AddedOn = torrent.AddedOn });
         await (Task)method.Invoke(processor, new object[] { torrent, category, stats, CancellationToken.None })!;
         (await _db.TorrentLibrary.SingleAsync(t => t.Hash == hash && t.QbitInstance == instance)).Imported
             .Should().BeFalse("Arr still reports the item in queue on the first pass");
+        client.Verify(c => c.ResumeTorrentsAsync(It.Is<List<string>>(hashes => hashes.Contains(hash)),
+            It.IsAny<CancellationToken>()), Times.Once);
+        MaintenancePersistence.Read<PauseOwnership>(_db, pauseKey).Owned.Should().BeFalse();
 
+        torrent.State = "uploading";
         await (Task)method.Invoke(processor, new object[] { torrent, category, stats, CancellationToken.None })!;
         (await _db.TorrentLibrary.SingleAsync(t => t.Hash == hash && t.QbitInstance == instance)).Imported
             .Should().BeTrue("the database flag should flip only after Arr confirms the scan completed");
