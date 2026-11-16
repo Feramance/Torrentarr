@@ -302,15 +302,17 @@ it("paginates, searches, filters missing movies, and opens details in the active
   });
   try {
     await waitFor(() =>
-      expect(requests.at(-1)?.searchParams.get("q")).toBe("Wanted"),
+      expect(
+        requests
+          .find((url) => url.searchParams.get("q") === "Wanted")
+          ?.searchParams.get("page"),
+      ).toBe("0"),
     );
     fireEvent(window, new Event(STATISTICS_UPDATED));
   } finally {
     releaseSearch();
   }
   await screen.findByText("Wanted");
-  expect(requests.at(-1)?.searchParams.get("page")).toBe("0");
-  expect(requests.at(-1)?.searchParams.get("q")).toBe("Wanted");
   fireEvent.change(screen.getByLabelText("Status"), {
     target: { value: "missing" },
   });

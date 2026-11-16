@@ -132,17 +132,23 @@ public class ProcessOrchestratorServiceTests
         slow.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([new() { Category = config.Settings.FailedCategory, AddedOn = DateTimeOffset.UtcNow.ToUnixTimeSeconds() },
                 new() { Category = config.Settings.RecheckCategory, AddedOn = DateTimeOffset.UtcNow.ToUnixTimeSeconds() }]);
+        var clock = new ManualClock();
         var attempts = 0;
+        var readsAtLastFastFetch = 0;
         fast.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .Returns(() => Interlocked.Increment(ref attempts) == 1 && failFirstPass
-                ? Task.FromException<List<TorrentInfo>>(new IOException("temporary failure"))
-                : Task.FromResult(new List<TorrentInfo>()));
+            .Returns(() =>
+            {
+                Volatile.Write(ref readsAtLastFastFetch, clock.Reads);
+                var attempt = Interlocked.Increment(ref attempts);
+                return attempt == 1 && failFirstPass
+                    ? Task.FromException<List<TorrentInfo>>(new IOException("temporary failure"))
+                    : Task.FromResult(new List<TorrentInfo>());
+            });
         var registry = new Mock<ITorrentClientRegistry>();
         registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["fast"] = fast.Object, ["slow"] = slow.Object });
         registry.Setup(r => r.IsConnected()).Returns(true);
         using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         using var provider = new ServiceCollection().AddSingleton(db).AddSingleton(Mock.Of<ISeedingService>()).BuildServiceProvider();
-        var clock = new ManualClock();
         var states = new ProcessStateManager();
         using var service = new ProcessOrchestratorService(NullLogger<ProcessOrchestratorService>.Instance,
             config, registry.Object, provider.GetRequiredService<IServiceScopeFactory>(), states,
@@ -151,17 +157,16 @@ public class ProcessOrchestratorServiceTests
         await service.StartAsync(CancellationToken.None);
         try
         {
-            await WaitUntilAsync(() => states.GetState("Failed")?.Alive == true);
-            var reads = clock.Reads;
-            await WaitUntilAsync(() => clock.Reads > reads);
+            // Wait until the loop has finished the pass and computed its sleep deadline.
+            await WaitUntilAsync(() => Volatile.Read(ref attempts) == 3 &&
+                clock.Reads >= Volatile.Read(ref readsAtLastFastFetch) + 4);
             // One special-category read, one tracker sync, and one queue-sort read per due client.
             fast.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
             slow.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
             clock.Advance(TimeSpan.FromSeconds(5));
-            await WaitUntilAsync(() => fast.Invocations.Count(i => i.Method.Name == nameof(ITorrentClient.GetTorrentsAsync)) == 6);
+            await WaitUntilAsync(() => Volatile.Read(ref attempts) == 6 &&
+                clock.Reads >= Volatile.Read(ref readsAtLastFastFetch) + 4);
             slow.Verify(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
-            reads = clock.Reads;
-            await WaitUntilAsync(() => clock.Reads > reads);
             states.GetState("Failed")!.CategoryCount.Should().Be(1);
             states.GetState("Recheck")!.CategoryCount.Should().Be(1);
             clock.Advance(TimeSpan.FromSeconds(115));
