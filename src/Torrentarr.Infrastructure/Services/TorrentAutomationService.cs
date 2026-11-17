@@ -23,11 +23,13 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
     private readonly ConcurrentDictionary<string, int> _inspectionFailures = new();
     private readonly ConcurrentDictionary<string, string> _inspectionErrors = new();
     private readonly ConcurrentDictionary<string, (DateTimeOffset At, List<TorrentTracker> Trackers, bool? IsPrivate, long AddedOn)> _trackerInspections = new();
+    private readonly ConcurrentDictionary<string, (long Sweep, long AddedOn)> _trackerFetchAttempts = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _nextFullInspection = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastInspection = new();
     private readonly ConcurrentDictionary<string, DateTimeOffset> _lastInventory = new(StringComparer.OrdinalIgnoreCase);
     internal DateTimeOffset LastInventoryStartedAt(string client) => _lastInventory.GetValueOrDefault(client);
     private long _inspectionRevision = -1;
+    private long _inspectionSweep;
     private long _appliedRevision;
 
     public TorrentAutomationStatus GetStatus()
@@ -88,7 +90,7 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
         using var configuration = _config.BeginOperation();
         using var processing = ConfigMutationGuard.EnterProcessing();
         if (_inspectionRevision != _config.Revision)
-        { _nextInspection.Clear(); _nextFullInspection.Clear(); _trackerInspections.Clear(); _lastInventory.Clear(); _inspectionRevision = _config.Revision; }
+        { _nextInspection.Clear(); _nextFullInspection.Clear(); _trackerInspections.Clear(); _trackerFetchAttempts.Clear(); _lastInventory.Clear(); _inspectionRevision = _config.Revision; }
         await Task.WhenAll(_config.GetAllTorrentClients().Select(async configuredClient =>
         {
             var (id, cfg) = configuredClient;
@@ -118,13 +120,20 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                 var allHashes = torrents.Select(t => t.Hash).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 List<ProtectionDecision> Previous(TorrentInfo torrent) =>
                     _protection.GetValueOrDefault(id + "|" + torrent.Hash) ?? [];
+                long LastAttempt(TorrentInfo torrent) =>
+                    _trackerFetchAttempts.TryGetValue(id + "|" + torrent.Hash, out var attempt)
+                    && attempt.AddedOn == torrent.AddedOn ? attempt.Sweep : 0;
                 if (!full) torrents = torrents.Where(t => Previous(t).Any(NeedsFreshInspection)).ToList();
-                torrents = torrents.OrderByDescending(t => Previous(t).Any(d => d.DeadlineRisk != "none"))
+                torrents = torrents.OrderBy(LastAttempt)
+                    .ThenByDescending(t => Previous(t).Any(d => d.DeadlineRisk != "none"))
                     .ThenByDescending(t => cfg.Maintenance.ErrorRecovery.States.Contains(t.State, StringComparer.OrdinalIgnoreCase)).ToList();
                 var cachePrefix = id + "|";
                 foreach (var key in _trackerInspections.Keys)
                     if (key.StartsWith(cachePrefix, StringComparison.OrdinalIgnoreCase) && !allHashes.Contains(key[cachePrefix.Length..]))
                         _trackerInspections.TryRemove(key, out _);
+                foreach (var key in _trackerFetchAttempts.Keys)
+                    if (key.StartsWith(cachePrefix, StringComparison.OrdinalIgnoreCase) && !allHashes.Contains(key[cachePrefix.Length..]))
+                        _trackerFetchAttempts.TryRemove(key, out _);
                 var hashes = allHashes;
                 foreach (var entry in _protection.Where(p => p.Value.Any(d => d.ClientInstanceId == id && !hashes.Contains(d.TorrentHash))).ToList()) _protection.TryRemove(entry.Key, out _);
                 var prefix = id.ToUpperInvariant() + "|";
@@ -134,6 +143,7 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                     await MaintenancePersistence.DeleteAsync(db, stale, inspectionCt);
                 using var fetches = new SemaphoreSlim(3);
                 using var observations = new SemaphoreSlim(1);
+                var sweep = Interlocked.Increment(ref _inspectionSweep);
                 await Task.WhenAll(torrents.Select(async torrent =>
                 {
                     torrent.ClientInstanceId = id;
@@ -156,6 +166,8 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                         await fetches.WaitAsync(inspectionCt);
                         try
                         {
+                            inspectionCt.ThrowIfCancellationRequested();
+                            _trackerFetchAttempts[key] = (sweep, torrent.AddedOn);
                             fetchedAt = Clock.GetUtcNow();
                             if (!torrent.IsPrivate.HasValue) torrent.IsPrivate = (await client.GetTorrentPropertiesAsync(torrent.Hash, inspectionCt))?.IsPrivate;
                             trackers = await client.GetTorrentTrackersAsync(torrent.Hash, inspectionCt);

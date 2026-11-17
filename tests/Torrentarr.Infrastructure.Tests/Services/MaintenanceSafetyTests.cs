@@ -1805,7 +1805,11 @@ public sealed class MaintenanceSafetyTests : IDisposable
     {
         var fast = AddTorrent("fast"); fast.IsPrivate = true;
         var slow = AddTorrent("slow", "slow.mkv"); slow.IsPrivate = true;
-        _client.Setup(c => c.GetTorrentTrackersAsync(slow.Hash, It.IsAny<CancellationToken>()))
+        var slowTwo = AddTorrent("slow-two", "slow-two.mkv"); slowTwo.IsPrivate = true;
+        var slowThree = AddTorrent("slow-three", "slow-three.mkv"); slowThree.IsPrivate = true;
+        var queued = AddTorrent("queued", "queued.mkv"); queued.IsPrivate = true;
+        _client.Setup(c => c.GetTorrentTrackersAsync(
+            It.Is<string>(hash => hash == slow.Hash || hash == slowTwo.Hash || hash == slowThree.Hash), It.IsAny<CancellationToken>()))
             .Returns(async (string _, CancellationToken ct) =>
             {
                 await Task.Delay(Timeout.Infinite, ct);
@@ -1819,9 +1823,10 @@ public sealed class MaintenanceSafetyTests : IDisposable
         inspection.ConsecutiveFailures.Should().Be(0);
         inspection.LastSucceededAt.Should().NotBeNull();
         inspection.NextAttempt.Should().Be(inspection.LastSucceededAt);
-        _client.Setup(c => c.GetTorrentTrackersAsync(slow.Hash, It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        _client.Verify(c => c.GetTorrentTrackersAsync(queued.Hash, It.IsAny<CancellationToken>()), Times.Never);
         await Inspect(automation, default);
         _client.Verify(c => c.GetTorrentTrackersAsync(slow.Hash, It.IsAny<CancellationToken>()), Times.Exactly(2));
+        _client.Verify(c => c.GetTorrentTrackersAsync(queued.Hash, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -2415,6 +2420,22 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _client.Verify(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
         (await Apply(plan)).Applied.Should().Be(1);
         _maintenance.GetStatus().Armed["one"].Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CategoryReconcileUsesTrackerAssignmentsForPreviewAndApply()
+    {
+        var torrent = AddTorrent();
+        ClientConfig.Maintenance.Operations["CategoryReconcile"] = new() { Enabled = true, ExecutionMode = "manual" };
+        ClientConfig.Maintenance.TrackerAssignments = [new() { TrackerContains = "tracker.example", Category = "seed", Tags = ["matched"] }];
+        _client.Setup(c => c.GetTorrentTrackersAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new() { Url = "https://tracker.example/announce" }]);
+        _client.Setup(c => c.SetCategoryAsync(It.IsAny<List<string>>(), "seed", It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        _client.Setup(c => c.AddTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+
+        var plan = await Preview(MaintenanceOperation.CategoryReconcile);
+        plan.Actions.Select(a => a.Kind).Should().BeEquivalentTo([MaintenanceActionKind.SetCategory, MaintenanceActionKind.AddTag]);
+        (await Apply(plan)).Applied.Should().Be(2);
     }
 
     [Fact]
