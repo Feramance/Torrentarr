@@ -11,7 +11,7 @@ Baseline review of **user-facing features and logical paths**, compared to upstr
 | **Contributor pin / tests** | [contributor-reference.md](contributor-reference.md) |
 | **User overview** | [overview.md](overview.md) |
 
-Current branch behavior is reconciled in the [branch inventory](../development/branch-change-inventory.md). Baseline findings below remain historical; current [tracker protection](../configuration/seeding.md) intentionally removes dead-message bypass/deletion behavior.
+This report describes the pinned baseline. Current [tracker protection](../configuration/seeding.md) intentionally removes dead-message bypass/deletion behavior.
 
 Legend:
 
@@ -345,4 +345,4 @@ Remaining:
 
 ## 10. Follow-up work
 
-The runtime drift items from the previous review are implemented. Remaining work is documentation hygiene as qBitrr’s `arss/` package continues to split, and keeping test counts in [certification-report.md](certification-report.md) current after each pass.
+The runtime drift items from the previous review are implemented. Use the [contributor reference](contributor-reference.md) for the release validation checklist.

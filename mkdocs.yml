@@ -10,7 +10,6 @@ edit_uri: edit/master/docs/
 exclude_docs: |
   README.md
   includes/abbreviations.md
-  parity-review.md
   getting-started/installation/pip.md
 
 # Copyright
@@ -155,6 +154,10 @@ plugins:
       advanced/multiprocessing.md: advanced/architecture.md
       advanced/ffprobe.md: features/health-monitoring.md
       getting-started/installation/pip.md: getting-started/installation/binary.md
+      development/contributing.md: development/index.md
+      development/branch-change-inventory.md: development/index.md
+      parity-review.md: parity/overview.md
+      parity/certification-report.md: parity/full-parity-matrix.md
       parity/upstream-baseline.md: parity/contributor-reference.md
       parity/intentional-differences.md: parity/contributor-reference.md
       parity/targeted-repair.md: parity/contributor-reference.md
@@ -283,17 +286,14 @@ nav:
 
 - Development:
   - development/index.md
-  - Contributing: development/contributing.md
   - Code Style: development/code-style.md
   - Testing: development/testing.md
   - Release Process: development/release-process.md
   - WebUI Development: development/webui.md
-  - Branch Change Inventory: development/branch-change-inventory.md
   - Maintenance Verification: development/maintenance-verification.md
   - qBitrr parity:
     - parity/overview.md
     - parity/full-parity-path-report.md
     - parity/full-parity-matrix.md
     - parity/contributor-reference.md
-    - parity/certification-report.md
     - parity/contract-baseline.md

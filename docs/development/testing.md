@@ -177,7 +177,7 @@ See the repository `tests/` folder and `webui/src/__tests__/` for examples. Mock
 ## Related Documentation
 
 - [Development Guide](index.md) - Complete development setup
-- [Contributing](contributing.md) - Contribution guidelines
+- [Contributing](https://github.com/Feramance/Torrentarr/blob/master/CONTRIBUTING.md) - Contribution guidelines
 - [Code Style](code-style.md) - Code formatting rules
 
 

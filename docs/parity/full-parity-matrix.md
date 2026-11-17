@@ -4,7 +4,7 @@ This matrix preserves the baseline parity audit against upstream qBitrr master c
 
 ## Parity claim policy
 
-Use this file for the pinned baseline findings. Current branch changes and intentional safety differences are reconciled in the [branch inventory](../development/branch-change-inventory.md); current [tracker protection](../configuration/seeding.md) removes the dead-message bypass and direct dead-tracker deletion path. A strict latest-main parity claim is only defensible when **no** file row is `partial` and **no** support row is `missing`. Rows marked `intentional-divergence` document architectural differences with equivalent user-facing outcomes.
+Use this file for the pinned baseline findings. Current [tracker protection](../configuration/seeding.md) removes the dead-message bypass and direct dead-tracker deletion path. A strict latest-main parity claim is only defensible when **no** file row is `partial` and **no** support row is `missing`. Rows marked `intentional-divergence` document architectural differences with equivalent user-facing outcomes.
 
 **Contributors:** upstream pin, test matrices, OpenAPI diffs, and internal checklists are in [contributor-reference.md](contributor-reference.md) (not needed for end users; see [overview.md](overview.md)). Path-level feature coverage and known drift vs this file’s `full` rows: [full-parity-path-report.md](full-parity-path-report.md).
 

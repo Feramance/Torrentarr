@@ -8,8 +8,7 @@ import sys
 import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
-HISTORICAL = ('parity/', 'reviews/', 'development/pr-', 'development/webui-parity',
-              'development/webui-source-reconciliation')
+HISTORICAL = ('parity/',)
 
 
 class Links(HTMLParser):

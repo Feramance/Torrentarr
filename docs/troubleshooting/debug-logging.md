@@ -89,3 +89,8 @@ The [Logs view](../webui/logs.md) shows a bounded window, not the entire retaine
 file. Download the complete file or search it on the server when investigating
 older decisions. The [diagnostic parity checklist](../development/logging-parity.md)
 maps the process stages to the corresponding evidence.
+
+When a qBittorrent client goes offline, check for connection reconciliation in the
+process logs. Reconciliation runs about every 15 seconds independently of the
+torrent processing cycle. A successful reconnect can wake the Host and Arr
+torrent loops before their normal sleep interval ends.

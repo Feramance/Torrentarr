@@ -25,7 +25,7 @@ Before creating bug reports, please check existing issues. When creating a bug r
 - **Screenshots** - If applicable
 
 **Template:**
-```markdown
+````markdown
 **Description:**
 Brief description of the bug
 
@@ -50,7 +50,7 @@ What actually happens
 ```
 [paste relevant logs]
 ```
-```
+````
 
 ### Suggesting Enhancements
 
@@ -73,127 +73,9 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 ## Development Setup
 
-### Prerequisites
+Use Node.js 22.22.2+ (22.x), 24.15+, or 26+ for frontend development. Follow the [Development guide](https://feramance.github.io/Torrentarr/development/) for the full setup and build commands.
 
-- .NET 10.0 SDK or later
-- Node.js 22.22.2+ (22.x), 24.15+, or 26+ (for frontend)
-- Docker (optional)
-- Git
-- IDE: Visual Studio 2022, Rider, or VS Code
-
-### Clone and Build
-
-```bash
-# Clone your fork
-git clone https://github.com/YOUR_USERNAME/torrentarr.git
-cd torrentarr
-
-# Add upstream remote
-git remote add upstream https://github.com/ORIGINAL_OWNER/torrentarr.git
-
-# Install frontend dependencies
-cd src/Torrentarr.WebUI/ClientApp
-npm install
-cd ../../..
-
-# Restore .NET packages
-dotnet restore
-
-# Build
-dotnet build
-
-# Run tests (when implemented)
-dotnet test
-```
-
-### Project Structure
-
-```
-Torrentarr/
-├── src/
-│   ├── Torrentarr.Core/           # Domain models and interfaces
-│   ├── Torrentarr.Infrastructure/ # External integrations
-│   ├── Torrentarr.WebUI/          # Web application
-│   ├── Torrentarr.Workers/        # Background workers
-│   └── Torrentarr.Host/           # Process orchestrator
-├── tests/                          # Test projects (future)
-└── docs/                           # Additional documentation (future)
-```
-
-## Coding Standards
-
-### C# Code Style
-
-- **Naming:**
-  - PascalCase for classes, methods, properties
-  - camelCase for parameters, local variables
-  - Prefix interfaces with `I` (e.g., `ITorrentProcessor`)
-
-- **Formatting:**
-  - 4 spaces for indentation
-  - Opening braces on new line (Allman style)
-  - One statement per line
-
-- **Best Practices:**
-  - Use async/await for I/O operations
-  - Prefer LINQ over loops where appropriate
-  - Use dependency injection
-  - Add XML documentation comments for public APIs
-  - Follow SOLID principles
-
-**Example:**
-```csharp
-/// <summary>
-/// Processes torrents for a specific category.
-/// </summary>
-/// <param name="category">The category to process</param>
-/// <param name="cancellationToken">Cancellation token</param>
-/// <returns>Processing statistics</returns>
-public async Task<TorrentProcessingStats> ProcessTorrentsAsync(
-    string category,
-    CancellationToken cancellationToken = default)
-{
-    // Implementation
-}
-```
-
-### React/JavaScript Code Style
-
-- **Naming:**
-  - PascalCase for components (e.g., `Dashboard.js`)
-  - camelCase for functions and variables
-
-- **Formatting:**
-  - 2 spaces for indentation
-  - Use functional components with hooks
-  - Destructure props
-
-- **Best Practices:**
-  - Use `async/await` for API calls
-  - Handle loading and error states
-  - Clean up effects with return functions
-  - Use meaningful component and variable names
-
-**Example:**
-```javascript
-function Dashboard({ status }) {
-  const [stats, setStats] = useState(null);
-
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
-  const fetchStats = async () => {
-    // Implementation
-  };
-
-  return (
-    <div>
-      {/* JSX */}
-    </div>
-  );
-}
-```
+Install the hooks with `pre-commit install`. Run `dotnet restore` and `npm ci --prefix webui` first so the hooks can run both builds. Use `pre-commit run --all-files` to check the full checkout. Keep commit hooks enabled.
 
 ## Commit Message Guidelines
 
@@ -239,83 +121,15 @@ checking seeding time. Updated to use correct time calculation.
 Fixes #456
 ```
 
-## Testing
+## Pull Request Checklist
 
-### Writing Tests (When Implementing)
+- Follow the [code style](https://feramance.github.io/Torrentarr/development/code-style/) and [testing guidance](https://feramance.github.io/Torrentarr/development/testing/). Add or update tests for behavior changes and include relevant results in the PR.
+- Describe the motivation, link related issues, and include screenshots for visual changes.
+- Update setup, deployment, or feature docs when the corresponding user workflows change.
+- Regenerate the [OpenAPI spec](https://feramance.github.io/Torrentarr/development/release-process/#regenerating-the-openapi-spec) when changing API endpoints.
+- Follow [Manage verification](https://feramance.github.io/Torrentarr/development/maintenance-verification/) when changing maintenance behavior or controls.
 
-```csharp
-[Fact]
-public async Task ProcessTorrentsAsync_WithValidCategory_ReturnsStats()
-{
-    // Arrange
-    var processor = new TorrentProcessor(/* dependencies */);
-
-    // Act
-    var result = await processor.ProcessTorrentsAsync("movies");
-
-    // Assert
-    Assert.NotNull(result);
-    Assert.True(result.TorrentsProcessed > 0);
-}
-```
-
-### Running Tests
-
-```bash
-# Run all tests
-dotnet test
-
-# Run specific test project
-dotnet test tests/Torrentarr.Core.Tests
-
-# Run with coverage
-dotnet test --collect:"XPlat Code Coverage"
-```
-
-## Pull Request Process
-
-1. **Update documentation** if adding features
-2. **Update README.md** if changing setup/usage
-3. **Add tests** for new functionality
-4. **Ensure all tests pass** locally
-5. **Update CHANGELOG.md** (if exists)
-6. **Fill out PR template** completely
-
-### PR Checklist
-
-- [ ] Code follows project style guidelines
-- [ ] Self-review completed
-- [ ] Comments added for complex code
-- [ ] Documentation updated
-- [ ] Tests added/updated
-- [ ] All tests pass locally
-- [ ] No new warnings introduced
-- [ ] Commit messages follow conventions
-
-## Documentation
-
-### Code Documentation
-
-- Add XML comments for all public APIs
-- Include parameter descriptions
-- Document exceptions thrown
-- Provide usage examples for complex methods
-
-### User Documentation
-
-- Update README.md for user-facing changes
-- Update DOCKER.md for deployment changes
-- Add guides to docs/ folder for major features
-
-## Release Process (Maintainers)
-
-1. Update version in project files
-2. Update CHANGELOG.md
-3. Create release branch
-4. Tag release: `git tag v1.0.0`
-5. Build Docker images
-6. Publish to Docker Hub
-7. Create GitHub release with notes
+Maintainers should follow the [Release Process](https://feramance.github.io/Torrentarr/development/release-process/).
 
 ## Questions?
 

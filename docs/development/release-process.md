@@ -23,6 +23,10 @@ are independent. Confirm that policy before selecting a major bump. Versions use
 `MAJOR.MINOR.PATCH-BUILD`; patch/minor/major bumps reset the build segment to 1,
 while a build release increments it.
 
+For local Docker development, run `bash scripts/build-compose.sh` from the
+repository root. It uses the same version helper as PR and nightly image builds,
+which appends the first 12 characters of the checked-out commit to the version.
+
 ## Credentials and branch rules
 
 Enable **Allow GitHub Actions to create and approve pull requests** in the
@@ -116,6 +120,6 @@ Include this step in your release checklist when you have modified API routes.
 
 ## Related Documentation
 
-- [Contributing](contributing.md) - Contribution guidelines
+- [Contributing](https://github.com/Feramance/Torrentarr/blob/master/CONTRIBUTING.md) - Contribution guidelines
 - [Development Guide](index.md) - Development setup
 - [GitHub Actions Workflows](https://github.com/Feramance/Torrentarr/tree/master/.github/workflows) - CI/CD configuration

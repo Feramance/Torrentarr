@@ -133,8 +133,7 @@ public sealed class MaintenanceCompatibilityTests : IDisposable
         foreach (var path in Directory.EnumerateFiles(root, "*.md", SearchOption.AllDirectories))
         {
             var relative = Path.GetRelativePath(root, path).Replace('\\', '/');
-            if (relative.StartsWith("parity/") || relative.StartsWith("reviews/") || relative.StartsWith("development/pr-")
-                || relative.StartsWith("development/webui-parity") || relative.StartsWith("development/webui-source-reconciliation")) continue;
+            if (relative.StartsWith("parity/")) continue;
             foreach (Match match in Regex.Matches(File.ReadAllText(path), "```toml\\n(.*?)```", RegexOptions.Singleline))
             {
                 File.WriteAllText(ConfigPath, match.Groups[1].Value);

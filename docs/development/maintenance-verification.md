@@ -28,6 +28,8 @@ by that test. No real qBittorrent or Arr service is contacted.
 - Saved previews are single-use, expire, and invalidate after configuration changes.
 - All ten tools support Manual and Automatic execution. Legacy arm/disarm routes return 410; draft previews cannot execute. Session configuration migrates to Manual without losing schedules or other settings.
 - Disabled/unavailable owners and inaccessible or unsafe paths block orphan moves.
+- The orphan inspection cap bounds eligibility checks. Ordering still enumerates
+  entries across the configured roots, so large directories can make a scan slow.
 - Zero action budgets do not mutate files or expand scan scope.
 - Rechecks are bounded, survive restart, and cannot be duplicated across processes.
 - Missing-files recovery never falls through into automatic removal.
