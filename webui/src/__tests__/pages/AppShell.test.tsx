@@ -239,7 +239,9 @@ it("closes the navigation drawer after switching pages and on Escape", async () 
   expect(dialog).toBeInTheDocument();
   fireEvent.click(within(dialog).getByRole("button", { name: "General" }));
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(await screen.findByRole("heading", { name: "General" })).toHaveFocus();
+  await waitFor(() =>
+    expect(screen.getByRole("heading", { name: "General" })).toHaveFocus(),
+  );
   expect(screen.getByRole("button", { name: "General" })).toHaveAttribute(
     "aria-current",
     "page",
