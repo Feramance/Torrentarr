@@ -18,7 +18,7 @@ internal sealed class TorrentClientConfigDocument
 /// </summary>
 public class ConfigurationLoader
 {
-    private const string ReleaseConfigVersion = "6.20.0";
+    private const string ReleaseConfigVersion = "7.0.0";
     private static readonly Version TrackerProtectionSchemaVersion = new(6, 20, 5);
     private static readonly Version ExpectedSchemaVersion = Version.Parse(ReleaseConfigVersion) < TrackerProtectionSchemaVersion
         ? TrackerProtectionSchemaVersion

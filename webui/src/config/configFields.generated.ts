@@ -11,7 +11,7 @@ export const CONFIG_SCHEMA = {
         "key": "ConfigVersion",
         "label": "Config Version",
         "kind": "text",
-        "default": "6.20.5",
+        "default": "7.0.0",
         "comments": [
           "Internal config schema version - DO NOT MODIFY",
           "This is managed automatically by qBitrr for config migrations"
