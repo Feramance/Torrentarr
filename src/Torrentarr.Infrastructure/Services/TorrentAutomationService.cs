@@ -132,6 +132,7 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                     .Select(s => s.Key).ToListAsync(inspectionCt);
                 foreach (var stale in oldTrackerIssues.Where(k => !allHashes.Contains(k.Split('|')[1])))
                     await MaintenancePersistence.DeleteAsync(db, stale, inspectionCt);
+                using var fetches = new SemaphoreSlim(3);
                 using var observations = new SemaphoreSlim(1);
                 await Task.WhenAll(torrents.Select(async torrent =>
                 {
@@ -152,8 +153,14 @@ public sealed class TorrentAutomationService(TorrentarrConfig config, ITorrentCl
                     else
                     {
                         _logger.LogTrace("Protection tracker observation requested for {Hash}: freshRequired={FreshRequired}; privacyKnown={PrivacyKnown}", torrent.Hash, fresh, torrent.IsPrivate.HasValue);
-                        if (!torrent.IsPrivate.HasValue) torrent.IsPrivate = (await client.GetTorrentPropertiesAsync(torrent.Hash, inspectionCt))?.IsPrivate;
-                        trackers = await client.GetTorrentTrackersAsync(torrent.Hash, inspectionCt);
+                        await fetches.WaitAsync(inspectionCt);
+                        try
+                        {
+                            fetchedAt = Clock.GetUtcNow();
+                            if (!torrent.IsPrivate.HasValue) torrent.IsPrivate = (await client.GetTorrentPropertiesAsync(torrent.Hash, inspectionCt))?.IsPrivate;
+                            trackers = await client.GetTorrentTrackersAsync(torrent.Hash, inspectionCt);
+                        }
+                        finally { fetches.Release(); }
                     }
                     // Persist completed observations before a slow or cancelled fetch ends the sweep.
                     await observations.WaitAsync(inspectionCt);

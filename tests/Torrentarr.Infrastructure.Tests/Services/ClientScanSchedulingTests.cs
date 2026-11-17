@@ -89,6 +89,43 @@ public class ClientScanSchedulingTests
     }
 
     [Fact]
+    public async Task ProtectionInspectionLimitsConcurrentTrackerFetchesPerClient()
+    {
+        var client = Client();
+        client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Range(0, 6).Select(i => new TorrentInfo { Hash = $"hash-{i}", IsPrivate = false }).ToList());
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var threeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exceededLimit = new TaskCompletionSource();
+        var inFlight = 0;
+        client.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(async (string _, CancellationToken ct) =>
+            {
+                var active = Interlocked.Increment(ref inFlight);
+                if (active == 3) threeStarted.TrySetResult();
+                if (active > 3) exceededLimit.TrySetResult();
+                try { await release.Task.WaitAsync(ct); }
+                finally { Interlocked.Decrement(ref inFlight); }
+                return new List<TorrentTracker>();
+            });
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetClient("fast")).Returns(client.Object);
+        using var provider = new ServiceCollection().AddScoped(_ => Database()).AddSingleton(Mock.Of<ISeedingService>()).BuildServiceProvider();
+        using var service = new TorrentAutomationService(Configuration(), registry.Object,
+            provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var inspection = service.InspectProtectionAsync(cancellation.Token);
+        try { await threeStarted.Task.WaitAsync(cancellation.Token); }
+        finally
+        {
+            release.TrySetResult();
+            await inspection;
+        }
+        exceededLimit.Task.IsCompleted.Should().BeFalse();
+        client.Verify(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(6));
+    }
+
+    [Fact]
     public async Task ProtectionInspections_FollowClientIntervalsAndKeepFailureBackoff()
     {
         var fast = Client(); var slow = Client();
