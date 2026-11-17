@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
 import { IssuesView } from "../../pages/IssuesView";
+import { NAVIGATE_TAB_EVENT } from "../../utils/navigateTab";
 
 const group = {
   id: 1,
@@ -74,7 +75,9 @@ describe("Issues view", () => {
     expect(
       screen.getByText(/Restore profile 9 before searching/),
     ).toBeVisible();
-    expect(screen.getByRole("button", { name: "Open config" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Check quality profile mappings" }),
+    ).toBeVisible();
     await user.click(screen.getByRole("tab", { name: "System & services" }));
     await screen.findByText("Worker timed out");
     expect(
@@ -336,4 +339,87 @@ it("shows stale detail errors and retries them on the next group refresh", async
     screen.getByRole("button", { name: "Refresh", exact: true }),
   );
   await screen.findByText(/42.*Active/);
+});
+
+it("removes a recovered group on automatic refresh", async () => {
+  let recovered = false;
+  server.use(
+    http.get("/web/issues", () =>
+      HttpResponse.json({
+        available: true,
+        total: recovered ? 0 : 1,
+        page: 0,
+        pageSize: 50,
+        pending: [],
+        items: recovered ? [] : [group],
+      }),
+    ),
+  );
+  render(<IssuesView />);
+  await screen.findByText("Search skipped");
+  recovered = true;
+  await screen.findByText("No active issues match these filters.", undefined, {
+    timeout: 8000,
+  });
+  expect(screen.queryByText("Search skipped")).not.toBeInTheDocument();
+}, 10000);
+
+it("links grouped storage issues to each affected monitor", async () => {
+  const reserve = {
+    ...group,
+    code: "storage.reserve",
+    arrInstance: "",
+    clientInstance: "qBit-General",
+    title: "Download storage needs attention",
+  };
+  server.use(
+    http.get("/web/issues", () =>
+      HttpResponse.json({
+        available: true,
+        total: 1,
+        page: 0,
+        pageSize: 50,
+        pending: [],
+        items: [
+          {
+            ...reserve,
+            examples: ["/first", "/second"].map((subjectId, index) => ({
+              ...reserve,
+              id: index + 1,
+              subjectType: "storage",
+              subjectId,
+            })),
+          },
+        ],
+      }),
+    ),
+  );
+  const user = userEvent.setup();
+  const destinations: unknown[] = [];
+  const capture = (event: Event) =>
+    destinations.push((event as CustomEvent).detail);
+  window.addEventListener(NAVIGATE_TAB_EVENT, capture);
+  try {
+    render(<IssuesView />);
+    await user.click(
+      await screen.findByText(reserve.title, { selector: "summary strong" }),
+    );
+    await user.click(
+      screen.getAllByRole("button", { name: "Edit free-space monitor" })[1]!,
+    );
+    expect(destinations).toEqual([
+      {
+        tab: "config",
+        configDestination: {
+          arr: undefined,
+          client: "qBit-General",
+          field: "FreeSpace",
+          monitorPath: "/second",
+        },
+        preserveConfigDraft: true,
+      },
+    ]);
+  } finally {
+    window.removeEventListener(NAVIGATE_TAB_EVENT, capture);
+  }
 });

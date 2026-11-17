@@ -64,7 +64,25 @@ vi.mock("../../pages/ArrCatalogView", () => ({ ArrCatalogView: () => null }));
 vi.mock("../../pages/QbitCategoriesView", () => ({
   QbitCategoriesView: () => null,
 }));
-vi.mock("../../pages/MaintenanceView", () => ({ MaintenanceView: () => null }));
+vi.mock("../../pages/MaintenanceView", () => ({
+  MaintenanceView: ({
+    onDirtyChange,
+  }: {
+    onDirtyChange: (dirty: boolean) => void;
+  }) => {
+    const [value, setValue] = React.useState("");
+    return (
+      <input
+        aria-label="mock maintenance value"
+        value={value}
+        onChange={(event) => {
+          setValue(event.target.value);
+          onDirtyChange(true);
+        }}
+      />
+    );
+  },
+}));
 vi.mock("../../components/ChangelogModal", () => ({
   ChangelogModal: () => null,
 }));
@@ -144,7 +162,8 @@ describe("App tab lifecycle", () => {
     const user = userEvent.setup();
 
     render(<App />);
-    await user.click(await screen.findByRole("button", { name: /config/i }));
+    await user.click(await screen.findByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "General" }));
     await user.click(
       await screen.findByRole("button", { name: /open config modal/i }),
     );
@@ -171,18 +190,20 @@ describe("App tab lifecycle", () => {
     const user = userEvent.setup();
 
     render(<App />);
-    await user.click(await screen.findByRole("button", { name: /config/i }));
+    await user.click(await screen.findByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "General" }));
     const input = await screen.findByLabelText("mock config value");
     await user.type(input, "unsaved value");
     await user.click(screen.getByRole("button", { name: /processes/i }));
-    await user.click(screen.getByRole("button", { name: /config/i }));
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "General" }));
 
     expect(screen.getByLabelText("mock config value")).toHaveValue(
       "unsaved value",
     );
   });
 
-  it("discards retained config edits after confirmed navigation", async () => {
+  it("keeps both drafts inside Settings and discards both after one confirmed exit", async () => {
     vi.stubGlobal("location", {
       pathname: "/ui/",
       replace: vi.fn(),
@@ -195,11 +216,12 @@ describe("App tab lifecycle", () => {
       oidc_enabled: false,
       setup_required: false,
     });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const user = userEvent.setup();
 
     render(<App />);
-    await user.click(await screen.findByRole("button", { name: /config/i }));
+    await user.click(await screen.findByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "General" }));
     await user.type(
       await screen.findByLabelText("mock config value"),
       "discard me",
@@ -207,13 +229,47 @@ describe("App tab lifecycle", () => {
     await user.click(
       screen.getByRole("button", { name: /mark config dirty/i }),
     );
+    await user.click(screen.getByRole("button", { name: "Maintenance" }));
+    await user.click(screen.getByRole("button", { name: "Recovery" }));
+    await user.type(
+      await screen.findByLabelText("mock maintenance value"),
+      "maintenance draft",
+    );
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(
+      screen.getByRole("button", { name: "Interface & Access" }),
+    );
+    expect(screen.getByLabelText("mock config value")).toHaveValue(
+      "discard me",
+    );
+    await user.click(screen.getByRole("button", { name: "Maintenance" }));
+    await user.click(screen.getByRole("button", { name: "Storage" }));
+    expect(screen.getByLabelText("mock maintenance value")).toHaveValue(
+      "maintenance draft",
+    );
+    expect(confirm).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Processes" }));
+    expect(
+      screen.getByRole("heading", { name: "Storage" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("mock maintenance value")).toHaveValue(
+      "maintenance draft",
+    );
+    expect(confirm).toHaveBeenCalledTimes(1);
+    confirm.mockClear().mockReturnValue(true);
     await user.click(screen.getByRole("button", { name: /processes/i }));
-    await user.click(screen.getByRole("button", { name: /config/i }));
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    await user.click(screen.getByRole("button", { name: "General" }));
 
     expect(confirm).toHaveBeenCalledWith(
-      "You have unsaved configuration changes. Leave without saving?",
+      "You have unsaved settings. Leave without saving?",
     );
     expect(screen.getByLabelText("mock config value")).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "Maintenance" }));
+    await user.click(screen.getByRole("button", { name: "Recovery" }));
+    expect(screen.getByLabelText("mock maintenance value")).toHaveValue("");
+    expect(confirm).toHaveBeenCalledTimes(1);
     confirm.mockRestore();
   });
 });

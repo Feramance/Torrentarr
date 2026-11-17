@@ -8,7 +8,7 @@
 
 [Settings]
 # Internal config schema version - managed automatically
-ConfigVersion = "6.20.3"
+ConfigVersion = "6.20.5"
 
 # Logging level: CRITICAL, ERROR, WARNING, NOTICE, INFO, DEBUG, TRACE
 ConsoleLevel = "INFO"
@@ -82,8 +82,8 @@ OIDCEnabled = false
 # Enable live updates for Arr views
 LiveArr = true
 
-# WebUI theme (Light or Dark)
-Theme = "Dark"
+# WebUI theme (System, Light, Dark, or Midnight)
+Theme = "System"
 
 # View density (Comfortable or Compact)
 ViewDensity = "Comfortable"
@@ -119,9 +119,6 @@ ManagedCategories = []
 # When true, managed categories also match nested subcategories
 MatchSubcategories = false
 
-# Global tracker configurations (inherited by all Arr instances)
-Trackers = []
-
 [qBit.CategorySeeding]
 # Download rate limit per torrent in KB/s (-1 = unlimited)
 DownloadRateLimitPerTorrent = -1
@@ -136,6 +133,7 @@ MaxUploadRatio = 2.0
 MaxSeedingTime = 604800
 
 # Remove mode: -1=Never, 1=Ratio, 2=Time, 3=OR, 4=AND
+# An explicit -1 vetoes cleanup at every matching scope. Omit to inherit.
 RemoveTorrent = -1
 
 # Enable Hit & Run protection
@@ -225,6 +223,8 @@ ExcludedCategories = []
 ExcludedTags = []
 
 # Explicit mappings describe the same folder in the client and Torrentarr.
+# Recycling requires mappings even when both paths are identical. In Docker,
+# LocalPath is inside Torrentarr; the directory must already be mounted/readable.
 # [[qBit.Maintenance.PathMappings]]
 # ClientPath = '/downloads'
 # LocalPath = '/data/downloads'
@@ -264,3 +264,14 @@ HealthyResetMinutes = 60
 Enabled = false
 ExecutionMode = 'manual'
 Schedule = '15 3 * * *'
+
+# Tracker rules use one nonempty scope array: ClientIds or ArrInstances.
+# [[Trackers]]
+# Name = "Private tracker"
+# URI = "https://tracker.example/announce"
+# ClientIds = ["qBit"]
+#
+# [[Trackers]]
+# Name = "Integration tracker override"
+# URI = "https://tracker.example/announce"
+# ArrInstances = ["Radarr-Movies", "Sonarr-TV"]

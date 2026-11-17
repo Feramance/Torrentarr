@@ -215,7 +215,7 @@ Total time to library: 20.5 minutes (26% faster)
 
 - **qBittorrent**: Version 4.1.0+ or 5.x (including 5.3) with WebUI enabled
 - **Arr Instance**: At least one of:
-    - Radarr: v3.x, v4.x, v5.x, v6.x
+    - Radarr: v3.x, v4.x, v5.x, v6.x, v7.x
     - Sonarr: v3.x, v4.x, v5.x
     - Lidarr: v1.x, v2.x
     - Readarr: v0.4+
@@ -248,6 +248,7 @@ Versions are detected separately for each configured client. Mixed 4.x and 5.x i
 
 | Version | Status | Notes |
 |---------|--------|-------|
+| 7.x | ✅ Fully Supported | Tested with 7.0.2; still uses `/api/v3` |
 | 6.x | ✅ Fully Supported | Still uses `/api/v3` |
 | 5.x | ✅ Fully Supported | Stable |
 | 4.x | ✅ Fully Supported | Stable |

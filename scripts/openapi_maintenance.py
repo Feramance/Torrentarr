@@ -48,6 +48,7 @@ def apply(spec):
     for name, body in classes.items():
         if name == 'ProtectionObservation': continue
         props = {}
+        body = re.sub(r'(?m)^ *\[JsonIgnore\]\n *public .*$', '', body)
         for prop in re.finditer(r'public ([\w<>?,. ]+) (\w+)\s*(?:\{|=>)', body):
             if prop[2] == 'InspectionCursors': continue
             props[prop[2][0].lower() + prop[2][1:]] = wire_type(prop[1].strip())

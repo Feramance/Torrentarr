@@ -7,8 +7,12 @@ namespace Torrentarr.Infrastructure.ApiClients.Arr;
 
 internal static class ArrClientResponse
 {
-    internal static Task<RestResponse> ExecuteAsync(RestClient client, RestRequest request, CancellationToken ct) =>
-        HttpRetryHelper.ExecuteArrAsync(client, request, ct);
+    internal static async Task<RestResponse> ExecuteAsync(RestClient client, RestRequest request, CancellationToken ct)
+    {
+        var response = await HttpRetryHelper.ExecuteArrAsync(client, request, ct);
+        await Torrentarr.Infrastructure.Services.ArrActivityTracking.RecordAcceptedAsync(request, response, ct);
+        return response;
+    }
 
     internal static void EnsureSuccess(RestResponse response, string operation)
     {

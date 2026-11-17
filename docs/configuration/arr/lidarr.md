@@ -450,7 +450,10 @@ RemoveTrackerWithMessage = [
 Example for RED (Redacted):
 
 ```toml
-[[Lidarr-Music.Torrent.Trackers]]
+[Lidarr-Music]
+
+[[Trackers]]
+ArrInstances = ["Lidarr-Music"]
 Name = "RED"
 Priority = 10
 URI = "https://flacsfor.me/announce"
@@ -595,7 +598,8 @@ MaxUploadRatio = -1  # Never stop based on ratio
 MaxSeedingTime = 6220800  # 72 hours minimum
 RemoveTorrent = 2  # Remove only after 72 hours
 
-[[Lidarr-PrivateTracker.Torrent.Trackers]]
+[[Trackers]]
+ArrInstances = ["Lidarr-PrivateTracker"]
 Name = "RED"
 Priority = 10
 URI = "https://flacsfor.me/announce"

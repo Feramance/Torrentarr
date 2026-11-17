@@ -208,19 +208,30 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
-    public void SaveConfig_FormatsCategoryRatiosWithInvariantCulture()
+    public void SaveConfig_RoundTripsRatiosAndStringsWithCommaDecimalCulture()
     {
         WriteToml("""
             [Settings]
             ConfigVersion = "6.14.6"
 
+            [qBit]
+            Password = 'a"b\c'
+
             [qBit.CategorySeeding]
+            MinSeedRatio = 1.5
 
             [[qBit.CategorySeeding.Categories]]
             Name = "movies"
             MaxUploadRatio = 3.5
             MinSeedRatio = 1.25
             HitAndRunPartialSeedRatio = 0.75
+
+            [Radarr-Movies.Torrent]
+            MaximumDeletablePercentage = 0.85
+            FileNameExclusionRegex = ['\.mkv', "director's cut"]
+
+            [Radarr-Movies.Torrent.SeedingMode]
+            MaxUploadRatio = 2.75
             """);
 
         var loader = new ConfigurationLoader(_tempFilePath);
@@ -240,7 +251,15 @@ public class ConfigurationLoaderTests : IDisposable
         saved.Should().Contain("MaxUploadRatio = 3.5");
         saved.Should().Contain("MinSeedRatio = 1.25");
         saved.Should().Contain("HitAndRunPartialSeedRatio = 0.75");
-        loader.Load().QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle();
+        var loaded = loader.Load();
+        loaded.QBitInstances["qBit"].Password.Should().Be("a\"b\\c");
+        loaded.QBitInstances["qBit"].CategorySeeding.MinSeedRatio.Should().Be(1.5);
+        loaded.QBitInstances["qBit"].CategorySeeding.Categories.Should().ContainSingle();
+        var torrent = loaded.ArrInstances["Radarr-Movies"].Torrent;
+        torrent.MaximumDeletablePercentage.Should().Be(0.85);
+        torrent.SeedingMode!.MaxUploadRatio.Should().Be(2.75);
+        torrent.FileNameExclusionRegex.Should().Equal(@"\.mkv", "director's cut");
+        saved.Should().Contain(@"'\.mkv'");
     }
 
     [Fact]
@@ -301,7 +320,7 @@ public class ConfigurationLoaderTests : IDisposable
 
         // WebUI defaults when [WebUI] omitted
         config.WebUI.Port.Should().Be(6969);
-        config.WebUI.Theme.Should().Be("Dark");
+        config.WebUI.Theme.Should().Be("System");
         config.WebUI.LiveArr.Should().BeTrue();
     }
 
@@ -454,9 +473,9 @@ public class ConfigurationLoaderTests : IDisposable
 
         var config = new ConfigurationLoader(_tempFilePath).Load();
 
-        // Tracker should be promoted to qBit.Trackers
-        config.QBitInstances["qBit"].Trackers.Should().NotBeEmpty();
-        config.QBitInstances["qBit"].Trackers[0].Uri.Should().Be("https://tracker1.example.com/announce");
+        // Historical promotion supplies a shared rule scoped to qBit.
+        config.Trackers.Should().NotBeEmpty();
+        config.Trackers.Should().Contain(t => t.Uri == "https://tracker1.example.com/announce" && t.ClientIds!.Contains("qBit"));
     }
 
     // --- Migration 6: HitAndRunClearMode Consolidation ---
@@ -531,7 +550,7 @@ public class ConfigurationLoaderTests : IDisposable
 
         var config = new ConfigurationLoader(_tempFilePath).Load();
 
-        config.ArrInstances["Radarr-Movies"].Torrent.Trackers[0].HitAndRunMode.Should().Be("and");
+        config.Trackers.Single(t => t.ArrInstances != null).HitAndRunMode.Should().Be("and");
     }
 
     // --- ValidateAndFillConfig ---
@@ -567,7 +586,7 @@ public class ConfigurationLoaderTests : IDisposable
 
         config.WebUI.Host.Should().Be("0.0.0.0");
         config.WebUI.Port.Should().Be(6969);
-        config.WebUI.Theme.Should().Be("Dark");
+        config.WebUI.Theme.Should().Be("System");
         config.WebUI.ViewDensity.Should().Be("Comfortable");
         config.WebUI.LiveArr.Should().BeTrue();
         // Filled WebUI auth defaults must match GenerateDefaultConfig / qBitrr: auth on, local login opt-in.
@@ -604,6 +623,24 @@ public class ConfigurationLoaderTests : IDisposable
 
         config.WebUI.Theme.Should().Be("Light");
         config.WebUI.ViewDensity.Should().Be("Comfortable");
+    }
+
+    [Fact]
+    public void Load_ValidateAndFill_NormalizesSystemAndMidnightThemes()
+    {
+        WriteToml("""
+            [WebUI]
+            Theme = "system"
+            """);
+
+        new ConfigurationLoader(_tempFilePath).Load().WebUI.Theme.Should().Be("System");
+
+        WriteToml("""
+            [WebUI]
+            Theme = "MIDNIGHT"
+            """);
+
+        new ConfigurationLoader(_tempFilePath).Load().WebUI.Theme.Should().Be("Midnight");
     }
 
     [Fact]
@@ -884,9 +921,9 @@ public class ConfigurationLoaderTests : IDisposable
 
         var config = new ConfigurationLoader(_tempFilePath).Load();
 
-        config.QBitInstances["qBit"].Trackers.Should().ContainSingle();
-        config.QBitInstances["qBit"].Trackers[0].SortTorrents.Should().BeTrue();
-        config.QBitInstances["qBit"].Trackers[0].Priority.Should().Be(10);
+        config.Trackers.Should().ContainSingle();
+        config.Trackers[0].SortTorrents.Should().BeTrue();
+        config.Trackers[0].Priority.Should().Be(10);
     }
 
     [Theory]
@@ -935,17 +972,17 @@ public class ConfigurationLoaderTests : IDisposable
         loader.SaveConfig(config);
 
         var reloaded = new ConfigurationLoader(_tempFilePath).Load();
-        reloaded.QBitInstances["qBit"].Trackers.Should().ContainSingle();
-        reloaded.QBitInstances["qBit"].Trackers[0].Uri.Should().Be("https://tracker.example.com/announce");
-        reloaded.QBitInstances["qBit"].Trackers[0].SortTorrents.Should().BeTrue();
-        reloaded.QBitInstances["qBit"].Trackers[0].Priority.Should().Be(10);
-        reloaded.QBitInstances["qBit"].Trackers[0].HitAndRunMode.Should().Be("and");
-        reloaded.QBitInstances["qBit"].Trackers[0].MinSeedRatio.Should().Be(2.0);
+        reloaded.Trackers.Should().ContainSingle();
+        reloaded.Trackers[0].Uri.Should().Be("https://tracker.example.com/announce");
+        reloaded.Trackers[0].SortTorrents.Should().BeTrue();
+        reloaded.Trackers[0].Priority.Should().Be(10);
+        reloaded.Trackers[0].HitAndRunMode.Should().Be("and");
+        reloaded.Trackers[0].MinSeedRatio.Should().Be(2.0);
         reloaded.Settings.LoopSleepTimer.Should().Be(10);
     }
 
     [Fact]
-    public void SaveConfig_WritesTrackerMinSeedingTimeAlias()
+    public void SaveConfig_WritesTrackerMinSeedingTimeDays()
     {
         WriteToml("""
             [Settings]
@@ -964,9 +1001,9 @@ public class ConfigurationLoaderTests : IDisposable
         loader.SaveConfig(config);
 
         var content = File.ReadAllText(_tempFilePath);
-        content.Should().Contain("MinSeedingTime = 2");
+        content.Should().Contain("MinSeedingTimeDays = 2");
         new ConfigurationLoader(_tempFilePath).Load()
-            .QBitInstances["qBit"].Trackers[0].MinSeedingTimeDays.Should().Be(2);
+            .Trackers[0].MinSeedingTimeDays.Should().Be(2);
     }
 
     [Fact]
@@ -1139,31 +1176,30 @@ public class ConfigurationLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_DoesNotDowngradeConfigVersionWhenNewerThanExpected_AfterValidateAndFill()
+    public void LoadAndSave_PreserveConfigFromNewerBuild()
     {
-        WriteToml("""
+        const string original = """
             [Settings]
-            ConfigVersion = "99.0.0"
+            ConfigVersion = "99.0.0-1"
 
             [WebUI]
-            Host = "0.0.0.0"
             Port = 6969
-            Token = ""
-            AuthDisabled = false
-            LocalAuthEnabled = true
-            OIDCEnabled = false
-            Username = ""
-            PasswordHash = ""
-            LiveArr = true
-            Theme = "Dark"
-            ViewDensity = "Comfortable"
-            """);
 
-        _ = new ConfigurationLoader(_tempFilePath).Load();
+            [FutureSection]
+            FutureValue = "keep this"
+            """;
+        WriteToml(original);
 
-        var content = File.ReadAllText(_tempFilePath);
-        content.Should().Contain("ConfigVersion = \"99.0.0\"");
-        content.Should().Contain("BehindHttpsProxy");
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var loaded = loader.LoadOrCreate().Config;
+        loaded.Settings.ConfigVersion.Should().Be("99.0.0-1");
+        ConfigurationLoader.ValidateConfigVersion(loaded).IsValid.Should().BeFalse();
+        File.ReadAllText(_tempFilePath).Should().Be(original);
+        File.Exists(_tempFilePath + ".bak").Should().BeFalse();
+
+        var save = () => loader.SaveConfig(new TorrentarrConfig());
+        save.Should().Throw<InvalidOperationException>().WithMessage("*newer Torrentarr build*");
+        File.ReadAllText(_tempFilePath).Should().Be(original);
     }
 
     [Fact]
@@ -1448,7 +1484,7 @@ public class ConfigurationLoaderTests : IDisposable
             """);
 
         var config = new ConfigurationLoader(_tempFilePath).Load();
-        config.QBitInstances["qBit"].Trackers[0].MinSeedingTimeDays.Should().Be(4);
+        config.Trackers[0].MinSeedingTimeDays.Should().Be(4);
     }
 
     [Fact]
@@ -1467,7 +1503,7 @@ public class ConfigurationLoaderTests : IDisposable
             """);
 
         var config = new ConfigurationLoader(_tempFilePath).Load();
-        config.QBitInstances["qBit"].Trackers[0].MinSeedingTimeDays.Should().Be(2);
+        config.Trackers[0].MinSeedingTimeDays.Should().Be(2);
     }
 
     [Fact]

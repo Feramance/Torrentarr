@@ -13,6 +13,16 @@ public class ArrProcessState
     public bool Alive { get; set; }
     public bool Rebuilding { get; set; }
     public int? Pid { get; set; }
+    public int? SearchesTriggered { get; set; }
+    public int? ItemsSearched { get; set; }
+    public int? DownloadingCount { get; set; }
+    public int? SeedingCount { get; set; }
+    public DateTimeOffset? ObservedAt { get; set; }
+    public string? ObservationError { get; set; }
+    public int? PausedLastPass { get; set; }
+    public int? ResumedLastPass { get; set; }
+    public int? MonitoredCategoryCount { get; set; }
+    public int? HandledLastPass { get; set; }
     public string? SearchSummary { get; set; }
     public string? SearchTimestamp { get; set; }
     public int? QueueCount { get; set; }

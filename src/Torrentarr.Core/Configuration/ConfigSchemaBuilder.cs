@@ -17,19 +17,28 @@ public static class ConfigSchemaBuilder
         new Dictionary<string, IReadOnlyList<ConfigSchemaField>>
         {
             ["Settings"] = Qbitrr5146ConfigSchema.Settings.Where(f => f.key is not ("CompletedDownloadFolder" or "FreeSpace" or "FreeSpaceFolder" or "AutoPauseResume" or "FreeSpaceThresholdGB")).Select(f => f.key == "ConfigVersion" ? f with { @default = ConfigurationLoader.ExpectedConfigVersion }
-                : f.key == "LoopSleepTimer" ? f with { label = "Database refresh interval", comments = "Interval in seconds between Arr catalog refreshes into SQLite. Torrent scans use each client’s scan interval." } : f).ToList(),
-            ["WebUI"] = [.. Qbitrr5146ConfigSchema.WebUI,
+                : f.key == "LoopSleepTimer" ? f with { label = "Database refresh interval", comments = "Interval in seconds between Arr catalog refreshes into SQLite. Torrent scans use each client’s scan interval." } : f).Select(RuntimeField).ToList(),
+            ["WebUI"] = [.. Qbitrr5146ConfigSchema.WebUI.Select(RuntimeField).Select(f => f.key == "Theme" ? f with
+                {
+                    @default = "System",
+                    options = ["System", "Light", "Dark", "Midnight"],
+                    comments = "WebUI theme (System, Light, Dark, or Midnight)",
+                    description = "System follows the operating system. Midnight uses a black background."
+                } : f),
                 Field("CorsAllowedOrigins", "tags", "Allowed browser origins", Array.Empty<string>()) with
                 {
                     section = "WebUI", applyLive = true, requiresRestart = false,
                     comments = "Allowed browser origins. Empty allows any origin without credentials; entries must be exact HTTP(S) origins.",
-                    description = "HTTP(S) origins without trailing slashes. Empty allows any origin without credentials; a list permits credentials only for those origins. Changes apply live."
+                    description = "HTTP(S) origins without trailing slashes. Empty allows any origin without credentials; a list permits credentials only for those origins."
                 }],
             ["qBit"] = TorrentClientFields().Where(f => f.key != "Type").Select(f => f with { section = "qBit" }).ToList(),
             ["TorrentClient"] = TorrentClientFields(),
             ["Arr"] = Qbitrr5146ConfigSchema.Arr.Select(ClarifyTrackerMessages).Select(ClarifySearchScope).ToList(),
             ["TrackerProtection"] = ProtectionFields().Select(f => f with { section = "TrackerProtection" }).ToList()
         };
+
+    // Torrentarr reconciles these settings at runtime; qBitrr's startup flags do not apply.
+    private static ConfigSchemaField RuntimeField(ConfigSchemaField field) => field with { applyLive = true, requiresRestart = false };
 
     private static ConfigSchemaField ClarifySearchScope(ConfigSchemaField field)
     {
@@ -45,6 +54,13 @@ public static class ConfigSchemaBuilder
 
     private static ConfigSchemaField ClarifyTrackerMessages(ConfigSchemaField field)
     {
+        if (field.path.LastOrDefault() == "HitAndRunMode")
+            return field with
+            {
+                options = ["and", "or", "ratio", "time", "disabled"],
+                description = "Choose the conditions that qualify for Hit & Run clearance. Healthy tracker observations confirm clearance.",
+                comments = new[] { "Enabled Hit & Run rules use healthy observations to confirm clearance." }
+            };
         var description = field.path.LastOrDefault() switch
         {
             "RemoveDeadTrackers" => "Legacy compatibility setting: true preserves and reports matching tracker failures instead of directly deleting torrents. Tracker rejection never authorizes torrent removal.",
@@ -59,6 +75,17 @@ public static class ConfigSchemaBuilder
         .. Qbitrr5146ConfigSchema.qBit
             .Where(field => field.key is not ("Disabled" or "Host" or "Port" or "UserName" or "Password" or "DownloadPath"))
             .Select(ClarifyTrackerMessages).Select(field => field with { section = "TorrentClient", applyLive = true, requiresRestart = false }),
+        Field("CategorySeeding.Categories", "collection", "Category overrides", Array.Empty<object>()) with
+        {
+            description = "Override Hit & Run for individual torrent categories. Blank values inherit client defaults.",
+            itemFields =
+            [
+                Field("Name", "text", "Category", "") with { required = true },
+                Field("HitAndRunMode", "select", "Hit & Run mode", null, options: ["and", "or", "ratio", "time", "disabled"]),
+                Field("MinSeedRatio", "number", "Minimum seed ratio", null, minimum: 0),
+                Field("MinSeedingTimeDays", "number", "Minimum seed days", null, minimum: 0)
+            ]
+        },
         Field("Type", "text", "Client Type", "qbittorrent"),
         Field("Disabled", "checkbox", "Disabled", false),
         Field("Host", "text", "Host", "CHANGE_ME"),
@@ -108,6 +135,10 @@ public static class ConfigSchemaBuilder
         Field("Maintenance.Unregistered.GraceMinutes", "number", "Unregistered grace period (minutes)", 10, minimum: 0),
         Field("Maintenance.Unregistered.MaxPerTrackerPerRun", "number", "Maximum removals per tracker per run", 10, minimum: 0),
         Field("Maintenance.Unregistered.CompletedOnly", "checkbox", "Only clean up completed torrents", false),
+        Field("Maintenance.Unregistered.ParkIncomplete", "checkbox", "Park incomplete rejected torrents", false) with
+        {
+            description = "Keep stopped incomplete torrents and their files. Pause active incomplete torrents only after a confirmed tracker rejection and protection clearance."
+        },
         Field("Maintenance.Unregistered.Messages", "tags", "Unregistered tracker messages", new[] { "unregistered torrent", "torrent not registered", "torrent not found", "torrent not authorized" }),
         Field("Maintenance.RecycleBin.Enabled", "checkbox", "Enable recycle bin and retention", false),
         Field("Maintenance.RecycleBin.Path", "text", "Recycle bin path", "") with { description = "Absolute path visible to Torrentarr. Blank uses .torrentarr-recycle inside the first mapped local root." },
@@ -153,7 +184,7 @@ public static class ConfigSchemaBuilder
         {
             var prefix = "Maintenance.Operations." + operation + ".";
             yield return Field(prefix + "Enabled", "checkbox", "Enable operation", false) with { description = "Explicit operation override. Existing configs without an override retain their legacy enablement." };
-            yield return Field(prefix + "ExecutionMode", "select", "Execution mode", "manual", options: ["manual", "automatic"]) with { description = "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart; no restart is required." };
+            yield return Field(prefix + "ExecutionMode", "select", "Execution mode", "manual", options: ["manual", "automatic"]) with { description = "Manual applies a reviewed preview once. Automatic runs on the saved schedule and remains enabled after restart." };
             yield return Field(prefix + "Schedule", "text", "Operation schedule (UTC)", MaintenancePolicies.SuggestedSchedule(operation)) with { description = "Five-field cron expression in UTC. Blank inherits the client schedule." };
             yield return Field(prefix + "IncludedCategories", "tags", "Included categories", Array.Empty<string>()) with { description = "Blank inherits client-wide scope. Entries narrow that scope." };
             yield return Field(prefix + "ExcludedCategories", "tags", "Excluded categories", Array.Empty<string>());
@@ -179,6 +210,7 @@ public static class ConfigSchemaBuilder
         Field("MinimumSeedHours", "number", "Minimum completed seed time (hours)", 48, minimum: 0, maximum: 876000),
         Field("MinimumRatio", "number", "Minimum ratio", 1.0, minimum: 0),
         Field("AllowClientRatioClearance", "checkbox", "Allow client-estimated ratio clearance", false) with { description = "Off by default: a client ratio does not prove tracker credit. OnlyEncodes never clears on ratio." },
+        Field("RequireLegacyClearance", "checkbox", "Use Hit & Run thresholds", false) with { description = "Apply the Hit & Run mode with this accounting grace period." },
         Field("PartialPolicy", "select", "Partial download policy", "preserve", options: ["preserve", "ratio"]),
         Field("DownloadThresholdPercent", "number", "Download obligation threshold (%)", 10, minimum: 0, maximum: 100),
         Field("ThresholdInclusive", "checkbox", "Include threshold boundary", true),

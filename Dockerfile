@@ -33,6 +33,7 @@ COPY src/Torrentarr.Host/*.csproj ./src/Torrentarr.Host/
 COPY src/Torrentarr.WebUI/*.csproj ./src/Torrentarr.WebUI/
 COPY src/Torrentarr.Workers/*.csproj ./src/Torrentarr.Workers/
 COPY Directory.Build.props ./
+COPY Directory.Build.targets ./
 
 # Restore only the Host project and its transitive dependencies
 RUN dotnet restore src/Torrentarr.Host/Torrentarr.Host.csproj
@@ -47,13 +48,16 @@ COPY nuget.config ./
 COPY --from=frontend-build /app/src/Torrentarr.Host/wwwroot ./src/Torrentarr.Host/wwwroot
 
 # Build and publish
+ARG VERSION
 RUN dotnet publish src/Torrentarr.Host/Torrentarr.Host.csproj \
     -c Release \
     -o /app/publish \
+    ${VERSION:+-p:InformationalVersion="$VERSION"} \
     --no-restore
 RUN dotnet publish src/Torrentarr.Workers/Torrentarr.Workers.csproj \
     -c Release \
     -o /app/publish \
+    ${VERSION:+-p:InformationalVersion="$VERSION"} \
     --no-restore
 
 # Stage 3: Runtime Image
@@ -99,7 +103,7 @@ EXPOSE 6969
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:6969/health || exit 1
+    CMD ["/app/Torrentarr.Host", "--healthcheck"]
 
 # Volume mounts
 VOLUME ["/config", "/data"]

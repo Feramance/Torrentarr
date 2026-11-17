@@ -104,46 +104,10 @@ public sealed class TaglessInstanceScopeTests
         InvokeHasTag(typeof(TorrentProcessor), db, config, torrent, "qBitrr-ignored").Should().BeFalse();
     }
 
-    /// <summary>
-    /// Regression: Imported flag must be read per (Hash, QbitInstance), not hash-only.
-    /// Pre-fix, seedbox row was treated as imported when only the qBit row had Imported=true.
-    /// </summary>
-    [Fact]
-    public async Task IsImportedInDatabase_ScopesByQbitInstance()
-    {
-        await using var db = CreateDbWithDuplicateHashRows();
-        var config = new TorrentarrConfig { Settings = { Tagless = true } };
-        var processor = new TorrentProcessor(
-            NullLogger<TorrentProcessor>.Instance,
-            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance),
-            db,
-            config,
-            new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
-            new DatabaseRestartCoordinator());
-
-        var method = typeof(TorrentProcessor).GetMethod(
-            "IsImportedInDatabaseAsync",
-            BindingFlags.NonPublic | BindingFlags.Instance);
-        method.Should().NotBeNull();
-
-        var seedboxImported = await (Task<bool>)method!.Invoke(
-            processor,
-            new object[] { "abc123", "qBit-seedbox", CancellationToken.None })!;
-        var primaryImported = await (Task<bool>)method.Invoke(
-            processor,
-            new object[] { "abc123", "qBit", CancellationToken.None })!;
-
-        seedboxImported.Should().BeFalse("seedbox row is not imported");
-        primaryImported.Should().BeTrue("primary row is imported");
-    }
-
-    /// <summary>
-    /// Regression: IsReadyForImportAsync must read qBit torrent state from the requested instance,
-    /// not the first client that returns a matching hash. Pre-fix, qBit (listed first) could block
-    /// seedbox import when the same hash was still downloading on qBit but complete on seedbox.
-    /// </summary>
-    [Fact]
-    public async Task IsReadyForImportAsync_ScopesQbitClientLookupByInstance()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task IsReadyForImportAsync_ScopesClientAndImportedStateByInstance(bool primaryComplete)
     {
         const string hash = "abc123";
         var completionOn = DateTimeOffset.UtcNow.AddMinutes(-5).ToUnixTimeSeconds();
@@ -156,9 +120,9 @@ public sealed class TaglessInstanceScopeTests
         {
             Hash = hash,
             Category = "radarr",
-            Progress = 0.5,
-            State = "stalledDL",
-            CompletionOn = 0
+            Progress = primaryComplete ? 1.0 : 0.5,
+            State = primaryComplete ? "stalledUP" : "stalledDL",
+            CompletionOn = primaryComplete ? completionOn : 0
         });
         RegisterStubClient(manager, "qBit-seedbox", new TorrentInfo
         {
@@ -177,9 +141,10 @@ public sealed class TaglessInstanceScopeTests
             new TorrentCacheService(NullLogger<TorrentCacheService>.Instance),
             new DatabaseRestartCoordinator());
 
-        var ready = await processor.IsReadyForImportAsync(hash, "qBit-seedbox");
-
-        ready.Should().BeTrue("seedbox completion/seeding state must be used, not qBit's incomplete copy");
+        (await processor.IsReadyForImportAsync(hash, "qBit-seedbox"))
+            .Should().BeTrue("the seedbox copy is complete and its database row is unimported");
+        (await processor.IsReadyForImportAsync(hash, "qBit"))
+            .Should().BeFalse("the primary copy is already imported");
     }
 
     private static void RegisterStubClient(

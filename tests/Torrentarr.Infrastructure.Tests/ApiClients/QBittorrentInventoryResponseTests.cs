@@ -34,7 +34,7 @@ public sealed class QBittorrentInventoryResponseTests
         try
         {
             (await client.LoginAsync(timeout.Token)).Should().BeFalse();
-            client.LastConnectionFailure.Should().Contain("transport=").And.Contain("Socket error=")
+            client.LastConnectionFailure.Should().Contain("transport=").And.MatchRegex(@"(?:Socket error=|Network failure: )\w+\.")
                 .And.NotContain("private-user").And.NotContain("private-password");
         }
         finally

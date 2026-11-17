@@ -17,6 +17,14 @@ public class ConfigSchemaBuilderTests
     }
 
     [Fact]
+    public void Theme_DefaultsToSystemWithAllOptions()
+    {
+        var field = ConfigSchemaBuilder.Sections["WebUI"].Single(f => f.key == "Theme");
+        field.@default.Should().Be("System");
+        field.options.Should().Equal("System", "Light", "Dark", "Midnight");
+    }
+
+    [Fact]
     public void MaintenanceRegistry_CoversEveryPersistentPropertyAndCollectionItem()
     {
         var fields = ConfigSchemaBuilder.Sections["TorrentClient"];
@@ -113,4 +121,11 @@ public class ConfigSchemaBuilderTests
             .Where(field => field.minimum.HasValue && field.maximum.HasValue)
             .Should().OnlyContain(field => field.minimum <= field.maximum);
     }
+    [Fact]
+    public void RuntimeFields_DoNotInheritQbitrrRestartRequirements()
+    {
+        ConfigSchemaBuilder.Sections.SelectMany(section => section.Value)
+            .Should().NotContain(field => field.requiresRestart == true);
+    }
+
 }

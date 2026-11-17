@@ -1,6 +1,7 @@
 import { PersistentDetails } from "../PersistentDetails";
 import { useMemo, type JSX } from "react";
 import { getSonarrOpenSeriesUrl } from "../../api/client";
+import { arrTypeLabel } from "../../config/arrSections";
 import { ArrExternalLink, ArrInstanceHint } from "./ArrExternalLink";
 import {
   ArrHasFileBadge,
@@ -69,7 +70,10 @@ export function SonarrSeriesGroupDetailBody({
 
   return (
     <div className="stack" style={{ gap: "8px" }}>
-      <ArrExternalLink href={openUrl} arrName="Sonarr" />
+      <ArrExternalLink
+        href={openUrl}
+        instanceLabel={group.instance || arrTypeLabel("sonarr")}
+      />
       <ArrInstanceHint
         instanceLabel={group.instance}
         qualityProfileName={group.qualityProfileName}

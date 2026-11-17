@@ -1,3 +1,4 @@
+using Torrentarr.Core.Models;
 using Torrentarr.Core.Services;
 
 namespace Torrentarr.Core.Configuration;
@@ -120,8 +121,74 @@ public static class ConfigValidationHelper
         return null;
     }
 
+    public static string? ValidateHnrModes(TorrentarrConfig config)
+    {
+        static string? Check(string? mode, double? ratio, int? days, int? threshold, double? partial, int? buffer, int? removal)
+        {
+            if (mode is not (null or "disabled" or "and" or "or" or "ratio" or "time"))
+                return "Unknown HitAndRunMode.";
+            if (ratio is { } r && (!double.IsFinite(r) || r < 0) ||
+                partial is { } p && (!double.IsFinite(p) || p < 0) ||
+                days is < 0 || threshold is < 0 or > 100 || buffer is < 0 ||
+                removal is not (null or -1 or 1 or 2 or 3 or 4))
+                return "Invalid HnR ratio, days, threshold, buffer, or removal mode.";
+            return mode switch
+            {
+                "ratio" when ratio is <= 0 => "Ratio only requires a positive minimum seed ratio.",
+                "time" when days is <= 0 => "Seeding time only requires a positive minimum seeding time.",
+                _ => null
+            };
+        }
+
+        foreach (var (id, client) in config.GetAllTorrentClients())
+        {
+            var defaults = client.CategorySeeding;
+            if (Check(defaults.HitAndRunMode, defaults.MinSeedRatio, defaults.MinSeedingTimeDays, defaults.HitAndRunMinimumDownloadPercent, defaults.HitAndRunPartialSeedRatio, defaults.TrackerUpdateBuffer, defaults.RemoveTorrent) is { } error)
+                return $"Torrent client '{id}': {error}";
+            foreach (var category in defaults.Categories)
+                if (Check(category.HitAndRunMode ?? defaults.HitAndRunMode, category.MinSeedRatio ?? defaults.MinSeedRatio,
+                    category.MinSeedingTimeDays ?? defaults.MinSeedingTimeDays,
+                    category.HitAndRunMinimumDownloadPercent ?? defaults.HitAndRunMinimumDownloadPercent,
+                    category.HitAndRunPartialSeedRatio ?? defaults.HitAndRunPartialSeedRatio,
+                    category.TrackerUpdateBuffer ?? defaults.TrackerUpdateBuffer, category.RemoveTorrent) is { } categoryError)
+                    return $"Torrent client '{id}', category '{category.Name}': {categoryError}";
+        }
+        foreach (var (id, arr) in config.ArrInstances)
+            if (arr.Torrent.SeedingMode?.RemoveTorrent is not (null or -1 or 1 or 2 or 3 or 4))
+                return $"Integration '{id}': invalid RemoveTorrent mode.";
+
+        foreach (var rule in TrackerRules.All(config))
+            if (Check(rule.HitAndRunMode, rule.MinSeedRatio, rule.MinSeedingTimeDays, rule.HitAndRunMinimumDownloadPercent, rule.HitAndRunPartialSeedRatio, rule.TrackerUpdateBuffer, rule.RemoveTorrent) is { } error)
+                return $"Tracker '{rule.Name ?? TrackerRules.Host(rule.Uri)}': {error}";
+
+        foreach (var (id, client) in config.GetAllTorrentClients())
+        {
+            var defaults = client.CategorySeeding;
+            var categories = defaults.Categories.Select(category => CategoryPathHelper.NormalizeCategory(category.Name))
+                .Concat(config.ArrInstances.Values.Select(arr => CategoryPathHelper.NormalizeCategory(arr.Category)))
+                .Prepend("").Distinct(StringComparer.Ordinal);
+            foreach (var category in categories)
+            {
+                var categoryOverride = CategoryPathHelper.FindSeedingOverride(defaults, category, client.MatchSubcategories);
+                var torrent = new TorrentInfo { ClientInstanceId = id, Category = category };
+                foreach (var rule in TrackerRules.ForTorrent(config, torrent))
+                {
+                    if (rule.Protection is { RequireLegacyClearance: false }) continue;
+                    var mode = rule.HitAndRunMode ?? categoryOverride?.HitAndRunMode ?? defaults.HitAndRunMode;
+                    var ratio = rule.MinSeedRatio ?? categoryOverride?.MinSeedRatio ?? defaults.MinSeedRatio;
+                    var days = rule.MinSeedingTimeDays ?? categoryOverride?.MinSeedingTimeDays ?? defaults.MinSeedingTimeDays;
+                    if (Check(mode, ratio, days, null, null, null, null) is { } error)
+                        return $"Tracker '{rule.Name ?? TrackerRules.Host(rule.Uri)}' on '{id}', category '{(category.Length == 0 ? "(default)" : category)}': {error}";
+                }
+            }
+        }
+        return null;
+    }
+
     public static (bool Ok, string? Error) ValidateAll(TorrentarrConfig config)
     {
+        if (ValidateHnrModes(config) is { } hnrError) return (false, hnrError);
+        if (TrackerRules.Validate(config) is { } trackerError) return (false, trackerError);
         if (ValidateCorsOrigins(config.WebUI) is { } corsError) return (false, corsError);
         if (config.WebUI.Port is < 1 or > 65535 || !System.Net.IPAddress.TryParse(config.WebUI.Host, out _))
             return (false, "WebUI requires an IP bind address and port between 1 and 65535.");

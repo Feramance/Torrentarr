@@ -13,11 +13,13 @@ import {
 interface RadarrMovieDetailBodyProps {
   movie: RadarrMovie;
   category: string;
+  instanceLabel: string;
 }
 
 export function RadarrMovieDetailBody({
   movie,
   category,
+  instanceLabel,
 }: RadarrMovieDetailBodyProps): JSX.Element {
   const id = movie.id;
   const openUrl =
@@ -27,7 +29,7 @@ export function RadarrMovieDetailBody({
   const reason = movie.reason as string | null | undefined;
   return (
     <div className="arr-detail-radarr">
-      <ArrExternalLink href={openUrl} arrName="Radarr" />
+      <ArrExternalLink href={openUrl} instanceLabel={instanceLabel} />
       {poster ? (
         <div className="arr-detail-radarr__poster">
           <ArrPosterImage src={poster} alt={String(movie.title ?? "")} />

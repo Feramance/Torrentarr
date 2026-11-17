@@ -292,22 +292,15 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                             else if (!await seeding.CanDeleteTorrentAsync(candidate.Torrent, "maintenance preview", ct))
                                 action.BlockedReason ??= (await seeding.EvaluateRemovalAsync(candidate.Torrent, TorrentRemovalIntent.SeedingLimit, ct))?.Reason ?? "Protection service rejected removal without diagnostic evidence.";
                         }
-                        if (action.Kind is MaintenanceActionKind.SetCategory or MaintenanceActionKind.SetAutomaticManagement)
-                        {
-                            var candidate = inspectable.FirstOrDefault(i => i.Torrent.Hash == action.TorrentHash);
-                            if (candidate == null || !seeding.HnrAllowsDelete(candidate.Torrent, candidate.Trackers))
-                                action.BlockedReason ??= candidate == null ? "Torrent metadata is missing; refresh the preview." : ProtectionEvidence(seeding, candidate);
-                        }
-
                         if (MaintenanceRequirements.MovesContent(action.Kind))
                         {
                             var item = inventory.Torrents.FirstOrDefault(i => i.Torrent.ClientInstanceId.Equals(id, StringComparison.OrdinalIgnoreCase) && i.Torrent.Hash == action.TorrentHash);
                             var blocked = !inventory.IsComplete ? "File ownership inventory is incomplete."
                                 : cfg.Maintenance.PathMappings.Count == 0 ? "Maintenance requires explicit local path mappings."
                                 : !cfg.Maintenance.RecycleBin.Enabled ? "Maintenance recycling is disabled."
-                                : item != null && !item.LocalFilesComplete ? "Torrent files cannot be inspected locally." : null;
+                                : item != null && !item.CanRecycleFiles ? "Torrent files cannot be inspected locally." : null;
                             action.BlockedReason ??= blocked;
-                            if (item != null && (!inventory.IsComplete || !item.LocalFilesComplete) && uninspectableContent.Add(item.Torrent.Hash))
+                            if (item != null && (!inventory.IsComplete || !item.CanRecycleFiles) && uninspectableContent.Add(item.Torrent.Hash))
                             { result.Uninspectable++; result.Examined = Math.Max(0, result.Examined - 1); }
                         }
                         plan.Actions.Add(action);
@@ -413,7 +406,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         string Property(MaintenanceAction a) => a.Kind switch
         {
             MaintenanceActionKind.AddTag or MaintenanceActionKind.RemoveTag => "tag:" + a.Arguments.GetValueOrDefault("tag"),
-            MaintenanceActionKind.Resume or MaintenanceActionKind.Recheck => "run-state",
+            MaintenanceActionKind.Resume or MaintenanceActionKind.Recheck or MaintenanceActionKind.ParkTorrent => "run-state",
             MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent => "removal",
             _ => a.Kind.ToString()
         };
@@ -457,11 +450,14 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
     private bool CanRunAutomatically(string id, MaintenanceOperation? operation = null)
     {
         var cfg = _config.GetTorrentClient(id);
-        if (_config.Revision != _config.LatestRevision || cfg?.Maintenance.Enabled != true || cfg.Disabled) return false;
         if (operation == null) return Enum.GetValues<MaintenanceOperation>().Any(op => CanRunAutomatically(id, op));
-        if (!MaintenanceRequirements.Enabled(operation.Value, cfg.Maintenance)) return false;
-        return MaintenancePolicies.Mode(cfg.Maintenance, operation.Value) == "automatic";
+        return IsAutomatic(_config, cfg, operation.Value);
     }
+
+    internal static bool IsAutomatic(TorrentarrConfig config, TorrentClientInstanceConfig? client, MaintenanceOperation operation)
+        => config.Revision == config.LatestRevision && client is { Disabled: false }
+            && MaintenanceRequirements.Enabled(operation, client.Maintenance)
+            && MaintenancePolicies.Mode(client.Maintenance, operation) == "automatic";
 
     public async Task<MaintenanceRunSummary> RunAsync(IEnumerable<string>? instanceIds = null, string trigger = "manual", CancellationToken ct = default,
         IEnumerable<MaintenanceOperation>? operations = null)
@@ -651,25 +647,29 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                     if (_config.Revision != _config.LatestRevision || cfg?.Maintenance.Enabled != true || !MaintenanceRequirements.Enabled(action.Operation, cfg.Maintenance) || (!once && !CanRunAutomatically(action.ClientInstanceId, action.Operation))
                         || plan.ConfigurationFingerprint != Fingerprint())
                         throw new OperationCanceledException("Automatic maintenance is no longer enabled or configuration changed.");
-                    if (action.Kind is MaintenanceActionKind.QuarantineFile or MaintenanceActionKind.DeleteOrphanFile or MaintenanceActionKind.DeleteEmptyOrphanDirectory or MaintenanceActionKind.RecycleContent)
-                    {
-                        inventory = await CollectOwnershipAsync(action, linked.Token);
-                    }
-                    else if (action.TorrentHash != null)
-                        inventory = await _inventory.CollectAsync(new Dictionary<string, InventoryRequirements>
-                        {
-                            [action.ClientInstanceId] = MaintenanceRequirements.For(action.Operation, cfg.Maintenance)
-                                & ~InventoryRequirements.GlobalOwnership
-                        }, linked.Token, action.TorrentHash);
-                    var staleReason = await RevalidateActionAsync(action, inventory, seeding, linked.Token);
+                    string? budgetReason = null;
                     if (action.Kind is MaintenanceActionKind.RecycleContent
                         && movedByClient.GetValueOrDefault(action.ClientInstanceId) >= cfg.Maintenance.RecycleBin.MaxTorrentMovesPerRun)
-                        staleReason = "Per-run content move limit reached.";
+                        budgetReason = "Per-run content move limit reached.";
                     if (action.Kind == MaintenanceActionKind.Recheck && rechecksByClient.GetValueOrDefault(action.ClientInstanceId) >= cfg.Maintenance.ErrorRecovery.MaxPerRun)
-                        staleReason = "Per-run new recheck limit reached.";
+                        budgetReason = "Per-run new recheck limit reached.";
                     var trackerKey = (action.ClientInstanceId.ToUpperInvariant(), action.Arguments.GetValueOrDefault("tracker", ""));
                     if (trackerKey.Item2.Length > 0 && unregisteredByTracker.GetValueOrDefault(trackerKey) >= cfg.Maintenance.Unregistered.MaxPerTrackerPerRun)
-                        staleReason = "Per-tracker cleanup limit reached.";
+                        budgetReason = "Per-tracker cleanup limit reached.";
+                    if (budgetReason == null)
+                    {
+                        if (action.Kind is MaintenanceActionKind.QuarantineFile or MaintenanceActionKind.DeleteOrphanFile or MaintenanceActionKind.DeleteEmptyOrphanDirectory or MaintenanceActionKind.RecycleContent)
+                        {
+                            inventory = await CollectOwnershipAsync(action, linked.Token);
+                        }
+                        else if (action.TorrentHash != null)
+                            inventory = await _inventory.CollectAsync(new Dictionary<string, InventoryRequirements>
+                            {
+                                [action.ClientInstanceId] = MaintenanceRequirements.For(action.Operation, cfg.Maintenance)
+                                    & ~InventoryRequirements.GlobalOwnership
+                            }, linked.Token, action.TorrentHash);
+                    }
+                    var staleReason = budgetReason ?? await RevalidateActionAsync(action, inventory, seeding, linked.Token);
                     if (staleReason != null)
                     {
                         _logger.LogDebug("Maintenance action deferred: {ActionId}; reason={Reason}", action.Id, staleReason);
@@ -811,6 +811,8 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 }
             case MaintenanceActionKind.Resume:
                 return Result(await client.ResumeTorrentsAsync([action.TorrentHash!], ct));
+            case MaintenanceActionKind.ParkTorrent:
+                return Result(await client.PauseTorrentsAsync([action.TorrentHash!], ct));
             case MaintenanceActionKind.DeleteContent:
             case MaintenanceActionKind.RecycleContent:
                 return await _deletion.RemoveMaintenanceTorrentAsync(action.ClientInstanceId, action.TorrentHash!, true, inventory, ct: ct);
@@ -865,18 +867,16 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             if (action.Kind is MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent
                 && !await seeding.CanDeleteTorrentAsync(item.Torrent, "maintenance apply", ct))
                 return (await seeding.EvaluateRemovalAsync(item.Torrent, TorrentRemovalIntent.SeedingLimit, ct))?.Reason ?? "Protection service rejected removal without diagnostic evidence.";
-            if (action.Kind is MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent or MaintenanceActionKind.SetAutomaticManagement or MaintenanceActionKind.SetCategory)
+            if (action.Kind is MaintenanceActionKind.RecycleContent or MaintenanceActionKind.DeleteContent)
             {
                 if (!item.TrackersComplete || !seeding.HnrAllowsDelete(item.Torrent, item.Trackers))
                     return ProtectionEvidence(seeding, item);
             }
-            if (action.Kind == MaintenanceActionKind.Recheck && item.Torrent.IsSeeding && !MaintenanceRecovery.IsError(item.Torrent, cfg.Maintenance)
-                && (!item.TrackersComplete || !seeding.HnrAllowsDelete(item.Torrent, item.Trackers)))
-                return "Protected seeding must not be interrupted for a tracker-only issue.";
             var required = MaintenanceRequirements.For(action.Operation, cfg.Maintenance);
             if (required.HasFlag(InventoryRequirements.Trackers) && !item.TrackersComplete) return "Tracker inspection is incomplete.";
             if (required.HasFlag(InventoryRequirements.Files) && !item.FilesComplete) return "Torrent file enumeration is incomplete.";
-            if ((required.HasFlag(InventoryRequirements.LocalFiles) || MaintenanceRequirements.MovesContent(action.Kind)) && !item.LocalFilesComplete)
+            if (action.Kind == MaintenanceActionKind.RecycleContent ? !item.CanRecycleFiles
+                : (required.HasFlag(InventoryRequirements.LocalFiles) || MaintenanceRequirements.MovesContent(action.Kind)) && !item.LocalFilesComplete)
                 return "Local file inspection is incomplete.";
             if (!Enum.TryParse<MaintenanceOperation>(action.Arguments.GetValueOrDefault("operation"), out var operation))
                 return "Action has no valid preview operation.";
@@ -1111,13 +1111,32 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         foreach (var item in items)
         {
             if (!unregistered && count >= config.MaxPerRun) yield break;
-            var tracker = item.Trackers.FirstOrDefault(t => cfg.Maintenance.Unregistered.Messages.Any(m => t.Msg.Contains(m, StringComparison.OrdinalIgnoreCase)));
+            var tracker = item.Trackers.FirstOrDefault(t => MaintenanceRecovery.MatchesUnregistered(t, cfg.Maintenance.Unregistered));
             if (unregistered ? tracker == null : !MaintenanceRecovery.IsError(item.Torrent, cfg.Maintenance)) continue;
             if (item.Torrent.AddedOn <= 0 || DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(item.Torrent.AddedOn)
                 < TimeSpan.FromMinutes(Math.Max(cfg.Maintenance.MinimumTorrentAgeMinutes, unregistered ? cfg.Maintenance.Unregistered.GraceMinutes : 0))) continue;
-            if (unregistered && cfg.Maintenance.Unregistered.CompletedOnly && item.Torrent.Progress < 1) continue;
             var healthy = MaintenanceRecovery.HealthyTracker(item.Trackers);
             if (healthy && unregistered && !MaintenanceRecovery.IsError(item.Torrent, cfg.Maintenance)) continue;
+            var trackerKey = tracker == null ? "" : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(tracker.Url)));
+            if (unregistered && trackerCounts.GetValueOrDefault(trackerKey) >= cfg.Maintenance.Unregistered.MaxPerTrackerPerRun) continue;
+            if (unregistered && MaintenanceRecovery.ShouldParkIncomplete(item.Torrent, cfg.Maintenance.Unregistered))
+            {
+                if (healthy || !MaintenanceRecovery.CanParkDownload(item.Torrent)) continue;
+                var canPark = seeding.HnrAllowsDelete(item.Torrent, item.Trackers);
+                if (canPark) trackerCounts[trackerKey] = trackerCounts.GetValueOrDefault(trackerKey) + 1;
+                yield return new()
+                {
+                    Kind = MaintenanceActionKind.ParkTorrent,
+                    ClientInstanceId = id,
+                    TorrentHash = item.Torrent.Hash,
+                    TorrentName = item.Torrent.Name,
+                    Reason = "Park the incomplete torrent after a confirmed tracker rejection. Keep its files.",
+                    BlockedReason = canPark ? null : ProtectionEvidence(seeding, item),
+                    Arguments = new() { ["tracker"] = trackerKey, ["addedOn"] = item.Torrent.AddedOn.ToString(System.Globalization.CultureInfo.InvariantCulture) }
+                };
+                continue;
+            }
+            if (unregistered && cfg.Maintenance.Unregistered.CompletedOnly && item.Torrent.Progress < 1) continue;
             var state = MaintenanceRecovery.Read(db, item.Torrent, operation.ToString());
             var recycle = !healthy && MaintenanceRecovery.CanRecycle(state, config, DateTimeOffset.UtcNow) && (unregistered || config.Outcome == "recycle");
             var retry = state.Attempts < config.MaxRepairAttempts && state.Stage is "new" or "rejected" or "checked" or "recurring"
@@ -1125,9 +1144,6 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             if (!retry && !recycle) continue;
             if (recycle && unregistered && cfg.Maintenance.RecycleBin.Enabled && recycles >= cfg.Maintenance.RecycleBin.MaxTorrentMovesPerRun
                 || !recycle && rechecks >= config.MaxPerRun) continue;
-            var trackerKey = tracker == null ? "" : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(tracker.Url)));
-            if (unregistered && trackerCounts.GetValueOrDefault(trackerKey) >= cfg.Maintenance.Unregistered.MaxPerTrackerPerRun) continue;
-
             if (recycle) recycles++; else rechecks++;
             count++; trackerCounts[trackerKey] = trackerCounts.GetValueOrDefault(trackerKey) + 1;
             yield return new MaintenanceAction
@@ -1281,7 +1297,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         return ownership.Owned && ownership.AddedOn == addedOn;
     }
 
-    private static bool IsOperationScope(TorrentInfo torrent, MaintenanceConfig cfg, MaintenanceOperation operation)
+    internal static bool IsOperationScope(TorrentInfo torrent, MaintenanceConfig cfg, MaintenanceOperation operation)
     {
         var policy = MaintenancePolicies.Get(cfg, operation);
         return policy == null || ((policy.IncludedCategories.Count == 0 || policy.IncludedCategories.Contains(torrent.Category, StringComparer.OrdinalIgnoreCase))
@@ -1295,6 +1311,11 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
     {
         if (torrent.AddedOn <= 0 || torrent.AddedOn > DateTimeOffset.UtcNow.ToUnixTimeSeconds() || DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn)
             < TimeSpan.FromSeconds(Math.Max(cfg.Maintenance.MinimumTorrentAgeMinutes * 60L, (effective ?? _config).Settings.IgnoreTorrentsYoungerThan))) return false;
+        return IsCategoryAndTagInScope(torrent, cfg, effective ?? _config);
+    }
+
+    internal static bool IsCategoryAndTagInScope(TorrentInfo torrent, TorrentClientInstanceConfig cfg, TorrentarrConfig config)
+    {
         if (cfg.Maintenance.ExcludedCategories.Contains(torrent.Category, StringComparer.OrdinalIgnoreCase)) return false;
         var tags = SplitTags(torrent.Tags);
         if (cfg.Maintenance.ExcludedTags.Any(tags.Contains)) return false;
@@ -1303,7 +1324,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             "all" => true,
             "explicit" => cfg.Maintenance.ExplicitCategories.Contains(torrent.Category, StringComparer.OrdinalIgnoreCase),
             _ => CategoryPathHelper.MatchesConfigured(torrent.Category, cfg.ManagedCategories, cfg.MatchSubcategories) != null
-                || (effective ?? _config).ArrInstances.Values.Any(a =>
+                || config.ArrInstances.Values.Any(a =>
                     CategoryPathHelper.MatchesConfigured(torrent.Category, [a.Category], cfg.MatchSubcategories) != null)
         };
     }

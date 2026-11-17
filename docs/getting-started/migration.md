@@ -34,6 +34,41 @@ This guide helps you migrate from older versions of Torrentarr or similar tools 
 
 ## Version-Specific Migration
 
+### Config versions and rollback
+
+Torrentarr compares the three numeric version components when applying migrations.
+A release build suffix such as `-2` does not trigger a config migration. The release
+workflow advances the expected config version when the release version passes the
+latest migration boundary and synchronizes the example file and WebUI schema.
+
+Startup validates migrated settings before replacing an older file and saves the
+previous version as `config.toml.bak`. Keep a separate copy of your config and
+database before upgrading. An older Torrentarr build leaves a newer config file
+untouched and rejects config edits until you upgrade or restore a compatible copy.
+
+### Tracker protection in config schema 6.20.5
+
+Torrentarr automatically adds observation-based protection to tracker rules that
+use legacy `and` or `or` clearance and have no explicit protection policy.
+The legacy ratio, time, and partial-download rules still determine when a
+torrent qualifies. Torrentarr confirms qualifying readings with healthy
+observations and the configured accounting grace period (60 minutes by default).
+This also applies to existing `6.20.5` migrated rules on startup, with a fresh
+confirmation window. Enabled category rules also use observation confirmation. Explicit standalone
+policies and disabled Hit & Run retain their existing behavior.
+
+### Upgrading from qBitrr or Torrentarr to config schema 6.20.4
+
+Start Torrentarr with your existing `config.toml`. Torrentarr applies the
+qBitrr compatibility migrations, then moves client and Arr tracker rules to
+top-level `[[Trackers]]` entries. Each rule keeps its original assignment and
+settings, including when several rules use the same tracker host. No intermediate
+release or manual config edits are required.
+
+The migration saves the original file as `config.toml.bak`. To roll back,
+stop Torrentarr and restore that file before starting qBitrr or an older
+Torrentarr release. The tracker migration makes no database changes.
+
 ### Migrating to v5.8.0+ (Database Consolidation)
 
 !!! warning "Breaking Change: Database Consolidation"

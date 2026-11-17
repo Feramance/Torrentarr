@@ -6,10 +6,14 @@ using Xunit;
 
 namespace Torrentarr.Infrastructure.Tests.Services;
 
-public class MediaValidationServiceTests
+public class MediaValidationServiceTests : IDisposable
 {
-    private static MediaValidationService CreateService()
-        => new(NullLogger<MediaValidationService>.Instance, new TorrentarrConfig());
+    private readonly string _probeDirectory = Directory.CreateTempSubdirectory("torrentarr-probe-").FullName;
+
+    private MediaValidationService CreateService()
+        => new(NullLogger<MediaValidationService>.Instance, new TorrentarrConfig(), _probeDirectory);
+
+    public void Dispose() => Directory.Delete(_probeDirectory, recursive: true);
 
     [Fact]
     public async Task ValidateFileAsync_MissingFFprobe_TreatsFileAsValid()

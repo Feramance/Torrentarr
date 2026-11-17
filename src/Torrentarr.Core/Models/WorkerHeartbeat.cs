@@ -19,6 +19,15 @@ public sealed record WorkerHeartbeat
     public DateTimeOffset Heartbeat { get; init; }
     public bool RestartRequested { get; init; }
     public long ConfigRevision { get; init; }
+    public int? SearchesTriggered { get; init; }
+    public int? ItemsSearched { get; init; }
+    public int? DownloadingCount { get; init; }
+    public int? SeedingCount { get; init; }
+    public DateTimeOffset? ObservedAt { get; init; }
+    public string? ObservationError { get; init; }
+    public int? PausedLastPass { get; init; }
+    public int? ResumedLastPass { get; init; }
+    public int? HandledLastPass { get; init; }
     public string? SearchSummary { get; init; }
     public string? SearchTimestamp { get; init; }
     public int? QueueCount { get; init; }

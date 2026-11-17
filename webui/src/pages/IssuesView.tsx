@@ -1,3 +1,4 @@
+import { STATISTICS_UPDATED } from "../hooks/useStatisticsUpdates";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getIssueDetails, getIssues, getIssuesSummary } from "../api/client";
 import type {
@@ -6,7 +7,11 @@ import type {
   OperationalIssueGroup,
 } from "../api/types";
 import { PersistentDetails } from "../components/PersistentDetails";
-import { requestNavigateTab, type NavigableTab } from "../utils/navigateTab";
+import {
+  requestNavigateTab,
+  type ConfigDestination,
+  type NavigableTab,
+} from "../utils/navigateTab";
 
 function IssueDetails({ group }: { group: OperationalIssueGroup }) {
   const [items, setItems] = useState<OperationalIssue[]>(group.examples);
@@ -59,6 +64,63 @@ function IssueDetails({ group }: { group: OperationalIssueGroup }) {
   useEffect(() => {
     if (loaded) void load(page);
   }, [loaded, page, load, group]);
+  const configAction = (issue: OperationalIssue, exactSubject: boolean) => {
+    const destination: ConfigDestination = {
+      client: issue.clientInstance || undefined,
+      arr: issue.arrInstance || undefined,
+    };
+    let label = "Open Config";
+    switch (issue.code) {
+      case "storage.reserve":
+        destination.field = "FreeSpace";
+        destination.monitorPath = exactSubject ? issue.subjectId : undefined;
+        label = destination.monitorPath
+          ? "Edit free-space monitor"
+          : "Open free-space monitors";
+        break;
+      case "config.storage":
+        destination.field = "Maintenance.PathMappings";
+        label = "Edit path mappings";
+        break;
+      case "config.migration":
+        destination.field = "DownloadPath";
+        label = "Check download location";
+        break;
+      case "client.connection":
+      case "config.client":
+        destination.field = "Host";
+        label = "Check client connection settings";
+        break;
+      case "import.ownership":
+        destination.field = "ManagedCategories";
+        label = "Check managed categories";
+        break;
+      case "profile.prepare":
+      case "profile.restore":
+        destination.field = "EntrySearch.QualityProfileMappings";
+        label = "Check quality profile mappings";
+        break;
+      case "media.validation-unavailable":
+        destination.field = "FFprobeAutoUpdate";
+        label = "Check FFprobe settings";
+        break;
+    }
+    return (
+      <button
+        type="button"
+        className="btn small"
+        onClick={() =>
+          requestNavigateTab({
+            tab: "config",
+            configDestination: destination,
+            preserveConfigDraft: true,
+          })
+        }
+      >
+        {label}
+      </button>
+    );
+  };
   const target = (
     [
       "config",
@@ -86,18 +148,25 @@ function IssueDetails({ group }: { group: OperationalIssueGroup }) {
         First observed {new Date(group.firstObserved).toLocaleString()} ·{" "}
         {group.occurrences} observations
       </p>
-      <button
-        type="button"
-        className="btn small"
-        onClick={() =>
-          requestNavigateTab({
-            tab: target,
-            manageClientId: group.clientInstance || undefined,
-          })
-        }
-      >
-        Open {target === "maintenance" ? "Manage" : target}
-      </button>
+      {target === "config" ? (
+        configAction(
+          group.affected === 1 ? group.examples[0] ?? group : group,
+          group.affected === 1,
+        )
+      ) : (
+        <button
+          type="button"
+          className="btn small"
+          onClick={() =>
+            requestNavigateTab({
+              tab: target,
+              manageClientId: group.clientInstance || undefined,
+            })
+          }
+        >
+          Open {target === "maintenance" ? "Manage" : target}
+        </button>
+      )}
       {error && <p role="alert">{error}</p>}
       <ul>
         {items.map((item) => (
@@ -118,6 +187,10 @@ function IssueDetails({ group }: { group: OperationalIssueGroup }) {
             <p>
               <strong>How to fix:</strong> {item.remediation}
             </p>
+            {target === "config" &&
+              group.affected > 1 &&
+              item.code === "storage.reserve" &&
+              configAction(item, true)}
           </li>
         ))}
       </ul>
@@ -231,11 +304,13 @@ export function IssuesView({
       if (!document.hidden) void refresh();
     };
     document.addEventListener("visibilitychange", visible);
+    window.addEventListener(STATISTICS_UPDATED, visible);
     return () => {
       stopped = true;
       request.current++;
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", visible);
+      window.removeEventListener(STATISTICS_UPDATED, visible);
     };
   }, [active, load]);
   const change = (set: (value: string) => void, value: string) => {
@@ -245,197 +320,205 @@ export function IssuesView({
     setData(undefined);
   };
   return (
-    <section className="issues-view" aria-labelledby="issues-heading">
-      <h2 id="issues-heading">Issues</h2>
-      <p className="muted">
-        Problems that need attention, grouped by cause and instance. Recovery
-        closes an issue after a successful check.
-      </p>
-      <div className="instance-tabs" role="tablist" aria-label="Issue category">
-        {[
-          ["automation", "Automation & safety"],
-          ["system", "System & services"],
-        ].map(([value, label]) => (
+    <section className="card issues-view" aria-label="Issues">
+      <div className="card-body">
+        <p className="hint">
+          Problems that need attention, grouped by cause and instance. Recovery
+          closes an issue after a successful check.
+        </p>
+        <div
+          className="instance-tabs"
+          role="tablist"
+          aria-label="Issue category"
+        >
+          {[
+            ["automation", "Automation & safety"],
+            ["system", "System & services"],
+          ].map(([value, label]) => (
+            <button
+              type="button"
+              key={value}
+              role="tab"
+              id={`issue-tab-${value}`}
+              aria-controls="issue-results"
+              tabIndex={category === value ? 0 : -1}
+              data-category={value}
+              onKeyDown={(event) => {
+                if (
+                  event.key !== "ArrowLeft" &&
+                  event.key !== "ArrowRight" &&
+                  event.key !== "Home" &&
+                  event.key !== "End"
+                )
+                  return;
+                event.preventDefault();
+                const next =
+                  event.key === "Home"
+                    ? "automation"
+                    : event.key === "End"
+                      ? "system"
+                      : value === "automation"
+                        ? "system"
+                        : "automation";
+                change(setCategory, next);
+                event.currentTarget.parentElement
+                  ?.querySelector<HTMLButtonElement>(
+                    `[data-category="${next}"]`,
+                  )
+                  ?.focus();
+              }}
+              aria-selected={category === value}
+              className={`btn small ${category === value ? "" : "ghost"}`}
+              onClick={() => change(setCategory, value)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="issue-filters actions">
+          <label>
+            Status{" "}
+            <select
+              value={state}
+              onChange={(e) => change(setState, e.target.value)}
+            >
+              <option value="active">Active</option>
+              <option value="resolved">Resolved · last 30 days</option>
+            </select>
+          </label>
+          <label>
+            Severity{" "}
+            <select
+              value={severity}
+              onChange={(e) => change(setSeverity, e.target.value)}
+            >
+              <option value="">All severities</option>
+              <option value="error">Error</option>
+              <option value="warning">Warning</option>
+            </select>
+          </label>
+          <label>
+            Instance{" "}
+            <select
+              value={instance}
+              onChange={(e) => change(setInstance, e.target.value)}
+            >
+              <option value="">All instances</option>
+              {instances.map((i) => (
+                <option key={i}>{i}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Search{" "}
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => change(setSearch, e.target.value)}
+              placeholder="Title, impact or subject"
+            />
+          </label>
           <button
             type="button"
-            key={value}
-            role="tab"
-            id={`issue-tab-${value}`}
-            aria-controls="issue-results"
-            tabIndex={category === value ? 0 : -1}
-            data-category={value}
-            onKeyDown={(event) => {
-              if (
-                event.key !== "ArrowLeft" &&
-                event.key !== "ArrowRight" &&
-                event.key !== "Home" &&
-                event.key !== "End"
-              )
-                return;
-              event.preventDefault();
-              const next =
-                event.key === "Home"
-                  ? "automation"
-                  : event.key === "End"
-                    ? "system"
-                    : value === "automation"
-                      ? "system"
-                      : "automation";
-              change(setCategory, next);
-              event.currentTarget.parentElement
-                ?.querySelector<HTMLButtonElement>(`[data-category="${next}"]`)
-                ?.focus();
-            }}
-            aria-selected={category === value}
-            className={`btn small ${category === value ? "" : "ghost"}`}
-            onClick={() => change(setCategory, value)}
+            className="btn small ghost"
+            onClick={() => void load()}
           >
-            {label}
+            Refresh
           </button>
-        ))}
-      </div>
-      <div className="issue-filters actions">
-        <label>
-          Status{" "}
-          <select
-            value={state}
-            onChange={(e) => change(setState, e.target.value)}
-          >
-            <option value="active">Active</option>
-            <option value="resolved">Resolved · last 30 days</option>
-          </select>
-        </label>
-        <label>
-          Severity{" "}
-          <select
-            value={severity}
-            onChange={(e) => change(setSeverity, e.target.value)}
-          >
-            <option value="">All severities</option>
-            <option value="error">Error</option>
-            <option value="warning">Warning</option>
-          </select>
-        </label>
-        <label>
-          Instance{" "}
-          <select
-            value={instance}
-            onChange={(e) => change(setInstance, e.target.value)}
-          >
-            <option value="">All instances</option>
-            {instances.map((i) => (
-              <option key={i}>{i}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Search{" "}
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => change(setSearch, e.target.value)}
-            placeholder="Title, impact or subject"
-          />
-        </label>
-        <button
-          type="button"
-          className="btn small ghost"
-          onClick={() => void load()}
+        </div>
+        <div
+          id="issue-results"
+          role="tabpanel"
+          aria-labelledby={`issue-tab-${category}`}
         >
-          Refresh
-        </button>
-      </div>
-      <div
-        id="issue-results"
-        role="tabpanel"
-        aria-labelledby={`issue-tab-${category}`}
-      >
-        {error && (
-          <p role="alert" className="issue-unavailable">
-            {error}
-          </p>
-        )}
-        {data && !data.available && (
-          <p role="alert" className="issue-unavailable">
-            Issue history unavailable. This does not mean the system is healthy.
-            Pending reports are shown below; check database health and Logs.
-          </p>
-        )}
-        {data?.pending
-          .filter(
-            (p) =>
-              !p.resolved &&
-              p.report.category === category &&
-              (!instance ||
-                p.report.arrInstance === instance ||
-                p.report.clientInstance === instance),
-          )
-          .map((p, i) => (
-            <div className="issue-row" key={`${p.report.code}-${i}`}>
-              <strong>{p.report.title}</strong>
-              <p>{p.report.impact}</p>
-              <p>{p.report.remediation}</p>
-              <span className="muted">Pending persistence</span>
-            </div>
+          {error && (
+            <p role="alert" className="issue-unavailable">
+              {error}
+            </p>
+          )}
+          {data && !data.available && (
+            <p role="alert" className="issue-unavailable">
+              Issue history unavailable. This does not mean the system is
+              healthy. Pending reports are shown below; check database health
+              and Logs.
+            </p>
+          )}
+          {data?.pending
+            .filter(
+              (p) =>
+                !p.resolved &&
+                p.report.category === category &&
+                (!instance ||
+                  p.report.arrInstance === instance ||
+                  p.report.clientInstance === instance),
+            )
+            .map((p, i) => (
+              <div className="issue-row" key={`${p.report.code}-${i}`}>
+                <strong>{p.report.title}</strong>
+                <p>{p.report.impact}</p>
+                <p>{p.report.remediation}</p>
+                <span className="muted">Pending persistence</span>
+              </div>
+            ))}
+          {loading && <p role="status">Loading issues…</p>}
+          {!loading && data?.available && !data.items.length && (
+            <p role="status">
+              {state === "active"
+                ? "No active issues match these filters."
+                : "No resolved issues match these filters."}
+            </p>
+          )}
+          {data?.items.map((group) => (
+            <PersistentDetails
+              className="issue-row"
+              key={JSON.stringify([
+                group.code,
+                group.arrInstance,
+                group.clientInstance,
+              ])}
+            >
+              <summary>
+                <span
+                  className={`issue-severity issue-severity--${group.severity}`}
+                >
+                  {group.severity === "error" ? "Error" : "Warning"}
+                </span>
+                <strong>{group.title}</strong>
+                <span>
+                  {group.arrInstance || group.clientInstance || "Application"} ·{" "}
+                  {group.affected} affected
+                </span>
+                <time dateTime={group.lastObserved}>
+                  {new Date(group.lastObserved).toLocaleString()}
+                </time>
+              </summary>
+              <IssueDetails group={group} />
+            </PersistentDetails>
           ))}
-        {loading && <p role="status">Loading issues…</p>}
-        {!loading && data?.available && !data.items.length && (
-          <p role="status">
-            {state === "active"
-              ? "No active issues match these filters."
-              : "No resolved issues match these filters."}
-          </p>
-        )}
-        {data?.items.map((group) => (
-          <PersistentDetails
-            className="issue-row"
-            key={JSON.stringify([
-              group.code,
-              group.arrInstance,
-              group.clientInstance,
-            ])}
-          >
-            <summary>
-              <span
-                className={`issue-severity issue-severity--${group.severity}`}
+          {data?.available && (
+            <div className="actions issue-pagination">
+              <button
+                type="button"
+                className="btn small ghost"
+                disabled={page === 0}
+                onClick={() => setPage((p) => p - 1)}
               >
-                {group.severity === "error" ? "Error" : "Warning"}
-              </span>
-              <strong>{group.title}</strong>
+                Previous
+              </button>
               <span>
-                {group.arrInstance || group.clientInstance || "Application"} ·{" "}
-                {group.affected} affected
+                Page {page + 1} · {data.total} groups
               </span>
-              <time dateTime={group.lastObserved}>
-                {new Date(group.lastObserved).toLocaleString()}
-              </time>
-            </summary>
-            <IssueDetails group={group} />
-          </PersistentDetails>
-        ))}
-        {data?.available && (
-          <div className="actions issue-pagination">
-            <button
-              type="button"
-              className="btn small ghost"
-              disabled={page === 0}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              Previous
-            </button>
-            <span>
-              Page {page + 1} · {data.total} groups
-            </span>
-            <button
-              type="button"
-              className="btn small ghost"
-              disabled={(page + 1) * data.pageSize >= (data.total ?? 0)}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next
-            </button>
-          </div>
-        )}
+              <button
+                type="button"
+                className="btn small ghost"
+                disabled={(page + 1) * data.pageSize >= (data.total ?? 0)}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );

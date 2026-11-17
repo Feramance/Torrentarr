@@ -427,10 +427,11 @@ public class ArrWorkerManager : BackgroundService
                         s.Status = "Syncing database...";
                         s.SearchSummary = "Updating database";
                     });
+                    var capacityUnavailable = false;
                     if (arrCfg.ReSearch)
                     {
                         using var retryScope = _scopeFactory.CreateScope();
-                        await SonarrRetryQueue.ExecuteAsync(retryScope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(),
+                        capacityUnavailable = await SonarrRetryQueue.ExecuteAsync(retryScope.ServiceProvider.GetRequiredService<TorrentarrDbContext>(),
                             retryScope.ServiceProvider.GetRequiredService<ISearchExecutor>(), instanceName, _logger, ct,
                             arrCfg, retryScope.ServiceProvider.GetService<IOperationalIssueReporter>());
                     }
@@ -442,7 +443,7 @@ public class ArrWorkerManager : BackgroundService
                         catalogRevision = _config.Revision;
                     }
 
-                    if (!arrCfg.ProcessingOnly && ShouldRunSearch(instanceName, arrCfg))
+                    if (!capacityUnavailable && !arrCfg.ProcessingOnly && ShouldRunSearch(instanceName, arrCfg))
                     {
                         _stateManager.Update(searchStateName, s => s.Status = "Searching...");
                         if (arrCfg.Search.SearchMissing)
@@ -455,6 +456,8 @@ public class ArrWorkerManager : BackgroundService
                         {
                             _stateManager.Update(searchStateName, s =>
                             {
+                                s.SearchesTriggered = result.SearchesTriggered;
+                                s.ItemsSearched = result.ItemsSearched;
                                 s.SearchSummary = $"{result.SearchesTriggered} searches triggered ({result.ItemsSearched} items)";
                                 s.SearchTimestamp = DateTime.UtcNow.ToString("o");
                                 s.MetricType = "search";
@@ -847,7 +850,7 @@ public class ArrWorkerManager : BackgroundService
                 }
 
                 // QualityUnmetSearch / CustomFormatUnmetSearch are always additive (not exclusive)
-                if (arrCfg.Search.QualityUnmetSearch || arrCfg.Search.CustomFormatUnmetSearch)
+                if (result?.CapacityUnavailable != true && (arrCfg.Search.QualityUnmetSearch || arrCfg.Search.CustomFormatUnmetSearch))
                 {
                     var upgradeResult = await mediaSvc.SearchQualityUpgradesAsync(arrCfg.Category, ct);
                     drainedFlags.Add(upgradeResult.LoopCompleted);
@@ -857,6 +860,7 @@ public class ArrWorkerManager : BackgroundService
                     {
                         result.SearchesTriggered += upgradeResult.SearchesTriggered;
                         result.ItemsSearched += upgradeResult.ItemsSearched;
+                        result.CapacityUnavailable |= upgradeResult.CapacityUnavailable;
                     }
                 }
             }

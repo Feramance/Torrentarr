@@ -26,6 +26,25 @@ using System.Security.Cryptography;
 var cmdArgs = Environment.GetCommandLineArgs().Skip(1).ToList();
 var firstArg = cmdArgs.Count > 0 ? cmdArgs[0].Trim().ToLowerInvariant() : "";
 
+if (firstArg == "--healthcheck" && cmdArgs.Count == 1)
+{
+    try
+    {
+        var web = new ConfigurationLoader().Load(persistMigrations: false).WebUI;
+        var address = System.Net.IPAddress.Parse(web.Host);
+        if (address.Equals(System.Net.IPAddress.Any)) address = System.Net.IPAddress.Loopback;
+        if (address.Equals(System.Net.IPAddress.IPv6Any)) address = System.Net.IPAddress.IPv6Loopback;
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        using var response = await http.GetAsync(new UriBuilder("http", address.ToString(), web.Port, "/health").Uri);
+        return response.IsSuccessStatusCode ? 0 : 1;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Health check failed ({ex.GetType().Name}).");
+        return 1;
+    }
+}
+
 if (firstArg is "--help" or "-h" or "--version" or "-v" or "--source" or "-s" or "--license" or "-l")
 {
     if (cmdArgs.Count != 1)
@@ -41,7 +60,7 @@ if (firstArg is "--help" or "-h" or "--version" or "-v" or "--source" or "-s" or
         Console.WriteLine("  --source, -s         Show source URL and exit.");
         Console.WriteLine("  --license, -l        Show license and exit.");
         Console.WriteLine("  --gen-config, -gc    Generate default configuration.");
-        Console.WriteLine("  --repair-database    Repair the database.");
+        Console.WriteLine("  --repair-database    Checkpoint the database WAL and check integrity.");
         Console.WriteLine("  --backup-database [destination]  Back up the database.");
         return 0;
     }
@@ -127,8 +146,12 @@ try
             var tokenBytes = new byte[32];
             RandomNumberGenerator.Fill(tokenBytes);
             config.WebUI.Token = Convert.ToBase64String(tokenBytes);
-            configLoader.SaveConfig(config);
-            Log.Information("Generated and persisted API token (Token was empty)");
+            if (ConfigurationLoader.ValidateConfigVersion(config).IsValid)
+            {
+                configLoader.SaveConfig(config);
+                Log.Information("Generated and persisted API token (Token was empty)");
+            }
+            else Log.Warning("Generated an in-memory API token because the config schema is newer than this build");
         }
 
         Log.Information("Configuration loaded from {Path}", ConfigurationLoader.GetDefaultConfigPath());
@@ -187,6 +210,8 @@ try
     builder.Services.AddSingleton<QBittorrentConnectionManager>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
     builder.Services.AddSingleton<ITorrentClientRegistry>(sp => sp.GetRequiredService<QBittorrentConnectionManager>());
+    builder.Services.AddHostedService<TransferHistoryCollector>();
+    builder.Services.AddHostedService<ArrActivityCollector>();
     builder.Services.AddSingleton<IPathMappingService, PathMappingService>();
     builder.Services.AddSingleton<IHardlinkInspector, HardlinkInspector>();
     builder.Services.AddSingleton<ITorrentInventoryService, TorrentInventoryService>();
@@ -209,6 +234,10 @@ try
     builder.Services.AddScoped<ArrSyncService>();
     builder.Services.AddScoped<IArrImportService, ArrImportService>();
     builder.Services.AddScoped<ISeedingService, SeedingService>();
+    builder.Services.AddSingleton<StatisticsEvents>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<StatisticsEvents>());
+    builder.Services.AddSingleton<TorrentStatisticsSnapshots>();
+    builder.Services.AddSingleton<FreeSpaceObservations>();
     builder.Services.AddScoped<IFreeSpaceService, FreeSpaceService>();
     builder.Services.AddSingleton<IMediaValidationService, MediaValidationService>();
     builder.Services.AddScoped<ITorrentProcessor, TorrentProcessor>();
@@ -300,14 +329,6 @@ try
         });
 
 
-    builder.Services.AddControllers()
-        .AddNewtonsoftJson(options =>
-        {
-            options.SerializerSettings.ContractResolver =
-                new Newtonsoft.Json.Serialization.CamelCasePropertyNamesContractResolver();
-            options.SerializerSettings.NullValueHandling = Newtonsoft.Json.NullValueHandling.Include;
-            options.SerializerSettings.DateTimeZoneHandling = Newtonsoft.Json.DateTimeZoneHandling.Utc;
-        });
     builder.Services.ConfigureHttpJsonOptions(options =>
         options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
@@ -429,26 +450,8 @@ try
         var dest = cmdArgs.Count >= 2
             ? cmdArgs[1]
             : Path.Combine(Path.GetDirectoryName(dbPath) ?? ".", "backups", $"torrentarr.db.{DateTime.UtcNow:yyyyMMdd}");
-        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-        using (var source = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath};Mode=ReadOnly"))
-        {
-            source.Open();
-            if (File.Exists(dest))
-                File.Delete(dest);
-            using var destConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dest}");
-            destConn.Open();
-            source.BackupDatabase(destConn);
-        }
-        using (var verify = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dest}"))
-        {
-            verify.Open();
-            using var cmd = verify.CreateCommand();
-            cmd.CommandText = "PRAGMA quick_check;";
-            var check = (cmd.ExecuteScalar() as string) ?? "unknown";
-            Console.WriteLine($"Backup: {dest}");
-            Console.WriteLine($"Integrity quick_check: {check}");
-            return check.Equals("ok", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
-        }
+        var logger = app.Services.GetRequiredService<ILogger<Program>>();
+        return await DatabaseHealthService.BackupFileAsync(dbPath, dest, logger) ? 0 : 1;
     }
 
     using (var scope = app.Services.CreateScope())
@@ -616,9 +619,11 @@ try
         return MetaForceRateLimiter.TryAcquire($"meta-force:{ip}");
     }
 
-    app.MapControllers();
     app.MapOperationalIssueEndpoints("/web");
     app.MapOperationalIssueEndpoints("/api");
+    app.MapStatisticsEndpoints();
+    app.MapTransferHistory();
+    app.MapArrActivity();
     app.MapArrCatalogEndpoints();
     app.MapRadarrMoviesEndpoints();
 
@@ -733,10 +738,10 @@ try
     //   • each Arr instance's Category (Arr-managed)
     // The "instance" field is always the qBit instance name (never the Arr instance name)
     // so that ProcessesView can match categories to the correct qBit process card.
-    app.MapGet("/web/qbit/categories", async (ITorrentClientRegistry registry, TorrentarrConfig cfg, CancellationToken ct) =>
+    app.MapGet("/web/qbit/categories", async (ITorrentClientRegistry registry, TorrentarrConfig cfg, TorrentStatisticsSnapshots snapshots, CancellationToken ct) =>
     {
-        var categories = await TorrentClientApiBuilder.CategoriesAsync(cfg, registry, ct: ct);
-        return Results.Ok(new { categories, ready = true });
+        var categories = await TorrentClientApiBuilder.CategoriesAsync(cfg, registry, ct: ct, snapshots: snapshots);
+        return Results.Ok(new { categories, ready = true, observations = snapshots.Describe(cfg, registry) });
     });
 
     // Web Processes — host tasks and real worker heartbeats; clients use /web/status.
@@ -750,6 +755,16 @@ try
             pid = s.Pid,
             alive = s.Alive,
             rebuilding = s.Rebuilding,
+            searchesTriggered = s.SearchesTriggered,
+            itemsSearched = s.ItemsSearched,
+            downloadingCount = s.DownloadingCount,
+            seedingCount = s.SeedingCount,
+            observedAt = s.ObservedAt,
+            observationError = s.ObservationError,
+            pausedLastPass = s.PausedLastPass,
+            resumedLastPass = s.ResumedLastPass,
+            handledLastPass = s.HandledLastPass,
+            monitoredCategoryCount = s.MonitoredCategoryCount,
             searchSummary = s.SearchSummary,
             searchTimestamp = s.SearchTimestamp,
             queueCount = s.QueueCount,
@@ -761,7 +776,7 @@ try
         }).ToList<object>();
 
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchesTriggered = status.SearchesTriggered, itemsSearched = status.ItemsSearched, downloadingCount = status.DownloadingCount, seedingCount = status.SeedingCount, observedAt = status.ObservedAt, observationError = status.ObservationError, pausedLastPass = status.PausedLastPass, resumedLastPass = status.ResumedLastPass, handledLastPass = status.HandledLastPass, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
 
         return Results.Ok(new { processes });
     });
@@ -869,10 +884,10 @@ try
 
     app.MapGet("/web/config/schema", () => Results.Ok(ConfigSchemaBuilder.Build()));
 
-    app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, ITorrentClientRegistry qbitManager) =>
+    app.MapGet("/web/qbit/overview", async (HttpRequest request, TorrentarrConfig cfg, ITorrentClientRegistry qbitManager, TorrentStatisticsSnapshots snapshots, CancellationToken ct) =>
     {
         var instance = request.Query["instance"].FirstOrDefault();
-        return Results.Ok(await QbitOverviewBuilder.BuildAsync(cfg, qbitManager, instance));
+        return Results.Ok(await QbitOverviewBuilder.BuildAsync(cfg, qbitManager, instance, ct, snapshots));
     });
 
     // Web Arr List
@@ -898,128 +913,6 @@ try
         return Results.Ok(new { arr, ready = true, counts });
     });
 
-
-    // Web Sonarr Series — seasons populated from episodes table
-    app.MapGet("/web/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing, string? reason) =>
-    {
-        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
-        var currentPage = page ?? 0;
-        var currentPageSize = page_size ?? 50;
-        var skip = currentPage * currentPageSize;
-
-        var baseQuery = db.Series.Where(s => keys.Contains(s.ArrInstance));
-        var query = baseQuery;
-
-        var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
-            ? null
-            : reason.Trim();
-        if (missing == 1 || reasonFilter is not null)
-        {
-            var episodeQuery = db.Episodes.Where(e => keys.Contains(e.ArrInstance));
-            if (missing == 1)
-                episodeQuery = episodeQuery.Where(e => e.EpisodeFileId == null || e.EpisodeFileId == 0);
-            if (reasonFilter is not null)
-            {
-                if (reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase))
-                    episodeQuery = episodeQuery.Where(e => e.Reason == null || e.Reason == "Not being searched");
-                else
-                    episodeQuery = episodeQuery.Where(e => e.Reason == reasonFilter);
-            }
-            var seriesIdsWithMatchingEpisodes = await episodeQuery
-                .Select(e => e.SeriesId)
-                .Distinct()
-                .ToListAsync();
-            baseQuery = baseQuery.Where(s => seriesIdsWithMatchingEpisodes.Contains(s.EntryId));
-            query = baseQuery;
-        }
-
-        if (!string.IsNullOrEmpty(q))
-            query = query.Where(s => s.Title != null && s.Title.Contains(q));
-
-        var total = await baseQuery.CountAsync();
-        var (episodeRollups, _) = await rollups.GetSonarrRollupsAsync(keys);
-
-        var seriesPage = await query
-            .OrderBy(s => s.Title)
-            .Skip(skip)
-            .Take(currentPageSize)
-            .Select(s => new { s.EntryId, s.Title, s.Monitored, s.QualityProfileId, s.QualityProfileName })
-            .ToListAsync();
-
-        var seriesIds = seriesPage.Select(s => s.EntryId).ToList();
-
-        var episodes = await db.Episodes
-            .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.SeriesId))
-            .Select(e => new
-            {
-                e.SeriesId,
-                e.SeasonNumber,
-                e.EpisodeNumber,
-                e.Title,
-                e.Monitored,
-                e.EpisodeFileId,
-                e.AirDateUtc,
-                e.Reason
-            })
-            .ToListAsync();
-        var seasonGroups = episodes.GroupBy(e => new { e.SeriesId, e.SeasonNumber }).Select(g => new
-        {
-            g.Key.SeriesId,
-            g.Key.SeasonNumber,
-            TotalCount = g.Count(),
-            HasFileCount = g.Count(e => e.EpisodeFileId != null && e.EpisodeFileId != 0),
-            MonitoredCount = g.Count(e => e.Monitored == true),
-            Episodes = g.Select(e => new { episodeNumber = e.EpisodeNumber, title = e.Title, monitored = e.Monitored, hasFile = e.EpisodeFileId != null && e.EpisodeFileId != 0, airDateUtc = e.AirDateUtc, reason = e.Reason }).ToArray()
-        }).ToList();
-
-        var seriesList = seriesPage.Select(s =>
-        {
-            var seriesSeasonGroups = seasonGroups.Where(g => g.SeriesId == s.EntryId).ToList();
-            var seriesAvailable = seriesSeasonGroups.Sum(g => g.HasFileCount);
-            var seriesMonitored = seriesSeasonGroups.Sum(g => g.MonitoredCount);
-            var seriesTotal = seriesSeasonGroups.Sum(g => g.TotalCount);
-
-            var seasons = seriesSeasonGroups
-                .ToDictionary(
-                    g => g.SeasonNumber.ToString(),
-                    g => (object)new
-                    {
-                        monitored = g.MonitoredCount,
-                        available = g.HasFileCount,
-                        missing = g.TotalCount - g.HasFileCount,
-                        episodes = g.Episodes
-                    });
-
-            return new
-            {
-                series = new
-                {
-                    id = s.EntryId,
-                    title = s.Title,
-                    monitored = s.Monitored,
-                    qualityProfileId = s.QualityProfileId,
-                    qualityProfileName = s.QualityProfileName
-                },
-                totals = new { available = seriesAvailable, monitored = seriesMonitored, missing = seriesTotal - seriesAvailable },
-                seasons
-            };
-        }).ToList();
-
-        return Results.Ok(new
-        {
-            category,
-            total,
-            page = currentPage,
-            page_size = currentPageSize,
-            counts = new
-            {
-                available = episodeRollups.Available,
-                monitored = episodeRollups.Monitored,
-                missing = episodeRollups.Missing
-            },
-            series = seriesList
-        });
-    });
 
     // Web Lidarr Albums — tracks populated from tracks table
     app.MapGet("/web/lidarr/{category}/albums", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, bool? monitored, bool? has_file, bool? quality_met, bool? is_request, bool? flat_mode) =>
@@ -1239,9 +1132,11 @@ try
         var flat = new Dictionary<string, object?>();
         flat["Settings"] = cfg.Settings;
         flat["WebUI"] = cfg.WebUI;
-        foreach (var (key, qbit) in cfg.QBitInstances.Where(kv => kv.Value.Host != "CHANGE_ME"))
+        foreach (var (key, qbit) in cfg.QBitInstances.Where(kv => kv.Value.Host != "CHANGE_ME" || kv.Value.Disabled ||
+            cfg.Trackers.Any(rule => rule.ClientIds?.Contains(kv.Key, StringComparer.OrdinalIgnoreCase) == true)))
             flat[key] = qbit;
         flat["TorrentClient"] = cfg.TorrentClients;
+        flat["Trackers"] = cfg.Trackers;
         foreach (var (key, arr) in cfg.ArrInstances)
             flat[key] = arr;
 
@@ -1283,9 +1178,17 @@ try
             if (updatedConfig == null)
                 return Results.BadRequest(new { error = "Invalid config payload" });
 
+            TrackerRules.NormalizeNested(updatedConfig);
+            InstanceRenamePersistence.Validate(cfg, updatedConfig, renames);
+            TrackerRules.RenameReferences(cfg, updatedConfig, renames);
             var (valid, validationError) = ConfigValidationHelper.ValidateAll(updatedConfig);
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
+
+            if (payload.TryGetProperty("keepFreeSpaceProtectionOff", out var keepOff) &&
+                StorageConfigMigration.KeepFreeSpaceProtectionOff(updatedConfig, keepOff.GetString() ?? "",
+                    changesObj.Properties().Where(p => p.Value is Newtonsoft.Json.Linq.JArray).Select(p => p.Name)) is { } migrationError)
+                return Results.BadRequest(new { error = migrationError });
 
             return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr, registry, db, services, renames);
         }
@@ -1424,9 +1327,7 @@ try
         if (body.Password.Length < 8)
             return Results.BadRequest(new { error = "Password must be at least 8 characters" });
 
-        var bearerToken = ctx.Request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "", StringComparison.OrdinalIgnoreCase).Trim();
-        var queryToken = ctx.Request.Query["token"].FirstOrDefault();
-        var suppliedToken = !string.IsNullOrWhiteSpace(bearerToken) ? bearerToken : queryToken;
+        var suppliedToken = WebUIAuthHelpers.GetBearerToken(ctx.Request);
         var isAuthenticated = ctx.User.Identity?.IsAuthenticated == true;
         if (!WebUIAuthHelpers.IsSetPasswordAllowed(cfg, body.SetupToken, isAuthenticated, suppliedToken))
         {
@@ -1481,10 +1382,10 @@ try
     });
 
     // Web Qbit Categories (api mirror — same logic as /web/qbit/categories, token-protected)
-    app.MapGet("/api/qbit/categories", async (ITorrentClientRegistry registry, TorrentarrConfig cfg, CancellationToken ct) =>
+    app.MapGet("/api/qbit/categories", async (ITorrentClientRegistry registry, TorrentarrConfig cfg, TorrentStatisticsSnapshots snapshots, CancellationToken ct) =>
     {
-        var categories = await TorrentClientApiBuilder.CategoriesAsync(cfg, registry, ct: ct);
-        return Results.Ok(new { categories, ready = true });
+        var categories = await TorrentClientApiBuilder.CategoriesAsync(cfg, registry, ct: ct, snapshots: snapshots);
+        return Results.Ok(new { categories, ready = true, observations = snapshots.Describe(cfg, registry) });
     });
 
     // ==================== /api/* endpoints (Bearer token protected via middleware) ====================
@@ -1525,6 +1426,16 @@ try
             pid = s.Pid,
             alive = s.Alive,
             rebuilding = s.Rebuilding,
+            searchesTriggered = s.SearchesTriggered,
+            itemsSearched = s.ItemsSearched,
+            downloadingCount = s.DownloadingCount,
+            seedingCount = s.SeedingCount,
+            observedAt = s.ObservedAt,
+            observationError = s.ObservationError,
+            pausedLastPass = s.PausedLastPass,
+            resumedLastPass = s.ResumedLastPass,
+            handledLastPass = s.HandledLastPass,
+            monitoredCategoryCount = s.MonitoredCategoryCount,
             searchSummary = s.SearchSummary,
             searchTimestamp = s.SearchTimestamp,
             queueCount = s.QueueCount,
@@ -1535,7 +1446,7 @@ try
             status = s.Status
         }).ToList<object>();
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchesTriggered = status.SearchesTriggered, itemsSearched = status.ItemsSearched, downloadingCount = status.DownloadingCount, seedingCount = status.SeedingCount, observedAt = status.ObservedAt, observationError = status.ObservationError, pausedLastPass = status.PausedLastPass, resumedLastPass = status.ResumedLastPass, handledLastPass = status.HandledLastPass, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
         return Results.Ok(new { processes });
     });
 
@@ -1663,127 +1574,6 @@ try
     });
 
 
-
-    app.MapGet("/api/sonarr/{category}/series", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, int? missing, string? reason) =>
-    {
-        var keys = ArrCatalogIdentity.QueryKeys(cfg, category);
-        var currentPage = page ?? 0;
-        var currentPageSize = page_size ?? 50;
-        var skip = currentPage * currentPageSize;
-
-        var baseQuery = db.Series.Where(s => keys.Contains(s.ArrInstance));
-        var query = baseQuery;
-
-        var reasonFilter = string.IsNullOrWhiteSpace(reason) || reason.Equals("all", StringComparison.OrdinalIgnoreCase)
-            ? null
-            : reason.Trim();
-        if (missing == 1 || reasonFilter is not null)
-        {
-            var episodeQuery = db.Episodes.Where(e => keys.Contains(e.ArrInstance));
-            if (missing == 1)
-                episodeQuery = episodeQuery.Where(e => e.EpisodeFileId == null || e.EpisodeFileId == 0);
-            if (reasonFilter is not null)
-            {
-                if (reasonFilter.Equals("Not being searched", StringComparison.OrdinalIgnoreCase))
-                    episodeQuery = episodeQuery.Where(e => e.Reason == null || e.Reason == "Not being searched");
-                else
-                    episodeQuery = episodeQuery.Where(e => e.Reason == reasonFilter);
-            }
-            var seriesIdsWithMatchingEpisodes = await episodeQuery
-                .Select(e => e.SeriesId)
-                .Distinct()
-                .ToListAsync();
-            baseQuery = baseQuery.Where(s => seriesIdsWithMatchingEpisodes.Contains(s.EntryId));
-            query = baseQuery;
-        }
-
-        if (!string.IsNullOrEmpty(q))
-            query = query.Where(s => s.Title != null && s.Title.Contains(q));
-
-        var total = await baseQuery.CountAsync();
-        var (episodeRollupsApi, _) = await rollups.GetSonarrRollupsAsync(keys);
-
-        var seriesPage = await query
-            .OrderBy(s => s.Title)
-            .Skip(skip)
-            .Take(currentPageSize)
-            .Select(s => new { s.EntryId, s.Title, s.Monitored, s.QualityProfileId, s.QualityProfileName })
-            .ToListAsync();
-
-        var seriesIds = seriesPage.Select(s => s.EntryId).ToList();
-
-        var episodes = await db.Episodes
-            .Where(e => keys.Contains(e.ArrInstance) && seriesIds.Contains(e.SeriesId))
-            .Select(e => new
-            {
-                e.SeriesId,
-                e.SeasonNumber,
-                e.EpisodeNumber,
-                e.Title,
-                e.Monitored,
-                e.EpisodeFileId,
-                e.AirDateUtc,
-                e.Reason
-            })
-            .ToListAsync();
-        var seasonGroups = episodes.GroupBy(e => new { e.SeriesId, e.SeasonNumber }).Select(g => new
-        {
-            g.Key.SeriesId,
-            g.Key.SeasonNumber,
-            TotalCount = g.Count(),
-            HasFileCount = g.Count(e => e.EpisodeFileId != null && e.EpisodeFileId != 0),
-            MonitoredCount = g.Count(e => e.Monitored == true),
-            Episodes = g.Select(e => new { episodeNumber = e.EpisodeNumber, title = e.Title, monitored = e.Monitored, hasFile = e.EpisodeFileId != null && e.EpisodeFileId != 0, airDateUtc = e.AirDateUtc, reason = e.Reason }).ToArray()
-        }).ToList();
-
-        var seriesList = seriesPage.Select(s =>
-        {
-            var seriesSeasonGroups = seasonGroups.Where(g => g.SeriesId == s.EntryId).ToList();
-            var seriesAvailable = seriesSeasonGroups.Sum(g => g.HasFileCount);
-            var seriesMonitored = seriesSeasonGroups.Sum(g => g.MonitoredCount);
-            var seriesTotal = seriesSeasonGroups.Sum(g => g.TotalCount);
-
-            var seasons = seriesSeasonGroups
-                .ToDictionary(
-                    g => g.SeasonNumber.ToString(),
-                    g => (object)new
-                    {
-                        monitored = g.MonitoredCount,
-                        available = g.HasFileCount,
-                        missing = g.TotalCount - g.HasFileCount,
-                        episodes = g.Episodes
-                    });
-
-            return new
-            {
-                series = new
-                {
-                    id = s.EntryId,
-                    title = s.Title,
-                    monitored = s.Monitored,
-                    qualityProfileId = s.QualityProfileId,
-                    qualityProfileName = s.QualityProfileName
-                },
-                totals = new { available = seriesAvailable, monitored = seriesMonitored, missing = seriesTotal - seriesAvailable },
-                seasons
-            };
-        }).ToList();
-
-        return Results.Ok(new
-        {
-            category,
-            total,
-            page = currentPage,
-            page_size = currentPageSize,
-            counts = new
-            {
-                available = episodeRollupsApi.Available,
-                monitored = episodeRollupsApi.Monitored,
-                missing = episodeRollupsApi.Missing
-            },
-            series = seriesList
-        });
-    });
 
     app.MapGet("/api/lidarr/{category}/albums", async (string category, TorrentarrConfig cfg, TorrentarrDbContext db, CatalogRollupService rollups, int? page, int? page_size, string? q, bool? monitored, bool? has_file, bool? quality_met, bool? is_request, bool? flat_mode) =>
     {
@@ -2009,9 +1799,17 @@ try
             if (updatedConfig == null)
                 return Results.BadRequest(new { error = "Invalid config payload" });
 
+            TrackerRules.NormalizeNested(updatedConfig);
+            InstanceRenamePersistence.Validate(cfg, updatedConfig, renames);
+            TrackerRules.RenameReferences(cfg, updatedConfig, renames);
             var (valid, validationError) = ConfigValidationHelper.ValidateAll(updatedConfig);
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
+
+            if (payload.TryGetProperty("keepFreeSpaceProtectionOff", out var keepOff) &&
+                StorageConfigMigration.KeepFreeSpaceProtectionOff(updatedConfig, keepOff.GetString() ?? "",
+                    changesObj.Properties().Where(p => p.Value is Newtonsoft.Json.Linq.JArray).Select(p => p.Name)) is { } migrationError)
+                return Results.BadRequest(new { error = migrationError });
 
             return await SaveAndRespondConfigUpdate(cfg, updatedConfig, loader, workerMgr, qbitCategoryMgr, registry, db, services, renames);
         }
@@ -2281,6 +2079,10 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
     TorrentarrConfig cfg,
     Newtonsoft.Json.Linq.JObject changesObj)
 {
+    var version = ConfigurationLoader.ValidateConfigVersion(cfg);
+    if (!version.IsValid)
+        return (null, Results.Conflict(new { error = version.Message }));
+
     var serializer = Newtonsoft.Json.JsonSerializer.Create(CreateConfigMergeSerializerSettings());
 
     var currentObj = new Newtonsoft.Json.Linq.JObject();
@@ -2288,13 +2090,17 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
     currentObj["WebUI"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.WebUI, serializer);
     foreach (var (key, qbit) in cfg.QBitInstances)
         currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(qbit, serializer);
+    currentObj["Trackers"] = Newtonsoft.Json.Linq.JArray.FromObject(cfg.Trackers, serializer);
     currentObj["TorrentClient"] = Newtonsoft.Json.Linq.JObject.FromObject(cfg.TorrentClients, serializer);
     foreach (var (key, arr) in cfg.ArrInstances)
         currentObj[key] = Newtonsoft.Json.Linq.JObject.FromObject(arr, serializer);
 
     foreach (var change in changesObj.Properties())
     {
-        if (string.Equals(change.Name, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(change.Name, "Settings.ConfigVersion", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(change.Name, "Settings", StringComparison.OrdinalIgnoreCase)
+                && change.Value is Newtonsoft.Json.Linq.JObject settingsChange
+                && settingsChange.Property("ConfigVersion", StringComparison.OrdinalIgnoreCase) != null)
             return (null, Results.Json(new { error = "Cannot modify protected configuration key: Settings.ConfigVersion" }, statusCode: 403));
 
         if (IsSensitiveDottedKey(change.Name) &&
@@ -2341,9 +2147,10 @@ static (TorrentarrConfig? updatedConfig, IResult? error) ApplyDottedConfigChange
             currentObj.Remove(emptyProp.Name);
     }
 
-    var updatedConfig = new TorrentarrConfig();
+    var updatedConfig = new TorrentarrConfig { Trackers = TrackerRules.ReadJson(currentObj["Trackers"]) };
     if (currentObj["Settings"] is Newtonsoft.Json.Linq.JObject settingsObj)
         updatedConfig.Settings = settingsObj.ToObject<SettingsConfig>(serializer) ?? new SettingsConfig();
+    updatedConfig.Settings.ConfigVersion = cfg.Settings.ConfigVersion;
     if (currentObj["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
         updatedConfig.WebUI = webuiObj.ToObject<WebUIConfig>(serializer) ?? new WebUIConfig();
     if (currentObj["TorrentClient"] is Newtonsoft.Json.Linq.JObject torrentClientObj)
@@ -2413,6 +2220,7 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
     {
         status = "ok",
         configReloaded = application?.State == "applied",
+        restartRequirements = Array.Empty<ConfigurationRestartRequirement>(),
         application,
         reloadType,
         affectedInstances = affectedInstancesList,
@@ -2717,6 +2525,9 @@ class ProcessOrchestratorService : BackgroundService
     {
         using var processing = ConfigMutationGuard.EnterProcessing();
         var configured = _config.GetAllTorrentClients();
+        var failedHandled = 0;
+        var recheckHandled = 0;
+        var complete = true;
         foreach (var id in _specialCategoryCounts.Keys.Where(id => !configured.TryGetValue(id, out var cfg) || cfg.Disabled).ToArray())
             _specialCategoryCounts.Remove(id);
         foreach (var (instanceName, client) in _qbitManager.GetAllClients().Where(pair => clientIds.Contains(pair.Key)))
@@ -2747,6 +2558,7 @@ class ProcessOrchestratorService : BackgroundService
                     }
                     _logger.LogWarning("[{Instance}] Deleting failed torrent: {Name}", instanceName, torrent.Name);
                     var deletion = await _safeDeletion.RemoveTorrentAsync(instanceName, torrent.Hash, removeContent: true, ct: cancellationToken);
+                    if (deletion.Success) failedHandled++;
                     if (!deletion.Success)
                         _logger.LogWarning("[{Instance}] Safe deletion skipped for {Name}: {Reason}", instanceName, torrent.Name, deletion.Error);
                 }
@@ -2768,16 +2580,34 @@ class ProcessOrchestratorService : BackgroundService
                     }
                     torrent.ClientInstanceId = instanceName;
                     if (await MaintenanceRecovery.RequestExplicitAsync(recoveryDb, client, torrent, cancellationToken))
+                    {
+                        recheckHandled++;
                         _logger.LogInformation("[{Instance}] Requested recheck for torrent: {Name}", instanceName, torrent.Name);
+                    }
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                complete = false;
                 _logger.LogError(ex, "[{Instance}] Error processing special categories", instanceName);
             }
         }
-        _stateManager.Update("Failed", s => { s.CategoryCount = _specialCategoryCounts.Values.Sum(counts => counts.Failed); s.Alive = true; });
-        _stateManager.Update("Recheck", s => { s.CategoryCount = _specialCategoryCounts.Values.Sum(counts => counts.Recheck); s.Alive = true; });
+        _stateManager.Update("Failed", s =>
+        {
+            s.CategoryCount = _specialCategoryCounts.Values.Sum(counts => counts.Failed);
+            s.MonitoredCategoryCount = string.IsNullOrWhiteSpace(_config.Settings.FailedCategory) ? 0 : 1;
+            s.Alive = true;
+            s.ObservationError = complete ? null : "Some clients could not be inspected; retaining the last completed pass.";
+            if (complete) { s.HandledLastPass = failedHandled; s.ObservedAt = DateTimeOffset.UtcNow; }
+        });
+        _stateManager.Update("Recheck", s =>
+        {
+            s.CategoryCount = _specialCategoryCounts.Values.Sum(counts => counts.Recheck);
+            s.MonitoredCategoryCount = string.IsNullOrWhiteSpace(_config.Settings.RecheckCategory) ? 0 : 1;
+            s.Alive = true;
+            s.ObservationError = complete ? null : "Some clients could not be inspected; retaining the last completed pass.";
+            if (complete) { s.HandledLastPass = recheckHandled; s.ObservedAt = DateTimeOffset.UtcNow; }
+        });
     }
 
     private async Task ProcessTorrentPolicyAsync(HashSet<string> managedCategories, IReadOnlySet<string> clientIds, CancellationToken cancellationToken)
@@ -2786,7 +2616,7 @@ class ProcessOrchestratorService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var seeding = scope.ServiceProvider.GetRequiredService<ISeedingService>();
         await PreSortTrackerTagSyncAsync(seeding, managedCategories, clientIds, cancellationToken);
-        await SortManagedTorrentsByTrackerPriorityAsync(seeding, managedCategories, clientIds, cancellationToken);
+        await SortManagedTorrentsByTrackerPriorityAsync(managedCategories, clientIds, cancellationToken);
     }
 
     /// <summary>
@@ -2831,6 +2661,9 @@ class ProcessOrchestratorService : BackgroundService
         _stateManager.Update("FreeSpaceManager", state =>
         {
             state.CategoryCount = result.MarkedCount;
+            state.PausedLastPass = result.Paused;
+            state.ResumedLastPass = result.Resumed;
+            state.ObservedAt = DateTimeOffset.UtcNow;
             state.MetricType = "free-space";
             state.Alive = result.Available;
         });
@@ -2840,11 +2673,9 @@ class ProcessOrchestratorService : BackgroundService
     /// qBitrr <c>Arr._sort_torrents_by_tracker_priority</c> when <c>categories</c> is set (TorrentPolicyManager).
     /// </summary>
     private async Task SortManagedTorrentsByTrackerPriorityAsync(
-        ISeedingService seeding,
         HashSet<string> managedCategories,
         IReadOnlySet<string> clientIds, CancellationToken cancellationToken)
     {
-        var tagToPriority = TorrentPolicyHelper.MergeGlobalTrackerTagToPriorityMax(_config);
         foreach (var (instanceName, client) in _qbitManager.GetAllClients().Where(pair => clientIds.Contains(pair.Key)))
         {
             try
@@ -2854,7 +2685,7 @@ class ProcessOrchestratorService : BackgroundService
                 {
                     torrentList = await client.GetTorrentsAsync(category: null, "priority", cancellationToken);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogDebug(ex, "[{Instance}] SortTorrents: falling back to added_on sort", instanceName);
                     torrentList = await client.GetTorrentsAsync(category: null, "added_on", cancellationToken);
@@ -2866,14 +2697,20 @@ class ProcessOrchestratorService : BackgroundService
                 foreach (var t in torrentList)
                     t.QBitInstanceName = instanceName;
 
-                if (torrentList.Count <= 1)
-                    continue;
-
                 var sortPriorities = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                foreach (var t in torrentList)
+                foreach (var torrent in torrentList)
                 {
-                    sortPriorities[t.Hash] = await seeding.GetTorrentQueueSortPriorityAsync(t, tagToPriority, cancellationToken);
+                    var rules = TrackerRules.ForTorrent(_config, torrent).Where(rule => rule.SortTorrents).ToList();
+                    if (rules.Count == 0) continue;
+                    var announces = await client.GetTorrentTrackersAsync(torrent.Hash, cancellationToken);
+                    var tags = torrent.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var priorities = rules.Where(rule => SeedingService.MatchesTracker(rule, announces) ||
+                        rule.AddTags.Any(tag => tags.Contains(tag.Trim()))).Select(rule => rule.Priority).ToList();
+                    if (priorities.Count != 0) sortPriorities[torrent.Hash] = priorities.Max();
                 }
+                torrentList = torrentList.Where(torrent => sortPriorities.ContainsKey(torrent.Hash)).ToList();
+                if (torrentList.Count <= 1) continue;
 
                 var sortedTorrents = torrentList
                     .OrderBy(t => -sortPriorities.GetValueOrDefault(t.Hash, -100))
@@ -2923,6 +2760,7 @@ class ProcessOrchestratorService : BackgroundService
                         await client.SetTopPriorityAsync(torrent.Hash, cancellationToken);
                 }
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[{Instance}] SortTorrents policy step failed", instanceName);

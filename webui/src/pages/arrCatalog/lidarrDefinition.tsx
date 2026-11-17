@@ -6,6 +6,7 @@ import type {
   LidarrArtistEntry,
   LidarrArtistsResponse,
 } from "../../api/types";
+import { arrTypeLabel } from "../../config/arrSections";
 import { ArrMiniProgress } from "../../components/arr/ArrMiniProgress";
 import {
   ArrListProgressCell,
@@ -273,8 +274,6 @@ export const LIDARR_DEFINITION: ArrCatalogDefinition<
 > = {
   kind: "lidarr",
   arrType: "lidarr",
-  cardTitle: "Lidarr",
-  allInstancesLabel: "All Lidarr",
   searchPlaceholder: "Filter artists",
   initialFilters: { onlyMissing: false, reasonFilter: "all" },
   filterControls: createStandardArrFilters<LidarrFilters>("All Artists"),
@@ -618,7 +617,7 @@ function LidarrAggregateBody({
       summaryLine={summaryLine}
       onRefresh={onRefresh}
       loading={effectiveLoading}
-      loadingHint="Loading Lidarr library…"
+      loadingHint={`Loading ${arrTypeLabel("lidarr")} library…`}
       emptyOrder="syncFirst"
       showCatalogEmptyHint={showCatalogEmptyHint}
       hasRows={total > 0}

@@ -46,15 +46,23 @@ public class WorkerSetupTests
         client.Setup(x => x.CreateCategoryAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(accepted);
         client.Setup(x => x.GetTagsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<string>());
         client.Setup(x => x.CreateTagsAsync(It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(accepted);
+        var unselected = new Mock<ITorrentClient>();
+        unselected.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);
         var registry = new Mock<ITorrentClientRegistry>();
         registry.Setup(x => x.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["qBit"] = client.Object });
         var config = new TorrentarrConfig();
-        config.QBitInstances["qBit"] = new QBitConfig { DownloadPath = "/downloads", Trackers = new List<TrackerConfig> { new() { AddTags = new List<string> { "tracker-tag" } } } };
+        config.QBitInstances["qBit"] = new QBitConfig { DownloadPath = "/downloads" };
+        config.TorrentClients["other"] = new();
+        config.Trackers = [new() { ClientIds = ["qBit"], AddTags = ["tracker-tag"] }];
         var categories = new QBitCategoryEnsureService(NullLogger<QBitCategoryEnsureService>.Instance, config, registry.Object);
         (await categories.EnsureCategoryOnAllInstancesAsync("radarr")).Should().Be(accepted);
         using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        registry.Setup(x => x.GetAllClients()).Returns(new Dictionary<string, ITorrentClient>
+        { ["qBit"] = client.Object, ["other"] = unselected.Object });
         var seeding = new SeedingService(NullLogger<SeedingService>.Instance, db, config, registry.Object);
         (await seeding.EnsureAllTrackerTagsExistAsync()).Should().Be(accepted);
+        client.Verify(c => c.CreateTagsAsync(It.Is<List<string>>(tags => tags.SequenceEqual(new[] { "tracker-tag" })), It.IsAny<CancellationToken>()), Times.Once);
+        unselected.Verify(c => c.GetTagsAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
     [Fact]
     public async Task CategoriesUseEachClientsRoot_AndPreserveExistingCategoryPaths()

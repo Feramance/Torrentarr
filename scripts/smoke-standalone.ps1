@@ -97,20 +97,21 @@ SearchMissing = false
         for ($attempt = 0; $attempt -lt 60; $attempt++) {
             if (Test-Path $statusPath) {
                 $status = Get-Content $statusPath -Raw | ConvertFrom-Json
-                if ($status.torrent.lastSuccess -and $status.search.lastSuccess) { break }
+                # No torrent client is configured, so the torrent loop stays idle and lastSuccess remains unset by design.
+                if ($status.torrent -and $status.search.lastSuccess) { break }
             }
             Start-Sleep -Milliseconds 500
         }
-        if (-not $status.torrent.lastSuccess -or -not $status.search.lastSuccess) { throw 'Worker did not complete both processing loops' }
+        if (-not $status.torrent -or -not $status.search.lastSuccess) { throw 'Worker did not complete both processing loops' }
         if ($status.instance -ne 'Radarr-Smoke' -or $status.pid -eq $process.Id -or -not $status.torrent -or -not $status.search) { throw 'Invalid worker heartbeat' }
         $workerPid = $status.pid
         Invoke-WebRequest -Method Post -Uri "$baseUrl/web/processes/Radarr-Smoke/worker/restart" -UseBasicParsing | Out-Null
         for ($attempt = 0; $attempt -lt 60; $attempt++) {
             $status = Get-Content $statusPath -Raw | ConvertFrom-Json
-            if ($status.pid -ne $workerPid -and $status.torrent.lastSuccess -and $status.search.lastSuccess) { break }
+            if ($status.pid -ne $workerPid -and $status.torrent -and $status.search.lastSuccess) { break }
             Start-Sleep -Milliseconds 500
         }
-        if ($status.pid -eq $workerPid -or -not $status.torrent.lastSuccess -or -not $status.search.lastSuccess -or (Get-Process -Id $workerPid -ErrorAction SilentlyContinue)) { throw 'Worker restart failed' }
+        if ($status.pid -eq $workerPid -or -not $status.torrent -or -not $status.search.lastSuccess -or (Get-Process -Id $workerPid -ErrorAction SilentlyContinue)) { throw 'Worker restart failed' }
         $workerPid = $status.pid
         Stop-Process -Id $process.Id -Force
         $process.WaitForExit()

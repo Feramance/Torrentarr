@@ -7,6 +7,13 @@ namespace Torrentarr.Core.Tests.Configuration;
 
 public sealed class TorrentClientMaintenanceTests
 {
+    [Theory]
+    [InlineData(Torrentarr.Core.Models.MaintenanceOperation.CategoryReconcile)]
+    [InlineData(Torrentarr.Core.Models.MaintenanceOperation.AutomaticManagement)]
+    [InlineData(Torrentarr.Core.Models.MaintenanceOperation.RepairPaused)]
+    public void NonDeletionMaintenance_DoesNotRequireHnrEvidence(Torrentarr.Core.Models.MaintenanceOperation operation)
+        => MaintenanceRequirements.For(operation, new()).Should().Be(Torrentarr.Core.Models.InventoryRequirements.Metadata);
+
     [Fact]
     public void CanonicalClient_RoundTripsWithoutChangingLegacySections()
     {

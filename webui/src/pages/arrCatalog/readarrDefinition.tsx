@@ -6,6 +6,7 @@ import type {
   ReadarrAuthorEntry,
   ReadarrAuthorsResponse,
 } from "../../api/types";
+import { arrTypeLabel } from "../../config/arrSections";
 import { ArrMiniProgress } from "../../components/arr/ArrMiniProgress";
 import {
   ArrListProgressCell,
@@ -235,8 +236,6 @@ export const READARR_DEFINITION: ArrCatalogDefinition<
 > = {
   kind: "readarr",
   arrType: "readarr",
-  cardTitle: "Readarr",
-  allInstancesLabel: "All Readarr",
   searchPlaceholder: "Filter authors",
   initialFilters: { onlyMissing: false, reasonFilter: "all" },
   filterControls: createStandardArrFilters<ReadarrFilters>("All Authors"),
@@ -582,14 +581,14 @@ function ReadarrAggregateBody({
       summaryLine={summaryLine}
       onRefresh={onRefresh}
       loading={effectiveLoading}
-      loadingHint="Loading Readarr library…"
+      loadingHint={`Loading ${arrTypeLabel("readarr")} library…`}
       emptyOrder="syncFirst"
       showCatalogEmptyHint={showCatalogEmptyHint}
       hasRows={total > 0}
       catalogEmptyMessage="No authors found in the local catalog."
       noMatchMessage={
         instanceCount === 0
-          ? "No Readarr instances configured. Add an instance in Config."
+          ? `No ${arrTypeLabel("readarr")} instances configured. Add an instance in Config.`
           : "No authors match the current filters."
       }
       showPagination={totalPages > 1}

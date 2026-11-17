@@ -84,17 +84,18 @@ public class ConfigValidationEndpointTests : IClassFixture<ArrCatalogWebApplicat
         body.Should().Match("*overlaps*");
     }
 
-    [Fact]
-    public async Task PostConfig_RejectsProtectedConfigVersion()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PostConfig_RejectsProtectedConfigVersion(bool replaceSettings)
     {
         _factory.SetConfigEnv();
         var client = _factory.CreateClientWithApiToken();
         var payload = new
         {
-            changes = new Dictionary<string, object>
-            {
-                ["Settings.ConfigVersion"] = "9.9.9"
-            }
+            changes = replaceSettings
+                ? new Dictionary<string, object> { ["Settings"] = new { configVersion = "9.9.9" } }
+                : new Dictionary<string, object> { ["Settings.ConfigVersion"] = "9.9.9" }
         };
         var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 

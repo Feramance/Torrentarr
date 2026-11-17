@@ -6,6 +6,7 @@ using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.Database;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Torrentarr.Infrastructure.Services;
 
@@ -19,15 +20,15 @@ public class ArrThumbnailService
     private readonly TorrentarrConfig _config;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly string _cacheDir;
-    private readonly IOperationalIssueReporter? _issues;
+    private readonly ILogger<ArrThumbnailService>? _logger;
 
     public ArrThumbnailService(
         TorrentarrDbContext db,
         TorrentarrConfig config,
-        IHttpClientFactory httpClientFactory, IOperationalIssueReporter? issues = null)
+        IHttpClientFactory httpClientFactory, ILogger<ArrThumbnailService>? logger = null)
     {
         _db = db;
-        _issues = issues;
+        _logger = logger;
         _config = config;
         _httpClientFactory = httpClientFactory;
         _cacheDir = Path.Combine(ConfigurationLoader.GetDataDirectoryPath(), "cache", "thumbnails");
@@ -90,25 +91,22 @@ public class ArrThumbnailService
                     catch (Exception ex) when (!ct.IsCancellationRequested &&
                         ex is HttpRequestException or ArrApiException or Newtonsoft.Json.JsonException or OperationCanceledException or TimeoutException)
                     {
-                        if (_issues != null) await _issues.ReportAsync(ThumbnailIssue(instance.Key).WithEvidence(DiagnosticText.Error(ex)), ct);
+                        _logger?.LogDebug("Artwork discovery for {Instance} failed: {Evidence}", instance.Key, DiagnosticText.Error(ex));
                         return null;
                     }
                 }
                 continue;
             }
 
-            if (_issues != null) await _issues.ResolveAsync(ThumbnailIssue(instance.Key), ct);
             await File.WriteAllBytesAsync(cachePath, fetched.Value.Bytes, ct);
             var etag = Convert.ToHexString(SHA256.HashData(fetched.Value.Bytes)).ToLowerInvariant();
             await File.WriteAllTextAsync(etagPath, etag, ct);
             return (fetched.Value.Bytes, fetched.Value.ContentType, etag);
         }
 
-        if (_issues != null) await _issues.ReportAsync(ThumbnailIssue(instance.Key).WithEvidence($"Arr={instance.Key}; type={arrType}; entry={entryId}; Arr ID={arrId}; endpoint={DiagnosticText.Safe(baseUri)}; tried={candidates.Count} same-host poster routes; {failureEvidence ?? "No usable image response or cached poster was available; response details were not supplied by the fetch adapter."}"), ct);
+        _logger?.LogDebug("Artwork unavailable for {Instance}, entry {EntryId}: {Evidence}", instance.Key, entryId, failureEvidence);
         return null;
     }
-
-    private static OperationalIssueReport ThumbnailIssue(string instance) => new("thumbnail.fetch", "system", "Arr posters could not be retrieved", "Uncached posters are unavailable.", "Check Arr connectivity, certificate settings and reverse proxy configuration.", ArrInstance: instance, Severity: "warning", Target: "config");
 
     private static async Task<string> ReadOrCreateETagAsync(
         string etagPath,

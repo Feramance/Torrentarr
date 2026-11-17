@@ -44,6 +44,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+  delete document.documentElement.dataset.palette;
   resetUrlBaseCacheForTests();
 });
 async function mount() {
@@ -101,6 +102,16 @@ it("applies theme changes without navigating", async () => {
     receive({ ...initial, webui: { ...initial.webui, theme: "Light" } }),
   );
   expect(document.documentElement).toHaveAttribute("data-theme", "light");
+  expect(replace).not.toHaveBeenCalled();
+});
+
+it("applies the midnight palette without navigating", async () => {
+  await mount();
+  act(() =>
+    receive({ ...initial, webui: { ...initial.webui, theme: "Midnight" } }),
+  );
+  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+  expect(document.documentElement.dataset.palette).toBe("midnight");
   expect(replace).not.toHaveBeenCalled();
 });
 

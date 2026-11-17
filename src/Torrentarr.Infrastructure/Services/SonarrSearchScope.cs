@@ -21,7 +21,7 @@ internal static class SonarrSearchScope
             if ((!config.Unmonitored && episode.Monitored != true) ||
                 (episode.SeasonNumber == 0 && !specialsAllowed.Contains(episode.ArrSeriesId)))
             {
-                logger?.LogInformation("Search skipped for {Title} S{Season}E{Episode} [id={ArrId}, instance={Instance}]: monitored={Monitored}, specialsAllowed={Specials}",
+                logger?.LogDebug("Search skipped for {Title} S{Season}E{Episode} [id={ArrId}, instance={Instance}]: monitored={Monitored}, specialsAllowed={Specials}",
                     episode.SeriesTitle, episode.SeasonNumber, episode.EpisodeNumber, episode.ArrId, episode.ArrInstance,
                     episode.Monitored, specialsAllowed.Contains(episode.ArrSeriesId));
                 continue;

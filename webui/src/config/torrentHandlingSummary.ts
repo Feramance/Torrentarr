@@ -24,7 +24,7 @@ function trackerProtectionSummary(
         ? 192
         : Number(policy.MinimumSeedHours ?? 48);
   return (
-    `- **${name}** — ${preset} protection: ${hours} mandatory completed seed hours, ${Number(policy.AdditionalSeedHours ?? 6)} extra hours and ${Number(policy.AccountingGraceMinutes ?? 60)} minutes of accounting grace. ` +
+    `- **${name}** — ${preset} protection: ${hours} mandatory completed seed hours, ${Number(policy.AdditionalSeedHours ?? 6)} extra hours and ${Number(policy?.AccountingGraceMinutes ?? 60)} minutes of accounting grace. ` +
     (preset === "onlyencodes"
       ? "Ratio never replaces mandatory time. The default 168-hour warning deadline awaits confirmation. "
       : policy.AllowClientRatioClearance
@@ -88,11 +88,13 @@ function formatMinutes(minutes: number): string {
   return `${mins} ${plural(mins, "minute", "minutes")}`;
 }
 
-function resolveHnrMode(v: unknown): "and" | "or" | "disabled" {
+function resolveHnrMode(
+  v: unknown,
+): "and" | "or" | "ratio" | "time" | "disabled" {
   if (v === true) return "and";
   if (v === false) return "disabled";
   const s = String(v ?? "").toLowerCase();
-  if (s === "and" || s === "or") return s;
+  if (s === "and" || s === "or" || s === "ratio" || s === "time") return s;
   return "disabled";
 }
 
@@ -112,7 +114,7 @@ function listPreview(arr: unknown[], maxItems = 3, suffix = "\u2026"): string {
   return parts.join(", ") + rest;
 }
 
-/** Build human-readable summary for an Arr instance: lifetime narrative and per-tracker behaviour. */
+/** Build human-readable summary for an Arr instance: lifetime narrative. */
 export function getArrTorrentHandlingSummary(
   state: ConfigDocument | null,
 ): string {
@@ -240,7 +242,7 @@ export function getArrTorrentHandlingSummary(
   const minDays = Number(seeding.MinSeedingTimeDays ?? 0);
   if (hnrMode === "disabled") {
     seedParts.push(
-      "Legacy Hit and Run is off here. Tracker protection still applies; unknown private obligations are preserved.",
+      "Hit & Run is off here. Tracker protection still applies; unknown private obligations are preserved.",
     );
   } else {
     const daysVal = Number.isFinite(minDays) ? minDays : 0;
@@ -250,66 +252,23 @@ export function getArrTorrentHandlingSummary(
       "days",
     );
     const req =
-      hnrMode === "and"
-        ? "must reach both ratio and time before removal"
-        : "reaching either ratio or time allows removal";
+      hnrMode === "ratio"
+        ? "ratio only"
+        : hnrMode === "time"
+          ? "seeding time only"
+          : hnrMode === "and"
+            ? "must reach both ratio and time before removal"
+            : "reaching either ratio or time allows removal";
     seedParts.push(
       `Hit and Run is on (${hnrMode}): min ratio ${Number.isFinite(minRatio) ? minRatio : 1}, min time ${daysVal} ${daysLabel} \u2014 ${req}.`,
     );
   }
   blocks.push(seedParts.join(" "));
 
-  // 4. Per-tracker behaviour
-  const trackers = get(state, ["Torrent", "Trackers"]) as
-    | ConfigDocument[]
-    | undefined;
-  if (!Array.isArray(trackers) || trackers.length === 0) {
-    blocks.push(
-      "No per-tracker overrides; behaviour above applies to all trackers (using torrent client defaults).",
-    );
-  } else {
-    blocks.push("**Per-tracker behaviour**");
-    trackers.forEach((raw) => {
-      const t = raw as Record<string, unknown>;
-      const name = String(t.Name ?? "Tracker").trim() || "Tracker";
-      const protection = trackerProtectionSummary(t, name);
-      if (protection) {
-        blocks.push(protection);
-        return;
-      }
-      const mode = resolveHnrMode(t.HitAndRunMode);
-      const tMinRatio = Number(t.MinSeedRatio ?? 1);
-      const tMinDays = Number(t.MinSeedingTimeDays ?? 0);
-      const ratioStr = Number.isFinite(tMinRatio) ? tMinRatio : 1;
-      const daysVal = Number.isFinite(tMinDays) ? tMinDays : 0;
-      const daysLabel = plural(
-        daysVal === 1 ? 1 : Math.max(0, daysVal),
-        "day",
-        "days",
-      );
-      const sortNote = t.SortTorrents
-        ? " **Queue sort** uses this tracker's priority in the torrent client's download queue when queuing is enabled."
-        : "";
-      if (mode === "disabled") {
-        blocks.push(
-          `- **${name}** \u2014 Legacy HnR is off for this row. Removal still requires every applicable obligation to clear.${sortNote}`,
-        );
-      } else {
-        const both = mode === "and" ? "both required" : "either allows removal";
-        blocks.push(
-          `- **${name}** \u2014 HnR is on (${both}). The torrent will **not** be removed until it has reached ratio ${ratioStr} and been seeding for ${daysVal} ${daysLabel}. Until then, it is protected from removal even if stalled or if the global seeding limit would allow removal.${sortNote}`,
-        );
-      }
-    });
-    blocks.push(
-      "Other trackers use torrent client defaults and the seeding/stalled rules above.",
-    );
-  }
-
   return blocks.join("\n\n");
 }
 
-/** Build human-readable summary for a torrent client: lifetime narrative and per-tracker behaviour. */
+/** Build human-readable summary for a torrent client: lifetime narrative. */
 export function getQbitTorrentHandlingSummary(
   state: ConfigDocument | null,
 ): string {
@@ -420,7 +379,7 @@ export function getQbitTorrentHandlingSummary(
   const minDays = Number(seeding.MinSeedingTimeDays ?? 0);
   if (hnrMode === "disabled") {
     blocks.push(
-      "Legacy category Hit and Run is off. Tracker protection still applies; unknown private obligations are preserved.",
+      "Category Hit & Run is off. Tracker protection still applies; unknown private obligations are preserved.",
     );
   } else {
     const daysVal = Number.isFinite(minDays) ? minDays : 0;
@@ -430,60 +389,48 @@ export function getQbitTorrentHandlingSummary(
       "days",
     );
     const req =
-      hnrMode === "and"
-        ? "must reach both ratio and time before removal"
-        : "reaching either ratio or time allows removal";
+      hnrMode === "ratio"
+        ? "ratio only"
+        : hnrMode === "time"
+          ? "seeding time only"
+          : hnrMode === "and"
+            ? "must reach both ratio and time before removal"
+            : "reaching either ratio or time allows removal";
     blocks.push(
       `Hit and Run is on (${hnrMode}): min ratio ${Number.isFinite(minRatio) ? minRatio : 1}, min time ${daysVal} ${daysLabel} \u2014 ${req}.`,
     );
   }
 
-  // 4. Per-tracker behaviour
-  const trackers = get(state, ["Trackers"]) as ConfigDocument[] | undefined;
-  if (!Array.isArray(trackers) || trackers.length === 0) {
-    blocks.push("No custom tracker rules configured.");
-  } else {
-    blocks.push("**Per-tracker behaviour**");
-    trackers.forEach((raw) => {
-      const t = raw as Record<string, unknown>;
-      const name = String(t.Name ?? "Tracker").trim() || "Tracker";
-      const protection = trackerProtectionSummary(t, name);
-      if (protection) {
-        blocks.push(protection);
-        return;
-      }
-      const mode = resolveHnrMode(t.HitAndRunMode);
-      const tMinRatio = Number(t.MinSeedRatio ?? 1);
-      const tMinDays = Number(t.MinSeedingTimeDays ?? 0);
-      const ratioStr = Number.isFinite(tMinRatio) ? tMinRatio : 1;
-      const daysVal = Number.isFinite(tMinDays) ? tMinDays : 0;
-      const daysLabel = plural(
-        daysVal === 1 ? 1 : Math.max(0, daysVal),
-        "day",
-        "days",
-      );
-      const sortNote = t.SortTorrents
-        ? " **Queue sort** uses this tracker's priority in the torrent client's download queue when queuing is enabled."
-        : "";
-      if (mode === "disabled") {
-        blocks.push(
-          `- **${name}** \u2014 Legacy HnR is off for this row. Removal still requires every applicable obligation to clear (e.g. after max time or when max ratio is reached).${sortNote}`,
-        );
-      } else {
-        const both = mode === "and" ? "both required" : "either allows removal";
-        const until =
-          mode === "and"
-            ? `until it has reached ratio ${ratioStr} and been seeding for ${daysVal} ${daysLabel}`
-            : `until it has reached ratio ${ratioStr} or been seeding for ${daysVal} ${daysLabel}`;
-        blocks.push(
-          `- **${name}** \u2014 HnR is on (${both}). The torrent will **not** be removed ${until}. Until then, it is protected from removal even if stalled or if the global seeding time would allow removal.${sortNote}`,
-        );
-      }
-    });
-    blocks.push(
-      "Other trackers use the category defaults and the seeding/stalled rules above.",
-    );
-  }
-
   return blocks.join("\n\n");
+}
+
+/** Describe the rule on its own card as settings change. */
+export function getTrackerSummary(tracker: ConfigDocument): string {
+  const name = String(tracker.Name ?? "").trim() || "Tracker";
+  const mode = resolveHnrMode(tracker.HitAndRunMode);
+  const ratio = Number(tracker.MinSeedRatio ?? 1);
+  const days = Number(tracker.MinSeedingTimeDays ?? 0);
+  const requirements = [
+    ...(ratio > 0 && mode !== "time" ? [`ratio ${ratio}`] : []),
+    ...(days > 0 && mode !== "ratio"
+      ? [`${days} ${plural(days, "day", "days")} of seeding`]
+      : []),
+  ];
+  const protection = trackerProtectionSummary(tracker, name);
+  const hnr =
+    tracker.HitAndRunMode == null
+      ? "Hit & Run inherits the applicable category settings."
+      : mode === "disabled"
+        ? "Hit & Run is off. Removal still requires every applicable obligation to clear."
+        : requirements.length
+          ? `Hit & Run checks ${requirements.join(mode === "and" ? " and " : " or ")} for completed torrents.`
+          : "Hit & Run checks the configured partial-download ratio.";
+  const sort = tracker.SortTorrents
+    ? " Queue sorting uses this rule’s priority for matching managed torrents."
+    : "";
+  const policy = tracker.Protection as ConfigDocument | undefined;
+  if ((!policy || policy.RequireLegacyClearance) && mode !== "disabled") {
+    return `${hnr} Healthy observations must confirm clearance after ${Number(policy?.AccountingGraceMinutes ?? 60)} minutes of accounting grace.${sort}`;
+  }
+  return (policy?.RequireLegacyClearance ? hnr : protection ?? hnr) + sort;
 }

@@ -95,6 +95,7 @@ esac
                             PATH=f"{directory}:{os.environ['PATH']}",
                             CALL_LOG=str(log), MERGE_STATUS=status, VERSION="1.2.3-1",
                             GITHUB_ACTOR="test", GITHUB_REPOSITORY="test/repo",
+                            GITHUB_RUN_ID="1", GITHUB_RUN_ATTEMPT="1",
                             GITHUB_OUTPUT=str(output),
                         )
                         self.assertIn("workflow run classify-prs.yml", log.read_text())
@@ -122,8 +123,13 @@ esac
         }
         schema_files = ["src/Torrentarr.Core/Configuration/TorrentarrConfig.cs",
                         "src/Torrentarr.Core/Configuration/ConfigurationLoader.cs", "config.example.toml"]
-        schema = re.search(r'ExpectedConfigVersion = "([^"]+)"',
-                           (ROOT / schema_files[1]).read_text()).group(1)
+        loader = (ROOT / schema_files[1]).read_text()
+        self.assertIn(f'ReleaseConfigVersion = "{major}.{minor}.{patch}";', loader)
+        schema_floor = re.search(r'TrackerProtectionSchemaVersion = new\((\d+), (\d+), (\d+)\);', loader)
+        schema = ".".join(map(str, max((major, minor, patch), tuple(map(int, schema_floor.groups())))))
+        self.assertIn("ConfigVersion { get; set; } = ConfigurationLoader.ExpectedConfigVersion;",
+                      (ROOT / schema_files[0]).read_text())
+        self.assertIn(f'ConfigVersion = "{schema}"', (ROOT / schema_files[2]).read_text())
         files = [section.split(":", 2)[2] for section in config.sections()
                  if section.startswith("bumpversion:file:")]
         for release_type, version in expected.items():
@@ -149,11 +155,15 @@ esac
                     self.assertIn(f"<{field}>{numeric}</{field}>", props)
                 for filename in files:
                     text = (destination / filename).read_text()
-                    self.assertIn(version, text)
-                # Config schema versions advance with migrations, independently of package releases.
+                    if filename == schema_files[1]:
+                        self.assertIn(f'ReleaseConfigVersion = "{version.split("-")[0]}";', text)
+                        self.assertIn(schema_floor.group(), text)
+                    else:
+                        self.assertIn(version, text)
+                # The schema generator synchronizes the example after the release version bump.
                 for filename in schema_files:
-                    self.assertEqual((destination / filename).read_text(), (ROOT / filename).read_text())
-                    self.assertIn(f'"{schema}"', (destination / filename).read_text())
+                    if filename != schema_files[1]:
+                        self.assertEqual((destination / filename).read_text(), (ROOT / filename).read_text())
 
     def test_changelog_works_before_draft_tag_exists(self):
         with tempfile.TemporaryDirectory() as directory:

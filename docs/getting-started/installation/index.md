@@ -131,7 +131,7 @@ Regardless of installation method, you'll need:
    - Authentication configured
 
 2. **Arr Instance** - At least one of:
-   - Radarr (v3.x, v4.x, v5.x, v6.x)
+   - Radarr (v3.x, v4.x, v5.x, v6.x, v7.x)
    - Sonarr (v3.x, v4.x, v5.x)
    - Lidarr (v1.x, v2.x)
 

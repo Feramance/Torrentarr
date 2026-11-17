@@ -1,5 +1,8 @@
 namespace Torrentarr.Core.Services;
 
+// Requirements identify existing worker restart targets, independently of legacy reloadType labels.
+public sealed record ConfigurationRestartRequirement(string Component, string Category, string Kind);
+
 public sealed record ConfigurationComponentStatus(long AppliedRevision, string? Error = null);
 
 public sealed record ConfigurationApplicationStatus(long AcceptedRevision, string State,

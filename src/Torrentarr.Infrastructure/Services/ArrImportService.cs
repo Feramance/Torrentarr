@@ -61,8 +61,9 @@ public class ArrImportService : IArrImportService
 
         // Find the Arr instance configuration for this category
         _logger.LogTrace("Looking up Arr instance for category {Category}", category);
-        var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
-            i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        var target = _config.ArrInstances.FirstOrDefault(p =>
+            p.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        var arrInstance = target.Value;
 
         if (arrInstance == null)
         {
@@ -77,12 +78,13 @@ public class ArrImportService : IArrImportService
 
         _logger.LogInformation("Found Arr instance: Type={Type}, URI={URI}, Category={Category}",
             arrInstance.Type, DiagnosticText.Safe(arrInstance.URI), arrInstance.Category);
-        using var instanceScope = _logger.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = _config.ArrInstances.FirstOrDefault(p => ReferenceEquals(p.Value, arrInstance)).Key ?? category });
+        using var instanceScope = _logger.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = target.Key });
         _logger.LogTrace("Import request: path={Path}; configuredMode={ConfiguredMode}; globalMode={GlobalMode}; type={Type}", contentPath, arrInstance.ImportMode, _config.Settings.ImportMode, arrInstance.Type);
 
         try
         {
             _logger.LogInformation("Routing import to {Type} handler", arrInstance.Type);
+            using var activity = ArrActivityTracking.Begin(_dbContext, _logger, target.Key, arrInstance, "import", hash);
             var result = arrInstance.Type.ToLower() switch
             {
                 "radarr" => await TriggerRadarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
@@ -114,57 +116,60 @@ public class ArrImportService : IArrImportService
         }
     }
 
-    public async Task<bool> IsImportedAsync(string hash, CancellationToken cancellationToken = default)
+    public async Task<bool> IsImportedAsync(string hash, string category, DateTimeOffset historySince,
+        CancellationToken cancellationToken = default)
     {
-        _logger.LogTrace("Checking if hash {Hash} has been imported", hash);
+        cancellationToken.ThrowIfCancellationRequested();
+        var section = CategoryOwnershipHelper.FindArrSectionForCategory(_config, category);
+        if (section == null || !_config.ArrInstances.TryGetValue(section, out var arr)) return false;
 
-        // Check all Arr instances to see if they have this download in their queue
-        var instancesChecked = 0;
-        var hadCheckErrors = false;
-        foreach (var arrInstance in _config.ArrInstances.Values)
+        try
         {
-            instancesChecked++;
-            _logger.LogInformation("Checking Arr instance {Name} ({Type}) for hash {Hash}",
-                arrInstance.Category, arrInstance.Type, hash);
-
-            try
+            var type = arr.Type.ToLowerInvariant();
+            var evidence = new Torrentarr.Infrastructure.Database.Models.ArrActivityOperation
             {
-                var hasInQueue = arrInstance.Type.ToLower() switch
-                {
-                    "radarr" => await CheckRadarrQueueAsync(arrInstance, hash, cancellationToken),
-                    "sonarr" => await CheckSonarrQueueAsync(arrInstance, hash, cancellationToken),
-                    "lidarr" => await CheckLidarrQueueAsync(arrInstance, hash, cancellationToken),
-                    "readarr" => await CheckReadarrQueueAsync(arrInstance, hash, cancellationToken),
-                    _ => false
-                };
-
-                await ObserveAsync("queue", arrInstance.Category, hash, true, cancellationToken);
-                if (hasInQueue)
-                {
-                    _logger.LogInformation("Hash {Hash} found in queue for {Instance}, not yet imported", hash, arrInstance.Category);
-                    return false; // Still in queue, not yet imported
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-            catch (Exception ex)
-            {
-                await ObserveAsync("queue", arrInstance.Category, hash, false, cancellationToken, DiagnosticText.Error(ex));
-                hadCheckErrors = true;
-                _logger.LogError(ex, "Error checking queue for instance {Category}", arrInstance.Category);
-            }
+                Type = type,
+                DownloadId = hash,
+                SubmittedAt = historySince.ToUnixTimeSeconds()
+            };
+            var eventType = type is "lidarr" or "readarr" ? 8 : 3;
+            var since = DateTimeOffset.FromUnixTimeSeconds(evidence.SubmittedAt);
+            var history = await ArrActivityCollector.ReadAsync(arr,
+                $"history/since?date={Uri.EscapeDataString(since.ToString("O"))}&eventType={eventType}", cancellationToken);
+            var imported = history.Any(item => ArrActivityCollector.PositiveImport(item, evidence))
+                && await IsImportQueueClearAsync(arr, type, hash, cancellationToken);
+            await ObserveAsync("history", category, hash, true, cancellationToken);
+            return imported;
         }
-
-        if (hadCheckErrors)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception ex)
         {
-            _logger.LogWarning(
-                "Could not confirm import status for hash {Hash} after checking {Count} Arr instance(s); treating as not yet imported",
-                hash, instancesChecked);
+            await ObserveAsync("history", category, hash, false, cancellationToken, DiagnosticText.Error(ex));
+            _logger.LogWarning("Could not verify Arr import history for {Category} and {Hash}", category, hash);
             return false;
         }
+    }
 
-        _logger.LogTrace("Checked {Count} Arr instances, hash {Hash} not in any queue", instancesChecked, hash);
-        // Not in any queue means it's been imported
-        return true;
+    private static async Task<bool> IsImportQueueClearAsync(ArrInstanceConfig arr, string type, string hash, CancellationToken ct)
+    {
+        bool Matches(string? downloadId) => string.Equals(downloadId, hash, StringComparison.OrdinalIgnoreCase);
+        switch (type)
+        {
+            case "radarr":
+                using (var client = new RadarrClient(arr.URI, arr.APIKey, arr.SkipTLSVerify))
+                    return !(await client.GetAllQueueAsync(ct)).Any(q => Matches(q.DownloadId));
+            case "sonarr":
+                using (var client = new SonarrClient(arr.URI, arr.APIKey, arr.SkipTLSVerify))
+                    return !(await client.GetAllQueueAsync(ct)).Any(q => Matches(q.DownloadId));
+            case "lidarr":
+                using (var client = new LidarrClient(arr.URI, arr.APIKey, arr.SkipTLSVerify))
+                    return !(await client.GetAllQueueAsync(ct)).Any(q => Matches(q.DownloadId));
+            case "readarr":
+                using (var client = new ReadarrClient(arr.URI, arr.APIKey, arr.SkipTLSVerify))
+                    return !(await client.GetAllQueueAsync(ct)).Any(q => Matches(q.DownloadId));
+            default:
+                return false;
+        }
     }
 
     private async Task<ImportResult> TriggerRadarrImportAsync(
@@ -295,58 +300,6 @@ public class ArrImportService : IArrImportService
         };
     }
 
-    private async Task<bool> CheckRadarrQueueAsync(
-        ArrInstanceConfig config,
-        string hash,
-        CancellationToken cancellationToken)
-    {
-        var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetAllQueueAsync(ct: cancellationToken);
-
-        return queue.Any(r =>
-            r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private async Task<bool> CheckSonarrQueueAsync(
-        ArrInstanceConfig config,
-        string hash,
-        CancellationToken cancellationToken)
-    {
-        var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetAllQueueAsync(ct: cancellationToken);
-
-        return queue.Any(r =>
-            r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private async Task<bool> CheckLidarrQueueAsync(
-        ArrInstanceConfig config,
-        string hash,
-        CancellationToken cancellationToken)
-    {
-        var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetAllQueueAsync(ct: cancellationToken);
-
-        return queue.Any(r =>
-            r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private async Task<bool> CheckReadarrQueueAsync(
-        ArrInstanceConfig config,
-        string hash,
-        CancellationToken cancellationToken)
-    {
-        var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-        var queue = await client.GetAllQueueAsync(ct: cancellationToken);
-
-        return queue.Any(r =>
-            r.DownloadId != null &&
-            r.DownloadId.Equals(hash, StringComparison.OrdinalIgnoreCase));
-    }
-
     public async Task MarkAsImportedAsync(string instanceId, string hash, IEnumerable<string> tags, CancellationToken cancellationToken = default)
     {
         var client = _qbitManager.GetClient(instanceId);
@@ -370,8 +323,9 @@ public class ArrImportService : IArrImportService
             ["TorrentHash"] = hash,
             ["TorrentCategory"] = category
         });
-        var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
-            i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        var target = _config.ArrInstances.FirstOrDefault(p =>
+            p.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        var arrInstance = target.Value;
 
         if (arrInstance == null || !arrInstance.Search.CustomFormatUnmetSearch)
         {
@@ -537,8 +491,9 @@ public class ArrImportService : IArrImportService
             ["TorrentHash"] = hash,
             ["TorrentCategory"] = category
         });
-        var arrInstance = _config.ArrInstances.Values.FirstOrDefault(i =>
-            i.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        var target = _config.ArrInstances.FirstOrDefault(p =>
+            p.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        var arrInstance = target.Value;
 
         if (arrInstance == null)
         {

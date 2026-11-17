@@ -5,6 +5,29 @@ namespace Torrentarr.Core.Configuration;
 
 public static class StorageConfigMigration
 {
+    public const string DownloadPathNotice = "could not translate the old completed folder to a client download path";
+    public const string EnvironmentDownloadPathNotice = "legacy environment download folder cannot be reverse-mapped";
+    private const string AmbiguousMonitorNotice = "legacy monitor ownership is ambiguous; the inherited path is disabled for review";
+    private const string MissingMonitorNotice = "no unambiguous local monitor path; free-space protection remains disabled until configured";
+
+    public static bool IsFreeSpaceNotice(string notice) => notice is AmbiguousMonitorNotice or MissingMonitorNotice;
+
+    public static string? KeepFreeSpaceProtectionOff(TorrentarrConfig candidate, string field,
+        IEnumerable<string> submittedArrayFields)
+    {
+        if (!submittedArrayFields.Contains(field, StringComparer.OrdinalIgnoreCase))
+            return "Submit the client's free-space monitor list to keep protection off.";
+
+        var clients = candidate.QBitInstances.Select(pair => (Field: $"{pair.Key}.FreeSpace", Client: (TorrentClientInstanceConfig)pair.Value))
+            .Concat(candidate.TorrentClients.Select(pair => (Field: $"TorrentClient.{pair.Key}.FreeSpace", Client: pair.Value)));
+        var client = clients.FirstOrDefault(pair => pair.Field.Equals(field, StringComparison.OrdinalIgnoreCase)).Client;
+        if (client?.FreeSpace == null || client.FreeSpace.Any(m => m.Enabled))
+            return "Keeping free-space protection off requires a client with no enabled free-space monitors.";
+
+        client.Migration?.Notices?.RemoveAll(IsFreeSpaceNotice);
+        return null;
+    }
+
     private static readonly string[] LegacyKeys = ["CompletedDownloadFolder", "FreeSpace", "FreeSpaceFolder", "AutoPauseResume", "FreeSpaceThresholdGB"];
     private static StringComparison Comparison => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
     public static bool Contains(string root, string path)
@@ -94,7 +117,7 @@ public static class StorageConfigMigration
             {
                 var download = Map(completed, client.Maintenance.PathMappings, reverse: true);
                 if (download != null) { table["DownloadPath"] = download; client.DownloadPath = download; }
-                else Warn(id, "could not translate the old completed folder to a client download path");
+                else Warn(id, table, DownloadPathNotice);
             }
             if (table.ContainsKey("FreeSpace")) continue;
             var path = LocalDownloadPath(client);
@@ -113,13 +136,14 @@ public static class StorageConfigMigration
             table["FreeSpace"] = validPath
                 ? new TomlTableArray { new TomlTable { ["Path"] = path!, ["Enabled"] = enabled, ["Limit"] = limit } }
                 : new TomlTableArray();
-            if (ambiguous && validPath) Warn(id, "legacy monitor ownership is ambiguous; the inherited path is disabled for review");
-            if (!validPath) Warn(id, "no unambiguous local monitor path; free-space protection remains disabled until configured");
+            if (ambiguous && validPath) Warn(id, table, AmbiguousMonitorNotice);
+            if (!validPath) Warn(id, table, MissingMonitorNotice);
         }
     }
 
-    public static void ApplyEnvironment(TomlTable root, TomlTable legacy, IEnumerable<string> overrides)
+    internal static string? ApplyEnvironment(TomlTable root, TomlTable legacy, IEnumerable<string> overrides)
     {
+        string? failedDownloadPathClient = null;
         var keys = overrides.ToHashSet();
         var clients = Clients(root).ToList();
         foreach (var (id, table) in clients)
@@ -129,7 +153,11 @@ public static class StorageConfigMigration
             {
                 var rootPath = Map(legacy["CompletedDownloadFolder"].ToString(), client.Maintenance.PathMappings, reverse: true);
                 if (rootPath != null) { table["DownloadPath"] = rootPath; client.DownloadPath = rootPath; }
-                else Warn(id, "legacy environment download folder cannot be reverse-mapped");
+                else
+                {
+                    failedDownloadPathClient = id;
+                    Console.Error.WriteLine($"Storage migration [{id}]: {EnvironmentDownloadPathNotice}.");
+                }
             }
             if (client.FreeSpace.Count == 0) table.Remove("FreeSpace");
             else
@@ -151,6 +179,7 @@ public static class StorageConfigMigration
             }
         }
         ConvertClients(root, legacy);
+        return failedDownloadPathClient;
     }
 
     public static string? Validate(TorrentClientInstanceConfig client)
@@ -168,5 +197,13 @@ public static class StorageConfigMigration
         return null;
     }
 
-    private static void Warn(string id, string message) => Console.Error.WriteLine($"Storage migration [{id}]: {message}.");
+    private static void Warn(string id, TomlTable client, string message)
+    {
+        if (!client.TryGetValue("Migration", out var value)) client["Migration"] = value = new TomlTable();
+        var migration = value as TomlTable ?? throw new InvalidDataException("Migration must be a table.");
+        if (!migration.TryGetValue("Notices", out var noticesValue)) migration["Notices"] = noticesValue = new TomlArray();
+        var notices = noticesValue as TomlArray ?? throw new InvalidDataException("Migration.Notices must be a list.");
+        if (!notices.Contains(message)) notices.Add(message);
+        Console.Error.WriteLine($"Storage migration [{id}]: {message}.");
+    }
 }

@@ -19,22 +19,8 @@ public static class TorrentPolicyHelper
     /// <summary>
     /// <c>Arr.global_sort_torrents_enabled()</c> — any merged tracker has <c>SortTorrents</c>.
     /// </summary>
-    public static bool GlobalSortTorrentsEnabled(TorrentarrConfig config)
-    {
-        foreach (var q in config.GetAllTorrentClients().Values)
-        {
-            if (q.Trackers.Any(t => t.SortTorrents))
-                return true;
-        }
-
-        foreach (var a in config.ArrInstances.Values)
-        {
-            if (a.Torrent.Trackers.Any(t => t.SortTorrents))
-                return true;
-        }
-
-        return false;
-    }
+    public static bool GlobalSortTorrentsEnabled(TorrentarrConfig config) =>
+        TrackerRules.All(config).Any(t => t.SortTorrents);
 
     public static bool EnableTrackerSort(TorrentarrConfig config) =>
         GlobalSortTorrentsEnabled(config) && !IsEffectiveQBitDisabled(config);
@@ -50,29 +36,22 @@ public static class TorrentPolicyHelper
     /// <summary>
     /// <c>Arr.merge_global_tracker_tag_to_priority_max()</c> — tag label → max Priority among merged tracker rows.
     /// </summary>
-    public static Dictionary<string, int> MergeGlobalTrackerTagToPriorityMax(TorrentarrConfig config)
+    public static Dictionary<string, int> MergeGlobalTrackerTagToPriorityMax(TorrentarrConfig config) =>
+        MergeTrackerTagPriorities(TrackerRules.All(config));
+
+    public static Dictionary<string, int> MergeTrackerTagPriorities(IEnumerable<TrackerConfig> rows)
     {
-        var dict = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        void Accumulate(IEnumerable<TrackerConfig> rows)
+        var priorities = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows)
         {
-            foreach (var row in rows)
+            foreach (var tag in row.AddTags)
             {
-                var pri = row.Priority;
-                foreach (var tag in row.AddTags)
-                {
-                    if (string.IsNullOrWhiteSpace(tag)) continue;
-                    var t = tag.Trim();
-                    dict[t] = Math.Max(dict.GetValueOrDefault(t, -100), pri);
-                }
+                if (string.IsNullOrWhiteSpace(tag)) continue;
+                var label = tag.Trim();
+                priorities[label] = Math.Max(priorities.GetValueOrDefault(label, -100), row.Priority);
             }
         }
-
-        foreach (var q in config.GetAllTorrentClients().Values)
-            Accumulate(q.Trackers);
-        foreach (var a in config.ArrInstances.Values)
-            Accumulate(a.Torrent.Trackers);
-
-        return dict;
+        return priorities;
     }
 
     /// <summary>

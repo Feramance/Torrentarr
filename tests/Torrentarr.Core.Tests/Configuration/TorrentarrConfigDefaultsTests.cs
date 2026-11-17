@@ -47,7 +47,7 @@ public class TorrentarrConfigDefaultsTests
         var config = new TorrentarrConfig();
 
         config.WebUI.Port.Should().Be(6969);
-        config.WebUI.Theme.Should().Be("Dark");
+        config.WebUI.Theme.Should().Be("System");
         config.WebUI.LiveArr.Should().BeTrue();
         config.WebUI.LocalAuthEnabled.Should().BeFalse();
         config.WebUI.AllowInsecureTokenQuery.Should().BeNull();
@@ -82,8 +82,8 @@ public class TorrentarrConfigDefaultsTests
         // Verify SeedingModeConfig has seeding limits but no HnR fields
         seedingMode.MaxUploadRatio.Should().Be(-1);
         seedingMode.MaxSeedingTime.Should().Be(-1);
-        seedingMode.RemoveTorrent.Should().Be(-1);
-        seedingMode.RemoveDeadTrackers.Should().BeFalse();
+        seedingMode.RemoveTorrent.Should().BeNull();
+        seedingMode.RemoveDeadTrackers.Should().BeNull();
     }
 
     [Fact]

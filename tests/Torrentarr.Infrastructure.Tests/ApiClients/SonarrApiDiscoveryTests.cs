@@ -6,6 +6,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database;
@@ -37,9 +38,13 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     private int _automaticSearches;
     private (bool Remove, bool Blocklist)? _deletion;
     private string? _queueJson;
+    private Func<int, string>? _queuePage;
     private int _seriesProfile = 1;
     private string _commandsJson = "[]";
+    private string _historyJson = "[]";
+    private string? _commandResponseJson;
     private bool _limitAfterFirstSearch;
+    private bool _invalidInventoryAfterTwoSearches;
     private readonly string _key = Guid.NewGuid().ToString();
 
     public SonarrApiDiscoveryTests()
@@ -58,6 +63,78 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
             catch (HttpListenerException ex) when (attempt < 9 && ex.ErrorCode is 98 or 183 or 10048) { }
         }
         _loop = Task.Run(ListenAsync);
+    }
+
+
+    [Theory]
+    [InlineData("radarr", "v3", "downloadFolderImported")]
+    [InlineData("sonarr", "v5", "downloadFolderImported")]
+    [InlineData("lidarr", "v1", "downloadImported")]
+    [InlineData("readarr", "v1", "downloadImported")]
+    public async Task ImportConfirmationRequiresCurrentHistoryAndCompleteQueue(string type, string version, string eventType)
+    {
+        _version = version;
+        var config = new TorrentarrConfig();
+        config.ArrInstances[type] = new() { Category = "media", Type = type, URI = _url, APIKey = _key };
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var service = new ArrImportService(NullLogger<ArrImportService>.Instance, config,
+            new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance), db);
+        var added = DateTimeOffset.Parse("2026-11-04T12:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
+        _historyJson = JsonConvert.SerializeObject(new[] { new { id = 99, downloadId = "HASH", eventType, date = added.AddSeconds(1) } });
+
+        _queuePage = page => page == 1
+            ? """{"page":1,"pageSize":1,"totalRecords":2,"records":[{"id":1,"downloadId":"OTHER"}]}"""
+            : """{"page":2,"pageSize":1,"totalRecords":2,"records":[{"id":2,"downloadId":"HASH"}]}""";
+        (await service.IsImportedAsync("hash", "media", added)).Should().BeFalse();
+        _requests.Should().Contain(request => request.Path.Contains("page=2"));
+
+        _queuePage = page => page == 1
+            ? """{"page":1,"pageSize":1,"totalRecords":2,"records":[{"id":1,"downloadId":"OTHER"}]}"""
+            : """{"page":2,"pageSize":1,"totalRecords":2,"records":[]}""";
+        (await service.IsImportedAsync("hash", "media", added)).Should().BeFalse();
+
+        _queuePage = _ => """{"page":1,"pageSize":1,"totalRecords":0,"records":[]}""";
+        (await service.IsImportedAsync("hash", "media", added)).Should().BeTrue();
+        (await service.IsImportedAsync("hash", "media", added.AddSeconds(2))).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("radarr", "v3")]
+    [InlineData("sonarr", "v3")]
+    [InlineData("sonarr", "v5")]
+    [InlineData("lidarr", "v1")]
+    [InlineData("readarr", "v1")]
+    public async Task ActivityEvidence_UsesClientApiAndPreservesBasePath(string type, string version)
+    {
+        _version = version;
+        _commandsJson = "[{\"id\":42,\"status\":\"completed\"}]";
+        _historyJson = "[{\"id\":99,\"downloadId\":\"HASH\",\"eventType\":\"downloadFolderImported\"}]";
+        IArrActivityClient client = type switch
+        {
+            "radarr" => new RadarrClient(_url, _key),
+            "sonarr" => new SonarrClient(_url, _key),
+            "lidarr" => new LidarrClient(_url, _key),
+            _ => new ReadarrClient(_url, _key)
+        };
+        (await client.ReadActivityAsync("command", default)).Single()["id"]!.Value<int>().Should().Be(42);
+        (await client.ReadActivityAsync("history/since?date=2026-11-04T12%3A00%3A00Z&eventType=3", default)).Single()["id"]!.Value<int>().Should().Be(99);
+        _requests.Should().Contain(r => r.Path.StartsWith($"/sonarr/api/{version}/history/since?") && r.Path.Contains("eventType=3"));
+    }
+
+    [Theory]
+    [InlineData("v3")]
+    [InlineData("v5")]
+    public async Task SearchTracking_CapturesRealAcceptedCommandWithoutChangingBooleanApi(string version)
+    {
+        _version = version; _commandResponseJson = "{\"id\":42}";
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite("Data Source=:memory:").Options);
+        await db.Database.OpenConnectionAsync(); await db.Database.EnsureCreatedAsync();
+        var config = new ArrInstanceConfig { Type = "sonarr", URI = _url, APIKey = _key };
+        using (ArrActivityTracking.Begin(db, NullLogger.Instance, "Sonarr-test", config, "search"))
+            (await new SonarrClient(_url, _key).SearchEpisodeAsync([1, 2])).Should().BeTrue();
+        var operation = await db.ArrActivityOperations.SingleAsync();
+        operation.CommandId.Should().Be(42); operation.Instance.Should().Be("Sonarr-test"); operation.ConfirmedAt.Should().BeNull();
     }
 
     [Theory]
@@ -355,6 +432,66 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
         _discoveryStatus = 200;
         _version = "v3";
         (await act()).ApiVersion.Should().Be("v3");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Discovery_RetriesTransientDnsOnRefresh(bool cancelDuringRetry)
+    {
+        var clock = new TestClock();
+        await SonarrApiDiscovery.ResolveAsync(_url, _key, false, clock);
+        clock.Now = clock.Now.AddMinutes(5);
+        _version = "v3";
+        using var stop = new CancellationTokenSource();
+        using var http = new HttpClient(new FailDiscoveryRead());
+        var refresh = SonarrApiDiscovery.ResolveAsync(_url, _key, false, clock, stop.Token, http);
+        if (cancelDuringRetry)
+        {
+            stop.Cancel();
+            await FluentActions.Awaiting(() => refresh).Should().ThrowAsync<OperationCanceledException>();
+            _requests.Count(r => r.Path == "/sonarr/api").Should().Be(1);
+        }
+        else
+        {
+            (await refresh).ApiVersion.Should().Be("v3");
+            _requests.Count(r => r.Path == "/sonarr/api").Should().Be(2);
+        }
+    }
+
+    [Fact]
+    public async Task FailedCapacityRead_PreservesTwoAcceptedSearchesAndResolvesOnlyCapacityOnRecovery()
+    {
+        _invalidInventoryAfterTwoSearches = true;
+        var config = new TorrentarrConfig();
+        var arr = new ArrInstanceConfig { Type = "sonarr", URI = _url, APIKey = _key, Category = "tv" };
+        arr.Search.SearchBySeries = "episode";
+        config.Settings.SearchLoopDelay = 1;
+        config.ArrInstances["Sonarr-test"] = arr;
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        db.Episodes.AddRange(Enumerable.Range(1, 3).Select(id => new EpisodeFilesModel
+        { ArrId = id, ArrInstance = "Sonarr-test", ArrSeriesId = 7, Monitored = true }));
+        await db.SaveChangesAsync();
+        var reporter = new Mock<IOperationalIssueReporter>();
+        var coordinator = new DatabaseRestartCoordinator();
+        var executor = new SearchExecutor(NullLogger<SearchExecutor>.Instance, config, db,
+            new QualityProfileSwitcherService(NullLogger<QualityProfileSwitcherService>.Instance, db, coordinator), coordinator, reporter.Object);
+        var candidates = Enumerable.Range(1, 3).Select(id => new SearchCandidate { ArrId = id, SeriesId = 7, Type = "Episode" }).ToArray();
+        var result = await executor.ExecuteSearchesAsync("Sonarr-test", candidates);
+
+        result.CapacityUnavailable.Should().BeTrue();
+        result.LoopCompleted.Should().BeFalse();
+        result.Errors.Should().BeEmpty();
+        result.SearchedIds.Should().Equal(1, 2);
+        _requests.Count(r => r.Method == "POST").Should().Be(2);
+        reporter.Verify(r => r.ReportAsync(It.Is<OperationalIssueReport>(i => i.Code == "search.capacity"), It.IsAny<CancellationToken>()), Times.Once);
+        reporter.Verify(r => r.ReportAsync(It.Is<OperationalIssueReport>(i => i.Code == "search.submission"), It.IsAny<CancellationToken>()), Times.Never);
+
+        reporter.Invocations.Clear();
+        _invalidInventoryAfterTwoSearches = false;
+        (await executor.ExecuteSearchesAsync("Sonarr-test", [candidates[2]])).SearchedIds.Should().Equal(3);
+        reporter.Verify(r => r.ResolveAsync(It.Is<OperationalIssueReport>(i => i.Code == "search.capacity"), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 
     [Theory]
@@ -869,6 +1006,8 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
             var json = relative == "" ? _discoveryJson ?? $"{{\"current\":\"{_version}\"}}"
                 : relative.EndsWith("/system/status") ? _statusJson ?? $"{{\"version\":\"{(_version == "v3" ? 4 : 5)}.0.0\"}}"
                 : relative.Contains("/queue?") ? _queueJson ?? "{\"records\":[{\"id\":1,\"episodeIds\":[1,2],\"seasonNumbers\":[1],\"sizeLeft\":100}]}"
+                : relative.Contains("/history/since?") ? _historyJson
+                : relative.EndsWith("/command") && ctx.Request.HttpMethod == "POST" && _commandResponseJson != null ? _commandResponseJson
                 : relative.Contains("/wanted/") ? "{\"records\":[]}"
                 : relative.Contains("/episode?") && ctx.Request.QueryString["seriesId"] == "7" ? "[{\"id\":1,\"seriesId\":7,\"seasonNumber\":1,\"monitored\":true,\"airDateUtc\":\"2020-01-01T00:00:00Z\"},{\"id\":2,\"seriesId\":7,\"seasonNumber\":1,\"monitored\":true,\"airDateUtc\":\"2020-01-01T00:00:00Z\"}]"
                 : relative.Contains("/episode?") ? "[{\"id\":1,\"episodeFile\":{\"id\":8}}]"
@@ -887,7 +1026,8 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
                     seasons = new[] { new { seasonNumber = 0, monitored = _specialsSeasonMonitored }, new { seasonNumber = 1, monitored = true }, new { seasonNumber = 2, monitored = true } }
                 }))
                 : relative.EndsWith("/command") && ctx.Request.HttpMethod == "GET"
-                    ? _limitAfterFirstSearch && _requests.Any(r => r.Method == "POST")
+                    ? _invalidInventoryAfterTwoSearches && _requests.Count(r => r.Method == "POST") >= 2 ? "{}"
+                    : _limitAfterFirstSearch && _requests.Any(r => r.Method == "POST")
                         ? """[{"name":"SeasonSearch","status":"started"}]""" : _commandsJson
                 : relative.Contains("/episodefile?") || relative.EndsWith("/qualityprofile") ? "[]" : "{}";
             if (relative.Contains("/queue?") && ctx.Request.QueryString["includeUnknownSeriesItems"] == "false")
@@ -896,7 +1036,9 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
                 queue["records"] = new JArray(((JArray)queue["records"]!).Where(r => r["seriesId"]?.Type == JTokenType.Integer));
                 json = queue.ToString(Formatting.None);
             }
-            if (relative.Contains("/queue?"))
+            if (relative.Contains("/queue?") && _queuePage != null)
+                json = _queuePage(int.Parse(ctx.Request.QueryString["page"] ?? "1"));
+            else if (relative.Contains("/queue?"))
             {
                 var queue = JObject.Parse(json);
                 queue["page"] = int.Parse(ctx.Request.QueryString["page"] ?? "1");
@@ -942,5 +1084,17 @@ public sealed class SonarrApiDiscoveryTests : IDisposable
     {
         internal DateTimeOffset Now = DateTimeOffset.UtcNow;
         public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    private sealed class FailDiscoveryRead() : DelegatingHandler(new HttpClientHandler())
+    {
+        private bool _failed;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (_failed) return base.SendAsync(request, cancellationToken);
+            _failed = true;
+            throw new HttpRequestException(HttpRequestError.NameResolutionError, "Transient DNS failure",
+                new SocketException((int)SocketError.TryAgain));
+        }
     }
 }

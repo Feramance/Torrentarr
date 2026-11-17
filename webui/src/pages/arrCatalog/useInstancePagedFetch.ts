@@ -1,3 +1,4 @@
+import { useStatisticsUpdates } from "../../hooks/useStatisticsUpdates";
 import {
   useCallback,
   useEffect,
@@ -125,6 +126,7 @@ export function useInstancePagedFetch<
   const { pagesRef, keyRef, wipePages } = useCatalogPageCache<TInstRow>();
   const emptyTracker = useCatalogEmptyStateTracker();
   const fetchGenRef = useRef(0);
+  const visibleFetchRef = useRef<number | null>(null);
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
   const selectionRef = useRef(selection);
@@ -178,7 +180,10 @@ export function useInstancePagedFetch<
     ) => {
       const showLoading = options.showLoading ?? true;
       const gen = ++fetchGenRef.current;
-      if (showLoading) setLoading(true);
+      if (showLoading) {
+        visibleFetchRef.current = gen;
+        setLoading(true);
+      }
       try {
         const currentFilters = filtersRef.current;
         const key = adapter.buildKey({
@@ -292,6 +297,7 @@ export function useInstancePagedFetch<
         // keeps the spinner forever when no successful response arrived.
         setEmptyStateReady(true);
       } finally {
+        if (visibleFetchRef.current === gen) visibleFetchRef.current = null;
         // Always clear when this is the latest generation. A background poll
         // (`showLoading: false`) that supersedes an in-flight visible fetch must
         // still clear the spinner — otherwise loading sticks forever.
@@ -351,6 +357,18 @@ export function useInstancePagedFetch<
       void fetchInstanceRef.current(selection!, 0, term, { showLoading: true });
     },
   );
+
+  useStatisticsUpdates(active && !!selection, () => {
+    if (selection && visibleFetchRef.current === null)
+      return fetchInstanceRef.current(
+        selection,
+        page,
+        globalSearchRef.current,
+        {
+          showLoading: false,
+        },
+      );
+  });
 
   // Background polling.
   useInterval(

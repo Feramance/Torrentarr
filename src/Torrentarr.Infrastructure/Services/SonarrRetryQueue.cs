@@ -48,12 +48,12 @@ public static class SonarrRetryQueue
         return !await db.SonarrSearchRetries.AnyAsync(r => r.ArrInstance == instance && r.DownloadId == hash, ct);
     }
 
-    public static async Task ExecuteAsync(TorrentarrDbContext db, ISearchExecutor executor,
+    public static Task<bool> ExecuteAsync(TorrentarrDbContext db, ISearchExecutor executor,
         string instanceName, ILogger logger, CancellationToken ct, ArrInstanceConfig? config = null,
         IOperationalIssueReporter? issues = null)
-        => await ExecuteAsync(db, executor, instanceName, logger, ct, config, issues, null);
+        => ExecuteAsync(db, executor, instanceName, logger, ct, config, issues, null);
 
-    public static async Task ExecuteAsync(TorrentarrDbContext db, ISearchExecutor executor,
+    public static async Task<bool> ExecuteAsync(TorrentarrDbContext db, ISearchExecutor executor,
         string instanceName, ILogger logger, CancellationToken ct, ArrInstanceConfig? config,
         IOperationalIssueReporter? issues, DateTimeOffset? deadline)
     {
@@ -74,6 +74,7 @@ public static class SonarrRetryQueue
                 string? failure = null;
                 var completed = false;
                 var stop = false;
+                var capacityUnavailable = false;
                 var phase = retry.BlocklistPending ? "blocklist" : "search";
                 logger.LogTrace("Replacement retry starting: phase={Phase}; consecutiveFailures={Failures}; blocklistPending={BlocklistPending}", phase, retry.ConsecutiveFailures, retry.BlocklistPending);
                 try
@@ -97,6 +98,7 @@ public static class SonarrRetryQueue
                             .Where(c => !result.SearchedIds.Contains(c.ArrId)));
                     await db.SaveChangesAsync(ct);
                     completed = result.LoopCompleted;
+                    capacityUnavailable = result.CapacityUnavailable;
                     logger.LogDebug("Replacement retry result: commandsAccepted={Accepted}; itemsSearched={Items}; completed={Completed}; budgetExhausted={BudgetExhausted}; onlyRetryResolutionFailed={ResolutionOnly}",
                         result.SearchesTriggered, result.ItemsSearched, completed, result.BudgetExhausted, result.OnlyRetryResolutionFailed);
                     if (!completed && result.Errors.Count > 0) failure = string.Join("; ", result.Errors);
@@ -126,8 +128,10 @@ public static class SonarrRetryQueue
                     }
                 }
                 // Capacity limits retain work without creating an operational issue.
+                if (capacityUnavailable) return true;
                 if (stop) break;
             }
+            return false;
         }
         finally { gate.Release(); }
     }

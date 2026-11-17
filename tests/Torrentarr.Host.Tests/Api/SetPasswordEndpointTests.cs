@@ -46,6 +46,40 @@ public class SetPasswordEndpointTests : IClassFixture<TorrentarrWebApplicationFa
     }
 
     [Fact]
+    public async Task PostSetPassword_RejectsUrlAndMalformedHeaderAndAcceptsBearer()
+    {
+        using var factory = new LocalAuthNoPasswordWebApplicationFactory();
+        factory.SetConfigEnv();
+        using var client = factory.CreateClientWithoutApiToken();
+        await AssertBootstrapCredentialSources(client, "test-api-token");
+    }
+
+    internal static async Task AssertBootstrapCredentialSources(HttpClient client, string token)
+    {
+        const string path = "/web/auth/set-password";
+        var credentials = new { username = "fixture", password = "fixture-password" };
+        using var urlOnly = await client.PostAsJsonAsync($"{path}?token={Uri.EscapeDataString(token)}", credentials);
+        urlOnly.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using var malformed = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(credentials) };
+        malformed.Headers.TryAddWithoutValidation("Authorization", token);
+        using var invalidHeader = await client.SendAsync(malformed);
+        invalidHeader.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using var bearer = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(credentials) };
+        bearer.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var accepted = await client.SendAsync(bearer);
+        accepted.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var reset = await client.PostAsJsonAsync(path, new { username = "fixture", password = "replacement-password", setupToken = token });
+        reset.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var login = await client.PostAsJsonAsync("/web/login", credentials);
+        login.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var sessionReset = await client.PostAsJsonAsync(path, new { username = "fixture", password = "replacement-password" });
+        sessionReset.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task PostSetPassword_WhenNoPasswordSet_ThenLoginWithNewPassword_Succeeds()
     {
         _factory.SetConfigEnv();

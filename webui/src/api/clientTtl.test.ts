@@ -137,6 +137,14 @@ describe("api client GET TTL cache", () => {
     );
     sessionStorage.clear();
   });
+  it("serializes Sonarr's missing filter as an integer", async () => {
+    const fetchMock = mockFetch([{}]);
+    const { getSonarrSeries } = await loadClient();
+    await getSonarrSeries("Sonarr", 0, 20, "", { missingOnly: true });
+    const url = new URL(fetchMock.mock.calls[0][0], "http://localhost");
+    expect(url.searchParams.get("missing")).toBe("1");
+  });
+
   it("serializes Readarr's missing filter as a boolean", async () => {
     const fetchMock = mockFetch([{ authors: [] }]);
     const { getReadarrAuthors } = await loadClient();

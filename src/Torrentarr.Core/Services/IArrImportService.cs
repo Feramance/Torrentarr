@@ -9,7 +9,7 @@ public interface IArrImportService
         string category,
         CancellationToken cancellationToken = default);
 
-    Task<bool> IsImportedAsync(string hash, CancellationToken cancellationToken = default);
+    Task<bool> IsImportedAsync(string hash, string category, DateTimeOffset historySince, CancellationToken cancellationToken = default);
 
     Task MarkAsImportedAsync(string instanceId, string hash, IEnumerable<string> tags, CancellationToken cancellationToken = default);
 

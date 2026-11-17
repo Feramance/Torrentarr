@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import {
   getArrTorrentHandlingSummary,
   getQbitTorrentHandlingSummary,
+  getTrackerSummary,
 } from "../../config/torrentHandlingSummary";
 it("describes completion fractions as percentages", () => {
   const summary = getArrTorrentHandlingSummary({
@@ -16,8 +17,13 @@ it("explains mandatory completion-based protection without claiming legacy-off c
     CategorySeeding: { HitAndRunMode: "disabled" },
     Trackers: [{ Name: "OnlyEncodes", Protection: { Policy: "onlyencodes" } }],
   });
-  expect(summary).toContain("48 mandatory completed seed hours");
-  expect(summary).toContain("Ratio never replaces mandatory time");
+  const tracker = getTrackerSummary({
+    Name: "OnlyEncodes",
+    Protection: { Policy: "onlyencodes" },
+  });
+  expect(tracker).toContain("48 mandatory completed seed hours");
+  expect(tracker).toContain("Ratio never replaces mandatory time");
+  expect(summary).not.toContain("OnlyEncodes");
   expect(summary).toContain("unknown private obligations are preserved");
   expect(summary).not.toContain("may be removed as soon as");
 });
@@ -33,4 +39,16 @@ it("describes legacy tracker-message deletion as disabled", () => {
   });
   expect(summary).toContain("Tracker messages cannot directly delete torrents");
   expect(summary).not.toContain("can trigger removal");
+});
+
+it("describes observation confirmation of legacy OR clearance", () => {
+  const summary = getTrackerSummary({
+    HitAndRunMode: "or",
+    MinSeedRatio: 1,
+    MinSeedingTimeDays: 8,
+    Protection: { RequireLegacyClearance: true, MinimumSeedHours: 192 },
+  });
+  expect(summary).toContain("ratio 1 or 8 days of seeding");
+  expect(summary).toContain("60 minutes of accounting grace");
+  expect(summary).not.toContain("mandatory completed seed hours");
 });

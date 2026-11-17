@@ -20,6 +20,38 @@ public class ProcessesEndpointTests : IClassFixture<TorrentarrWebApplicationFact
     [Theory]
     [InlineData("/web/processes")]
     [InlineData("/api/processes")]
+    public async Task ActivityMetrics_AreNumeric_AndZeroIsDifferentFromMissing(string endpoint)
+    {
+        var states = _factory.Services.GetRequiredService<ProcessStateManager>();
+        states.Initialize("metric-test", new ArrProcessState { Name = "metric-test", Kind = "search", SearchesTriggered = 0, ItemsSearched = 12 });
+        using var client = _factory.CreateClientWithApiToken();
+        using var response = await client.GetAsync(endpoint);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = json.RootElement.GetProperty("processes").EnumerateArray().Single(p => p.GetProperty("name").GetString() == "metric-test");
+        item.GetProperty("searchesTriggered").GetInt32().Should().Be(0);
+        item.GetProperty("itemsSearched").GetInt32().Should().Be(12);
+        item.GetProperty("downloadingCount").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task StatisticsStream_SendsInitialRevision_AndSubsequentInvalidation()
+    {
+        using var client = _factory.CreateClientWithApiToken();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var response = await client.GetAsync("/web/stats/events", HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        response.EnsureSuccessStatusCode();
+        response.Content.Headers.ContentType!.MediaType.Should().Be("text/event-stream");
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(timeout.Token));
+        (await reader.ReadLineAsync(timeout.Token)).Should().StartWith("data: ");
+        await reader.ReadLineAsync(timeout.Token);
+        using (Torrentarr.Core.Configuration.ConfigMutationGuard.EnterMutation(_factory.TempConfigPath))
+            _factory.Services.GetRequiredService<StatisticsEvents>().Publish();
+        (await reader.ReadLineAsync(timeout.Token)).Should().StartWith("data: ");
+    }
+
+    [Theory]
+    [InlineData("/web/processes")]
+    [InlineData("/api/processes")]
     public async Task GetProcesses_ReturnsOtherSectionEntries_WhenStatePrePopulated(string endpoint)
     {
         using var scope = _factory.Services.CreateScope();

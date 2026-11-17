@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Torrentarr.Core.Configuration;
@@ -36,6 +37,95 @@ public class ClientScanSchedulingTests
     }
 
     [Fact]
+    public async Task ProtectionInspectionStartsAnotherClientWhileFirstInventoryIsBlocked()
+    {
+        var fast = Client();
+        var slow = Client();
+        var third = Client();
+        var thirdObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var blocked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var observed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        fast.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns(async (string? _, string? _, CancellationToken ct) =>
+            {
+                blocked.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return new List<TorrentInfo>();
+            });
+        slow.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Returns(async (string? _, string? _, CancellationToken ct) =>
+            {
+                observed.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return new List<TorrentInfo>();
+            });
+        third.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .Callback(() => thirdObserved.TrySetResult()).ReturnsAsync([]);
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetClient("fast")).Returns(fast.Object);
+        registry.Setup(r => r.GetClient("slow")).Returns(slow.Object);
+        registry.Setup(r => r.GetClient("third")).Returns(third.Object);
+        var config = Configuration();
+        config.TorrentClients["third"] = new() { Host = "fixture" };
+        using var provider = new ServiceCollection()
+            .AddScoped(_ => Database())
+            .AddSingleton(Mock.Of<ISeedingService>())
+            .BuildServiceProvider();
+        using var service = new TorrentAutomationService(config, registry.Object,
+            provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
+
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var inspection = service.InspectProtectionAsync(cancellation.Token);
+        try
+        {
+            await Task.WhenAll(blocked.Task, observed.Task, thirdObserved.Task).WaitAsync(cancellation.Token);
+            inspection.IsCompleted.Should().BeFalse();
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            await FluentActions.Awaiting(() => inspection).Should().ThrowAsync<OperationCanceledException>();
+        }
+    }
+
+    [Fact]
+    public async Task ProtectionInspectionLimitsConcurrentTrackerFetchesPerClient()
+    {
+        var client = Client();
+        client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Range(0, 6).Select(i => new TorrentInfo { Hash = $"hash-{i}", IsPrivate = false }).ToList());
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var threeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exceededLimit = new TaskCompletionSource();
+        var inFlight = 0;
+        client.Setup(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(async (string _, CancellationToken ct) =>
+            {
+                var active = Interlocked.Increment(ref inFlight);
+                if (active == 3) threeStarted.TrySetResult();
+                if (active > 3) exceededLimit.TrySetResult();
+                try { await release.Task.WaitAsync(ct); }
+                finally { Interlocked.Decrement(ref inFlight); }
+                return new List<TorrentTracker>();
+            });
+        var registry = new Mock<ITorrentClientRegistry>();
+        registry.Setup(r => r.GetClient("fast")).Returns(client.Object);
+        using var provider = new ServiceCollection().AddScoped(_ => Database()).AddSingleton(Mock.Of<ISeedingService>()).BuildServiceProvider();
+        using var service = new TorrentAutomationService(Configuration(), registry.Object,
+            provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var inspection = service.InspectProtectionAsync(cancellation.Token);
+        try { await threeStarted.Task.WaitAsync(cancellation.Token); }
+        finally
+        {
+            release.TrySetResult();
+            await inspection;
+        }
+        exceededLimit.Task.IsCompleted.Should().BeFalse();
+        client.Verify(c => c.GetTorrentTrackersAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(6));
+    }
+
+    [Fact]
     public async Task ProtectionInspections_FollowClientIntervalsAndKeepFailureBackoff()
     {
         var fast = Client(); var slow = Client();
@@ -43,8 +133,7 @@ public class ClientScanSchedulingTests
         registry.Setup(r => r.GetClient("fast")).Returns(fast.Object);
         registry.Setup(r => r.GetClient("slow")).Returns(slow.Object);
         var config = Configuration();
-        using var db = Database();
-        using var provider = new ServiceCollection().AddSingleton(db).AddSingleton(Mock.Of<ISeedingService>()).BuildServiceProvider();
+        using var provider = new ServiceCollection().AddScoped(_ => Database()).AddSingleton(Mock.Of<ISeedingService>()).BuildServiceProvider();
         var clock = new ScanClock();
         using var service = new TorrentAutomationService(config, registry.Object,
             provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<TorrentAutomationService>.Instance)
@@ -92,9 +181,11 @@ public class ClientScanSchedulingTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CategoryLoops_ProcessOnlyDueClientsAndStopCleanly(bool qbitOnly)
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task CategoryLoops_ProcessOnlyDueClientsAndStopCleanly(bool qbitOnly, bool failFirst)
     {
         var clock = new ScanClock();
         var config = Configuration();
@@ -105,6 +196,7 @@ public class ClientScanSchedulingTests
             .Returns((string _, IReadOnlySet<string>? ids, CancellationToken ct) =>
             {
                 seen.Add(ids!.ToHashSet());
+                if (failFirst && seen.Count == 1) throw new TorrentProcessingUnavailableException("client offline");
                 if (clock.Now >= DateTimeOffset.UnixEpoch.AddSeconds(120)) stop.Cancel();
                 return Task.CompletedTask;
             });
@@ -125,11 +217,12 @@ public class ClientScanSchedulingTests
             .AddSingleton(new QBitCategoryEnsureService(NullLogger<QBitCategoryEnsureService>.Instance, config, registry.Object)).BuildServiceProvider();
         var scopes = provider.GetRequiredService<IServiceScopeFactory>();
         var states = new ProcessStateManager();
+        var logger = new Mock<ILogger<QBitCategoryWorkerManager>>();
         Task running;
         const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
         if (qbitOnly)
         {
-            using var manager = new QBitCategoryWorkerManager(NullLogger<QBitCategoryWorkerManager>.Instance,
+            using var manager = new QBitCategoryWorkerManager(logger.Object,
                 config, scopes, states, connectivity.Object, reloader.Object)
             { Clock = clock };
             running = (Task)typeof(QBitCategoryWorkerManager).GetMethod("RunCategoryLoopAsync", flags)!
@@ -150,6 +243,12 @@ public class ClientScanSchedulingTests
         seen.Should().HaveCount(25);
         seen.Count(ids => ids.Contains("slow")).Should().Be(2);
         seen.Should().OnlyContain(ids => ids.Contains("fast"));
+        if (failFirst && !qbitOnly)
+            seen[1].Should().Equal(new[] { "fast" }, "a client outage must not force a full rescan");
+        if (failFirst && qbitOnly)
+            logger.Invocations.Where(i => i.Method.Name == "Log")
+                .Should().Contain(i => (LogLevel)i.Arguments[0]! == LogLevel.Information)
+                .And.NotContain(i => (LogLevel)i.Arguments[0]! == LogLevel.Error);
     }
 
     private static Mock<ITorrentClient> Client()

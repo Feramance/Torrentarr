@@ -1,6 +1,6 @@
 import { QbitInstanceModal } from "../../pages/config/configModals";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FieldGroup } from "../../pages/config/configFieldComponents";
@@ -15,7 +15,7 @@ const field: FieldDefinition = {
   label: "Operation schedule",
   type: "text",
 };
-function Editor({ initial = "*/5 * * * *", defaultOpen = false }) {
+function Editor({ initial = "*/5 * * * *" }) {
   const [schedule, setSchedule] = useState(initial);
   return (
     <FieldGroup
@@ -23,7 +23,6 @@ function Editor({ initial = "*/5 * * * *", defaultOpen = false }) {
       fields={[field]}
       basePath={[]}
       sectionKey="qBit"
-      defaultOpen={defaultOpen}
       state={{
         Maintenance: { Operations: { ErrorRecovery: { Schedule: schedule } } },
       }}
@@ -42,40 +41,25 @@ function Editor({ initial = "*/5 * * * *", defaultOpen = false }) {
   );
 }
 
-describe("configuration section disclosure", () => {
-  it("keeps an error-opened operation policy open after correcting its cron", async () => {
-    render(<Editor initial="invalid" />);
-    const details = screen.getByText("Operation policies").closest("details")!;
-    expect(details.open).toBe(true);
-    const input = screen.getByLabelText("Operation schedule");
-    input.focus();
-    fireEvent.change(input, { target: { value: "*/15 * * * *" } });
-    expect(details.open).toBe(true);
-    expect(input).toHaveFocus();
-    expect(input).toHaveValue("*/15 * * * *");
-    await userEvent.type(input, " ");
-    expect(details.open).toBe(true);
-  });
-  it("preserves manual expansion across repeated schedule edits", async () => {
-    render(<Editor />);
-    const summary = screen.getByText("Operation policies");
-    const details = summary.closest("details")!;
-    expect(details.open).toBe(false);
-    await userEvent.click(summary);
-    const input = screen.getByLabelText("Operation schedule");
-    await userEvent.clear(input);
-    await userEvent.type(input, "0 */2 * * *");
-    expect(details.open).toBe(true);
-    expect(input).toHaveFocus();
-    expect(input).toHaveValue("0 */2 * * *");
-  });
+it("keeps the operation schedule visible and focused after correcting validation", () => {
+  render(<Editor initial="invalid" />);
+  expect(
+    screen.getByRole("heading", { name: "Operation policies" }),
+  ).toBeVisible();
+  const input = screen.getByLabelText("Operation schedule");
+  expect(input).toBeVisible();
+  input.focus();
+  fireEvent.change(input, { target: { value: "*/15 * * * *" } });
+  expect(input).toBeVisible();
+  expect(input).toHaveFocus();
+  expect(input).toHaveValue("*/15 * * * *");
 });
 
 vi.mock("../../context/ToastContext", () => ({
   useToast: () => ({ push: vi.fn() }),
 }));
 
-it("keeps maintenance forms out of the client dialog and links saved clients to Manage", () => {
+it("keeps maintenance forms out of the client dialog and links saved clients to Shared Settings", () => {
   render(
     <QbitInstanceModal
       keyName="qBit"
@@ -89,10 +73,12 @@ it("keeps maintenance forms out of the client dialog and links saved clients to 
       overlapWarnings={[]}
     />,
   );
-  expect(screen.getByRole("button", { name: "Open Manage" })).toBeEnabled();
+  expect(
+    screen.getByRole("button", { name: "Open Shared Settings" }),
+  ).toBeEnabled();
   expect(screen.queryByText("Torrent automation")).not.toBeInTheDocument();
   expect(
-    screen.queryByText("Storage", { selector: "summary" }),
+    screen.queryByText("Storage", { selector: "h3" }),
   ).not.toBeInTheDocument();
 });
 

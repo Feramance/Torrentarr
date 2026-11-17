@@ -64,9 +64,10 @@ public sealed class MaintenanceCompatibilityTests : IDisposable
         client.Maintenance.CategoryTransitions.Should().ContainSingle();
         client.Maintenance.TrackerAssignments.Should().ContainSingle();
         loader.SaveConfig(config);
-        var reopened = loader.Load().GetTorrentClient(id)!;
+        var reloaded = loader.Load();
+        var reopened = reloaded.GetTorrentClient(id)!;
         reopened.Maintenance.Should().BeEquivalentTo(client.Maintenance);
-        reopened.Trackers.Single().Protection.Should().BeEquivalentTo(client.Trackers.Single().Protection);
+        reloaded.Trackers.Single().Protection.Should().BeEquivalentTo(config.Trackers.Single().Protection);
         reopened.Password.Should().Be("retained-secret");
         File.ReadAllText(ConfigPath).Should().Contain(".Maintenance");
     }
@@ -95,7 +96,7 @@ public sealed class MaintenanceCompatibilityTests : IDisposable
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var config = loader.Load();
-            config.Settings.ConfigVersion.Should().Be("6.20.3");
+            config.Settings.ConfigVersion.Should().Be(ConfigurationLoader.ExpectedConfigVersion);
             var client = config.GetTorrentClient(id)!;
             var policy = client.Maintenance.Operations["PrivateTagging"];
             policy.ExecutionMode.Should().Be("manual");

@@ -1,3 +1,11 @@
+import {
+  configSections,
+  maintenanceSections,
+  type ConfigSection,
+  type MaintenanceSection,
+} from "./config/settingsSections";
+import { STATISTICS_UPDATED } from "./hooks/useStatisticsUpdates";
+import { useStatisticsStream } from "./hooks/useStatisticsStream";
 import React, {
   useCallback,
   useEffect,
@@ -23,8 +31,10 @@ import {
 } from "./api/client";
 import { webPath } from "./api/urlBase";
 import type { ArrInfo, MetaResponse } from "./api/types";
+import { arrTypeLabel } from "./config/arrSections";
+import { THEME_OPTIONS } from "./utils/theme";
 import { IconImage } from "./components/IconImage";
-import ExternalIcon from "./icons/github.svg";
+import GitHubIcon from "./icons/github.svg";
 import RefreshIcon from "./icons/refresh-arrow.svg";
 import UpdateIcon from "./icons/up-arrow.svg";
 import ProcessesIcon from "./icons/process.svg";
@@ -37,6 +47,7 @@ import ReadarrIcon from "./icons/readarr.svg";
 import QbitIcon from "./icons/qbittorrent.svg";
 import ConfigIcon from "./icons/gear.svg";
 import logoUrl from "./icons/logov2-clean.svg";
+import { ShellDialog } from "./components/ShellDialog";
 import { safeClick } from "./utils/safeClick";
 import {
   NAVIGATE_TAB_EVENT,
@@ -130,6 +141,24 @@ function AppShell({
   onSignOut: () => void;
   initialMeta?: MetaResponse | null;
 }): JSX.Element {
+  useStatisticsStream();
+  const [navInstances, setNavInstances] = useState<
+    Partial<Record<Tab, string[]>>
+  >({});
+  const [instanceSelections, setInstanceSelections] = useState<
+    Partial<Record<Tab, string>>
+  >({});
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const [displayTrigger, setDisplayTrigger] =
+    useState<HTMLButtonElement | null>(null);
+  const [navCollapsed, setNavCollapsed] = useState(false);
+  const [railSelectionPending, setRailSelectionPending] = useState(false);
+  const [expandedNav, setExpandedNav] = useState<Partial<Record<Tab, boolean>>>(
+    {},
+  );
+  const selectInstance = useCallback((tab: Tab, instance: string) => {
+    setInstanceSelections((previous) => ({ ...previous, [tab]: instance }));
+  }, []);
   const [issueSelection, setIssueSelection] = useState<{
     instance: string;
     category: "automation" | "system";
@@ -157,16 +186,19 @@ function AppShell({
       if (!document.hidden) void refresh();
     };
     document.addEventListener("visibilitychange", visible);
+    window.addEventListener(STATISTICS_UPDATED, visible);
     return () => {
       mounted = false;
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", visible);
+      window.removeEventListener(STATISTICS_UPDATED, visible);
     };
   }, []);
   const [activeTab, setActiveTab] = useState<Tab>("processes");
   const tabScroll = useRef<Partial<Record<Tab, number>>>({});
   useLayoutEffect(() => {
-    window.scrollTo(0, tabScroll.current[activeTab] ?? 0);
+    const settingsPage = activeTab === "config" || activeTab === "maintenance";
+    window.scrollTo(0, settingsPage ? 0 : tabScroll.current[activeTab] ?? 0);
   }, [activeTab]);
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<Tab>>(
     () => new Set<Tab>(["processes"]),
@@ -184,9 +216,18 @@ function AppShell({
     readarr: false,
     qbittorrent: false,
   });
+  const [configSection, setConfigSection] = useState<ConfigSection>("general");
+  const [maintenanceSection, setMaintenanceSection] =
+    useState<MaintenanceSection>("Shared Settings");
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const focusSettingsHeading = useRef(false);
   const [manageDirty, setManageDirty] = useState(false);
   const [manageKey, setManageKey] = useState(0);
-  const [manageClientId, setManageClientId] = useState<string>();
+  const [configDestination, setConfigDestination] =
+    useState<NavigateTabDetail["configDestination"]>();
+  const [manageClientRequest, setManageClientRequest] = useState<{
+    id: string;
+  }>();
   const [configDirty, setConfigDirty] = useState(false);
   const [configKey, setConfigKey] = useState(0);
   const { push } = useToast();
@@ -204,37 +245,37 @@ function AppShell({
   }, []);
 
   const switchTab = useCallback(
-    (tabId: Tab, preserveConfigDraft = false) => {
-      if (
-        activeTab === "maintenance" &&
-        tabId !== "maintenance" &&
-        manageDirty
-      ) {
-        if (
-          !window.confirm(
-            "You have unsaved Manage settings. Discard them and leave?",
-          )
-        )
+    (tabId: Tab) => {
+      const inSettings = activeTab === "config" || activeTab === "maintenance";
+      const opensSettings = tabId === "config" || tabId === "maintenance";
+      if (inSettings && !opensSettings && (configDirty || manageDirty)) {
+        if (!window.confirm("You have unsaved settings. Leave without saving?"))
           return;
-        setManageKey((key) => key + 1);
-        setManageDirty(false);
+        startTransition(() => {
+          if (configDirty) {
+            setConfigKey((key) => key + 1);
+            setConfigDirty(false);
+            setConfigDestination(undefined);
+          }
+          if (manageDirty) {
+            setManageKey((key) => key + 1);
+            setManageDirty(false);
+            setManageClientRequest(undefined);
+          }
+        });
       }
-      if (
-        activeTab === "config" &&
-        tabId !== "config" &&
-        configDirty &&
-        !preserveConfigDraft
-      ) {
-        const shouldLeave = window.confirm(
-          "You have unsaved configuration changes. Leave without saving?",
-        );
-        if (!shouldLeave) {
-          return;
-        }
-        // Remount Config so discarded drafts match previous leave-without-saving semantics.
-        setConfigKey((prev) => prev + 1);
-        setConfigDirty(false);
+      if (opensSettings && navigationOpen) focusSettingsHeading.current = true;
+      if (railSelectionPending) {
+        setRailSelectionPending(false);
+        setNavCollapsed(!opensSettings);
+      } else if (opensSettings) {
+        setNavCollapsed(false);
       }
+      setExpandedNav((current) =>
+        opensSettings ? { [tabId]: true } : current[tabId] ? current : {},
+      );
+      setNavigationOpen(false);
+      setDisplayTrigger(null);
       tabScroll.current[activeTab] = window.scrollY;
       startTransition(() => {
         setActiveTab(tabId);
@@ -242,14 +283,21 @@ function AppShell({
       });
       setSearchValue("");
     },
-    [activeTab, configDirty, manageDirty, markTabVisited, setSearchValue],
+    [
+      activeTab,
+      configDirty,
+      manageDirty,
+      navigationOpen,
+      markTabVisited,
+      railSelectionPending,
+      setSearchValue,
+    ],
   );
   const { viewDensity, setViewDensity, theme, setTheme, liveArr, setLiveArr } =
     useWebUI();
   const isOnline = useNetworkStatus();
   const [meta, setMeta] = useState<MetaResponse | null>(initialMeta);
   const [metaLoading, setMetaLoading] = useState(false);
-  const [showHelpMenu, setShowHelpMenu] = useState(false);
   const [showChangelog, setShowChangelog] = useState(false);
   const [showAlreadyUpToDateModal, setShowAlreadyUpToDateModal] =
     useState(false);
@@ -276,6 +324,32 @@ function AppShell({
     const timer = window.setTimeout(run, 2000);
     return () => window.clearTimeout(timer);
   }, []);
+
+  const openConfigSection = (section: ConfigSection) => {
+    if (activeTab === "config" && section !== configSection)
+      window.scrollTo(0, 0);
+    setConfigSection(section);
+    setConfigDestination(undefined);
+    switchTab("config");
+  };
+  const openMaintenanceSection = (section: MaintenanceSection) => {
+    if (activeTab === "maintenance" && section !== maintenanceSection)
+      window.scrollTo(0, 0);
+    setMaintenanceSection(section);
+    switchTab("maintenance");
+  };
+
+  useEffect(() => {
+    if (
+      !navigationOpen &&
+      (activeTab === "config" || activeTab === "maintenance") &&
+      focusSettingsHeading.current
+    ) {
+      focusSettingsHeading.current = false;
+      if (!document.activeElement?.closest(".config-workspace__editor"))
+        headingRef.current?.focus({ preventScroll: true });
+    }
+  }, [activeTab, navigationOpen, configSection, maintenanceSection]);
 
   // Theme is now managed by WebUIContext and applied automatically
 
@@ -396,9 +470,8 @@ function AppShell({
         return;
       }
 
-      // ESC - Clear search / close help menu
+      // ESC - Clear search
       if (event.key === "Escape") {
-        setShowHelpMenu(false);
         setSearchValue("");
         return;
       }
@@ -416,10 +489,16 @@ function AppShell({
           ...(configuredTabs.lidarr ? (["lidarr"] as Tab[]) : []),
           ...(configuredTabs.readarr ? (["readarr"] as Tab[]) : []),
           ...(configuredTabs.qbittorrent ? (["qbittorrent"] as Tab[]) : []),
-          "maintenance",
           "config",
+          "maintenance",
         ];
         if (tabIndex < tabIds.length) {
+          if (tabIds[tabIndex] === "config") {
+            setConfigSection("general");
+            setConfigDestination(undefined);
+          }
+          if (tabIds[tabIndex] === "maintenance")
+            setMaintenanceSection("Shared Settings");
           switchTab(tabIds[tabIndex]);
         }
         return;
@@ -449,8 +528,25 @@ function AppShell({
           instance: detail.issueInstance ?? "",
           category: detail.issueCategory ?? "automation",
         });
-      if (detail.manageClientId) setManageClientId(detail.manageClientId);
-      switchTab(tab as Tab, detail.preserveConfigDraft);
+      if (tab === "config") {
+        const destination = detail.configDestination;
+        setConfigSection(
+          destination?.client
+            ? "clients"
+            : destination?.arr
+              ? "integrations"
+              : "general",
+        );
+        setConfigDestination(destination && { ...destination });
+      }
+      if (tab === "maintenance") {
+        setMaintenanceSection("Shared Settings");
+        if (detail.manageClientId)
+          setManageClientRequest({ id: detail.manageClientId });
+      }
+      switchTab(tab);
+      if (tab === "qbittorrent" && (detail.qbitCategory || detail.qbitInstance))
+        selectInstance("qbittorrent", detail.qbitInstance ?? "aggregate");
       if (detail.qbitCategory) {
         try {
           sessionStorage.setItem(
@@ -462,6 +558,7 @@ function AppShell({
               "torrentarr:focusQbitInstance",
               detail.qbitInstance,
             );
+          else sessionStorage.removeItem("torrentarr:focusQbitInstance");
         } catch {
           /* Navigation still works without a persisted focus hint. */
         }
@@ -469,7 +566,7 @@ function AppShell({
     };
     window.addEventListener(NAVIGATE_TAB_EVENT, onNavigate);
     return () => window.removeEventListener(NAVIGATE_TAB_EVENT, onNavigate);
-  }, [configuredTabs, switchTab]);
+  }, [configuredTabs, switchTab, selectInstance]);
 
   useEffect(() => {
     const id = window.setInterval(
@@ -486,6 +583,33 @@ function AppShell({
       const status = await getStatus();
       const arrs: ArrInfo[] = Array.isArray(status.arrs) ? status.arrs : [];
       const qbitInstances = status.qbitInstances ?? {};
+      const nextInstances: Partial<Record<Tab, string[]>> = {
+        qbittorrent: Object.keys(qbitInstances).sort(),
+      };
+      for (const kind of ["radarr", "sonarr", "lidarr", "readarr"] as const)
+        nextInstances[kind] = arrs
+          .filter((arr) => arr.type === kind)
+          .map((arr) => arr.name)
+          .sort();
+      setNavInstances((previous) =>
+        JSON.stringify(previous) === JSON.stringify(nextInstances)
+          ? previous
+          : nextInstances,
+      );
+      setInstanceSelections((previous) => {
+        const next = { ...previous };
+        for (const [tab, names] of Object.entries(nextInstances)) {
+          const key = tab as Tab;
+          if (
+            !next[key] ||
+            (next[key] !== "aggregate" && !names.includes(next[key]!))
+          )
+            next[key] = names.length === 1 ? names[0] : "aggregate";
+        }
+        return JSON.stringify(next) === JSON.stringify(previous)
+          ? previous
+          : next;
+      });
       const nextTabs = {
         radarr: arrs.some((arr) => arr.type === "radarr"),
         sonarr: arrs.some((arr) => arr.type === "sonarr"),
@@ -674,16 +798,32 @@ function AppShell({
       { id: "logs", label: "Logs", icon: LogsIcon },
     ];
     if (configuredTabs.radarr) {
-      nextTabs.push({ id: "radarr", label: "Radarr", icon: RadarrIcon });
+      nextTabs.push({
+        id: "radarr",
+        label: arrTypeLabel("radarr"),
+        icon: RadarrIcon,
+      });
     }
     if (configuredTabs.sonarr) {
-      nextTabs.push({ id: "sonarr", label: "Sonarr", icon: SonarrIcon });
+      nextTabs.push({
+        id: "sonarr",
+        label: arrTypeLabel("sonarr"),
+        icon: SonarrIcon,
+      });
     }
     if (configuredTabs.lidarr) {
-      nextTabs.push({ id: "lidarr", label: "Lidarr", icon: LidarrIcon });
+      nextTabs.push({
+        id: "lidarr",
+        label: arrTypeLabel("lidarr"),
+        icon: LidarrIcon,
+      });
     }
     if (configuredTabs.readarr) {
-      nextTabs.push({ id: "readarr", label: "Readarr", icon: ReadarrIcon });
+      nextTabs.push({
+        id: "readarr",
+        label: arrTypeLabel("readarr"),
+        icon: ReadarrIcon,
+      });
     }
     if (configuredTabs.qbittorrent) {
       nextTabs.push({
@@ -692,12 +832,12 @@ function AppShell({
         icon: QbitIcon,
       });
     }
+    nextTabs.push({ id: "config", label: "Settings", icon: ConfigIcon });
     nextTabs.push({
       id: "maintenance",
-      label: "Manage",
+      label: "Maintenance",
       icon: ConfigIcon,
     });
-    nextTabs.push({ id: "config", label: "Config", icon: ConfigIcon });
     return nextTabs;
   }, [configuredTabs]);
   const visibleTabIds = useMemo(
@@ -797,19 +937,435 @@ function AppShell({
     }
   }, [push, refreshMeta]);
 
+  const wikiIcon = (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      aria-hidden="true"
+    >
+      <path d="M12 5v15M3 4c4-1 6 0 9 2 3-2 5-3 9-2v15c-4-1-6 0-9 2-3-2-5-3-9-2Z" />
+    </svg>
+  );
+
+  const resourceLinks = (
+    <div
+      className="sidebar__resources"
+      role="group"
+      aria-label="Project resources"
+    >
+      <a
+        href="https://feramance.github.io/Torrentarr/"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Wiki"
+        aria-label="Wiki (opens in a new tab)"
+      >
+        {wikiIcon}
+      </a>
+      <a
+        href={repositoryUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="GitHub"
+        aria-label="GitHub (opens in a new tab)"
+      >
+        <IconImage src={GitHubIcon} />
+      </a>
+      <a
+        href={webPath("/web/docs")}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="OpenAPI docs"
+        aria-label="OpenAPI docs (opens in a new tab)"
+      >
+        <IconImage src={LogsIcon} />
+      </a>
+    </div>
+  );
+  const burgerIcon = (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </svg>
+  );
+  const themeIcon = (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
+      <path d="M12 3a9 9 0 0 0 0 18Z" fill="currentColor" />
+    </svg>
+  );
+  const displayInDrawer = displayTrigger?.closest(".navigation-drawer") != null;
+  const navFooter = (scope: "sidebar" | "drawer") => (
+    <div className="sidebar__footer">
+      <button
+        type="button"
+        className="btn ghost sidebar__display"
+        aria-label="Display"
+        title="Display"
+        aria-haspopup="dialog"
+        aria-expanded={
+          displayTrigger !== null && displayInDrawer === (scope === "drawer")
+        }
+        onClick={(event) => {
+          const trigger = event.currentTarget;
+          if (displayTrigger === trigger)
+            trigger.focus({ preventScroll: true });
+          setDisplayTrigger(displayTrigger === trigger ? null : trigger);
+        }}
+      >
+        {themeIcon}
+      </button>
+      {resourceLinks}
+    </div>
+  );
+  const navigation = (scope: string) => (
+    <nav className="nav" aria-label="Main navigation">
+      {[
+        { label: "Monitor", ids: ["processes", "issues", "logs"] },
+        {
+          label: "Libraries & clients",
+          ids: ["radarr", "sonarr", "lidarr", "readarr", "qbittorrent"],
+        },
+        { label: "Administration", ids: ["config", "maintenance"] },
+      ].map((group) => {
+        const items = tabs.filter((tab) => group.ids.includes(tab.id));
+        return items.length ? (
+          <div className="nav-group" key={group.label}>
+            <div className="nav-group__label">{group.label}</div>
+            {items.map((tab) => {
+              if (tab.id === "config" || tab.id === "maintenance") {
+                const expanded = Boolean(expandedNav[tab.id]);
+                const children =
+                  tab.id === "config"
+                    ? (Object.keys(configSections) as ConfigSection[]).map(
+                        (section) => ({
+                          label: configSections[section],
+                          active: configSection === section,
+                          select: () => openConfigSection(section),
+                        }),
+                      )
+                    : maintenanceSections.map((section) => ({
+                        label: section,
+                        active: maintenanceSection === section,
+                        select: () => openMaintenanceSection(section),
+                      }));
+                return (
+                  <div className="nav-entry" key={tab.id}>
+                    <div className="nav-group__heading">
+                      <button
+                        type="button"
+                        className={activeTab === tab.id ? "active" : ""}
+                        title={tab.label}
+                        onMouseEnter={() => prefetchTab(tab.id)}
+                        onFocus={() => prefetchTab(tab.id)}
+                        aria-expanded={
+                          expanded && !(scope === "sidebar" && navCollapsed)
+                        }
+                        aria-controls={`${scope}-nav-${tab.id}`}
+                        onClick={() => {
+                          if (scope === "sidebar" && navCollapsed) {
+                            setNavCollapsed(false);
+                            setExpandedNav({ [tab.id]: true });
+                          } else {
+                            setExpandedNav(expanded ? {} : { [tab.id]: true });
+                          }
+                        }}
+                      >
+                        <IconImage
+                          src={ConfigIcon}
+                          className="nav-utility-icon"
+                        />
+                        <span className="nav-label">{tab.label}</span>
+                        <span
+                          className="settings-nav-chevron"
+                          aria-hidden="true"
+                        >
+                          {expanded ? "▾" : "▸"}
+                        </span>
+                      </button>
+                    </div>
+                    <div
+                      className="nav-instances"
+                      id={`${scope}-nav-${tab.id}`}
+                      hidden={!expanded}
+                    >
+                      {children.map(({ label, active, select }) => (
+                        <button
+                          type="button"
+                          key={label}
+                          aria-current={
+                            activeTab === tab.id && active ? "page" : undefined
+                          }
+                          onClick={select}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+              const instances = navInstances[tab.id];
+              const hasChoices = Boolean(instances && instances.length > 0);
+              return (
+                <div className="nav-entry" key={tab.id}>
+                  <div className="nav-group__heading">
+                    <button
+                      type="button"
+                      className={activeTab === tab.id ? "active" : ""}
+                      title={tab.label}
+                      onClick={safeClick(() => {
+                        if (instances) {
+                          if (scope === "drawer" && hasChoices) {
+                            setExpandedNav((value) =>
+                              value[tab.id] ? {} : { [tab.id]: true },
+                            );
+                            return;
+                          }
+                          if (
+                            scope === "sidebar" &&
+                            hasChoices &&
+                            instances.length > 1 &&
+                            (navCollapsed || railSelectionPending)
+                          ) {
+                            setNavCollapsed(false);
+                            setRailSelectionPending(true);
+                            setExpandedNav({ [tab.id]: true });
+                            return;
+                          }
+                          selectInstance(
+                            tab.id,
+                            instances.length === 1
+                              ? instances[0]!
+                              : "aggregate",
+                          );
+                          if (hasChoices) setExpandedNav({ [tab.id]: true });
+                        }
+                        switchTab(tab.id);
+                      })}
+                      onMouseEnter={() => prefetchTab(tab.id)}
+                      onFocus={() => prefetchTab(tab.id)}
+                    >
+                      <IconImage
+                        src={tab.icon}
+                        className={instances ? undefined : "nav-utility-icon"}
+                      />
+                      <span className="nav-label">{tab.label}</span>
+                      {tab.id === "issues" && (
+                        <span
+                          className="issue-count"
+                          aria-label={
+                            issueCount == null
+                              ? "Issue count unavailable"
+                              : `${issueCount} active issue groups`
+                          }
+                        >
+                          {issueCount ?? "?"}
+                        </span>
+                      )}
+                    </button>
+                    {hasChoices && (
+                      <button
+                        type="button"
+                        className="nav-disclosure"
+                        aria-label={`Expand ${tab.label}`}
+                        aria-expanded={!!expandedNav[tab.id]}
+                        aria-controls={`${scope}-nav-${tab.id}`}
+                        onClick={() =>
+                          setExpandedNav((value) =>
+                            value[tab.id] ? {} : { [tab.id]: true },
+                          )
+                        }
+                      >
+                        {expandedNav[tab.id] ? "▾" : "▸"}
+                      </button>
+                    )}
+                  </div>
+                  {hasChoices && expandedNav[tab.id] && (
+                    <div
+                      className="nav-instances"
+                      id={`${scope}-nav-${tab.id}`}
+                    >
+                      {(instances?.length === 1
+                        ? instances
+                        : ["aggregate", ...(instances ?? [])]
+                      ).map((instance) => (
+                        <button
+                          key={instance}
+                          type="button"
+                          className={
+                            activeTab === tab.id &&
+                            instanceSelections[tab.id] === instance
+                              ? "active"
+                              : ""
+                          }
+                          aria-current={
+                            activeTab === tab.id &&
+                            instanceSelections[tab.id] === instance
+                              ? "page"
+                              : undefined
+                          }
+                          onClick={(event) => {
+                            if (scope === "sidebar" && railSelectionPending)
+                              event.currentTarget
+                                .closest(".nav-entry")
+                                ?.querySelector<HTMLButtonElement>(
+                                  ".nav-group__heading > button",
+                                )
+                                ?.focus();
+                            selectInstance(tab.id, instance);
+                            switchTab(tab.id);
+                          }}
+                        >
+                          {instance === "aggregate"
+                            ? `All ${tab.label}`
+                            : instance}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : null;
+      })}
+    </nav>
+  );
+
+  const displayPanel = displayTrigger && (
+    <ShellDialog
+      title="Display"
+      className="display-popover"
+      anchor={displayTrigger}
+      preferAbove={displayInDrawer}
+      onClose={() => setDisplayTrigger(null)}
+    >
+      <fieldset>
+        <legend>Theme</legend>
+        <div className="view-density-toggle">
+          {THEME_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={theme === option.value}
+              className={theme === option.value ? "active" : ""}
+              onClick={() => setTheme(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>View density</legend>
+        <div className="view-density-toggle">
+          <button
+            type="button"
+            aria-pressed={viewDensity === "comfortable"}
+            className={viewDensity === "comfortable" ? "active" : ""}
+            onClick={() => setViewDensity("comfortable")}
+          >
+            Comfortable
+          </button>
+          <button
+            type="button"
+            aria-pressed={viewDensity === "compact"}
+            className={viewDensity === "compact" ? "active" : ""}
+            onClick={() => setViewDensity("compact")}
+          >
+            Compact
+          </button>
+        </div>
+      </fieldset>
+    </ShellDialog>
+  );
+
+  const selectedTabInstance = instanceSelections[activeTab];
+  const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.label;
+  const pageTitle =
+    activeTab === "config"
+      ? configSections[configSection]
+      : activeTab === "maintenance"
+        ? maintenanceSection
+        : selectedTabInstance && selectedTabInstance !== "aggregate"
+          ? selectedTabInstance
+          : activeTabLabel && (navInstances[activeTab]?.length ?? 0) > 1
+            ? `All ${activeTabLabel}`
+            : activeTabLabel;
   return (
-    <div data-density={viewDensity}>
+    <div
+      data-density={viewDensity}
+      data-nav={navCollapsed ? "collapsed" : "expanded"}
+      className="console-shell"
+    >
+      <aside className="console-sidebar" id="app-navigation">
+        <div className="sidebar__brand">
+          <IconImage src={logoUrl} alt="Torrentarr Logo" />
+          <strong>Torrentarr</strong>
+        </div>
+        {navigation("sidebar")}
+        {navFooter("sidebar")}
+      </aside>
+      {navigationOpen && (
+        <ShellDialog
+          title="Navigation"
+          className="navigation-drawer"
+          onClose={() => {
+            if (displayInDrawer) setDisplayTrigger(null);
+            else setNavigationOpen(false);
+          }}
+        >
+          {navigation("drawer")}
+          {navFooter("drawer")}
+          {displayInDrawer && displayPanel}
+        </ShellDialog>
+      )}
+      {!displayInDrawer && displayPanel}
       <header className="appbar">
         <div className="appbar__inner">
           <div className="appbar__title">
-            <IconImage
-              src={logoUrl}
-              alt="Torrentarr Logo"
-              className="appbar__logo"
-            />
-            <h1>Torrentarr</h1>
+            <button
+              type="button"
+              className="btn ghost nav-rail-trigger appbar__icon-button"
+              aria-label={
+                navCollapsed ? "Expand navigation" : "Collapse navigation"
+              }
+              title={navCollapsed ? "Expand navigation" : "Collapse navigation"}
+              aria-controls="app-navigation"
+              aria-expanded={!navCollapsed}
+              onClick={() => {
+                setRailSelectionPending(false);
+                setNavCollapsed((value) => !value);
+              }}
+            >
+              {burgerIcon}
+            </button>
+            <button
+              type="button"
+              className="btn ghost navigation-trigger appbar__icon-button"
+              aria-label="Menu"
+              title="Menu"
+              aria-haspopup="dialog"
+              aria-expanded={navigationOpen}
+              onClick={() => setNavigationOpen(true)}
+            >
+              {burgerIcon}
+            </button>
+            <h1 ref={headingRef} tabIndex={-1}>
+              {pageTitle}
+            </h1>
             <span className="appbar__version" title={versionTitle}>
               {displayVersion}
+              {meta?.is_test_build ? " · Test Build" : null}
             </span>
             {metaLoading ? (
               <span className="spinner" aria-hidden="true" />
@@ -823,17 +1379,18 @@ function AppShell({
                 className="btn small primary appbar__update"
                 onClick={handleOpenChangelog}
                 disabled={updateBusy || Boolean(updateState?.in_progress)}
+                aria-label="Update available"
               >
                 <span className="appbar__update-indicator" aria-hidden="true" />
                 <IconImage src={UpdateIcon} />
-                Update available
+                <span className="btn__label">Update available</span>
               </button>
             ) : null}
           </div>
           <div className="appbar__actions">
             {!isOnline && (
               <span
-                className="badge"
+                className="badge appbar__offline"
                 style={{
                   background: "rgba(239, 68, 68, 0.15)",
                   borderColor: "rgba(239, 68, 68, 0.3)",
@@ -843,40 +1400,6 @@ function AppShell({
                 Offline
               </span>
             )}
-            <div className="view-density-toggle" title="View density">
-              <button
-                type="button"
-                className={viewDensity === "comfortable" ? "active" : ""}
-                onClick={() => setViewDensity("comfortable")}
-                title="Comfortable view"
-              >
-                Comfortable
-              </button>
-              <button
-                type="button"
-                className={viewDensity === "compact" ? "active" : ""}
-                onClick={() => setViewDensity("compact")}
-                title="Compact view"
-              >
-                Compact
-              </button>
-            </div>
-            <div className="view-density-toggle" title="Theme">
-              <button
-                type="button"
-                className={theme === "dark" ? "active" : ""}
-                onClick={() => setTheme("dark")}
-              >
-                Dark
-              </button>
-              <button
-                type="button"
-                className={theme === "light" ? "active" : ""}
-                onClick={() => setTheme("light")}
-              >
-                Light
-              </button>
-            </div>
             <div className="live-switch">
               <span className="live-switch__label" id="live-switch-label">
                 Live
@@ -887,8 +1410,8 @@ function AppShell({
                 role="switch"
                 aria-checked={liveArr}
                 aria-labelledby="live-switch-label"
-                title="Live updates for Arr and qBittorrent views"
-                aria-label="Live updates for Arr and qBittorrent views"
+                title="Live queries to Arr services; local statistics refresh automatically"
+                aria-label="Live queries to Arr services; local statistics refresh automatically"
                 onClick={() => setLiveArr(!liveArr)}
               >
                 <span className="live-switch__track" aria-hidden="true">
@@ -898,62 +1421,14 @@ function AppShell({
             </div>
             <button
               type="button"
-              className="btn small ghost"
+              className="btn small ghost appbar__icon-button"
               onClick={() => void handleCheckUpdates()}
               disabled={metaLoading}
+              aria-label="Check Updates"
+              title="Check Updates"
             >
               <IconImage src={RefreshIcon} />
-              {metaLoading ? "Checking..." : "Check Updates"}
             </button>
-            <div className="appbar__help">
-              <button
-                type="button"
-                className="btn small ghost"
-                aria-expanded={showHelpMenu}
-                aria-haspopup="menu"
-                onClick={() => setShowHelpMenu((v) => !v)}
-              >
-                Help
-              </button>
-              {showHelpMenu ? (
-                <div className="appbar__help-menu" role="menu">
-                  <a
-                    href={repositoryUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn small ghost"
-                    role="menuitem"
-                    onClick={() => setShowHelpMenu(false)}
-                  >
-                    <IconImage src={ExternalIcon} />
-                    GitHub
-                  </a>
-                  <a
-                    href={webPath("/web/docs")}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn small ghost"
-                    role="menuitem"
-                    title="Interactive API docs (Swagger UI)"
-                    onClick={() => setShowHelpMenu(false)}
-                  >
-                    <IconImage src={ExternalIcon} />
-                    OpenAPI
-                  </a>
-                  <a
-                    href="https://feramance.github.io/Torrentarr/"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn small ghost"
-                    role="menuitem"
-                    onClick={() => setShowHelpMenu(false)}
-                  >
-                    <IconImage src={ExternalIcon} />
-                    Docs
-                  </a>
-                </div>
-              ) : null}
-            </div>
             {authRequired && (
               <button
                 type="button"
@@ -966,34 +1441,9 @@ function AppShell({
           </div>
         </div>
       </header>
-      <main className="container">
-        <nav className="nav">
-          {tabs.map((tab) => (
-            <button
-              type="button"
-              key={tab.id}
-              className={activeTab === tab.id ? "active" : ""}
-              onClick={safeClick(() => switchTab(tab.id))}
-              onMouseEnter={() => prefetchTab(tab.id)}
-              onFocus={() => prefetchTab(tab.id)}
-            >
-              <IconImage src={tab.icon} />
-              <span>{tab.label}</span>
-              {tab.id === "issues" && (
-                <span
-                  className="issue-count"
-                  aria-label={
-                    issueCount == null
-                      ? "Issue count unavailable"
-                      : `${issueCount} active issue groups`
-                  }
-                >
-                  {issueCount ?? "?"}
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
+      <main
+        className={`container${activeTab === "config" && (configSection === "clients" || configSection === "integrations") ? " instance-page" : ""}`}
+      >
         <Suspense fallback={<div className="loading">Loading...</div>}>
           <div className="view-transition">
             {visitedTabs.has("issues") && (
@@ -1016,17 +1466,38 @@ function AppShell({
             ) : null}
             {visitedTabs.has("radarr") && visibleTabIds.has("radarr") ? (
               <div hidden={activeTab !== "radarr"}>
-                <ArrCatalogView kind="radarr" active={activeTab === "radarr"} />
+                <ArrCatalogView
+                  kind="radarr"
+                  active={activeTab === "radarr"}
+                  selectedInstance={instanceSelections.radarr}
+                  onSelectInstance={(instance) =>
+                    selectInstance("radarr", instance)
+                  }
+                />
               </div>
             ) : null}
             {visitedTabs.has("sonarr") && visibleTabIds.has("sonarr") ? (
               <div hidden={activeTab !== "sonarr"}>
-                <ArrCatalogView kind="sonarr" active={activeTab === "sonarr"} />
+                <ArrCatalogView
+                  kind="sonarr"
+                  active={activeTab === "sonarr"}
+                  selectedInstance={instanceSelections.sonarr}
+                  onSelectInstance={(instance) =>
+                    selectInstance("sonarr", instance)
+                  }
+                />
               </div>
             ) : null}
             {visitedTabs.has("lidarr") && visibleTabIds.has("lidarr") ? (
               <div hidden={activeTab !== "lidarr"}>
-                <ArrCatalogView kind="lidarr" active={activeTab === "lidarr"} />
+                <ArrCatalogView
+                  kind="lidarr"
+                  active={activeTab === "lidarr"}
+                  selectedInstance={instanceSelections.lidarr}
+                  onSelectInstance={(instance) =>
+                    selectInstance("lidarr", instance)
+                  }
+                />
               </div>
             ) : null}
             {visitedTabs.has("readarr") && visibleTabIds.has("readarr") ? (
@@ -1034,13 +1505,23 @@ function AppShell({
                 <ArrCatalogView
                   kind="readarr"
                   active={activeTab === "readarr"}
+                  selectedInstance={instanceSelections.readarr}
+                  onSelectInstance={(instance) =>
+                    selectInstance("readarr", instance)
+                  }
                 />
               </div>
             ) : null}
             {visitedTabs.has("qbittorrent") &&
             visibleTabIds.has("qbittorrent") ? (
               <div hidden={activeTab !== "qbittorrent"}>
-                <QbitCategoriesView active={activeTab === "qbittorrent"} />
+                <QbitCategoriesView
+                  active={activeTab === "qbittorrent"}
+                  selectedInstance={instanceSelections.qbittorrent}
+                  onSelectInstance={(instance) =>
+                    selectInstance("qbittorrent", instance)
+                  }
+                />
               </div>
             ) : null}
             {visitedTabs.has("maintenance") ? (
@@ -1048,17 +1529,26 @@ function AppShell({
                 <MaintenanceView
                   key={manageKey}
                   active={activeTab === "maintenance"}
-                  requestedClientId={manageClientId}
+                  section={maintenanceSection}
+                  onSectionChange={(section) => {
+                    setMaintenanceSection(section);
+                    window.scrollTo(0, 0);
+                    headingRef.current?.focus({ preventScroll: true });
+                  }}
+                  requestedClient={manageClientRequest}
                   onDirtyChange={setManageDirty}
                 />
               </div>
             ) : null}
             {visitedTabs.has("config") ? (
-              <div hidden={activeTab !== "config"}>
+              <div className="config-page" hidden={activeTab !== "config"}>
                 <ConfigView
                   active={activeTab === "config"}
                   key={`config-${configKey}`}
                   onDirtyChange={setConfigDirty}
+                  section={configSection}
+                  onSectionChange={setConfigSection}
+                  destination={configDestination}
                 />
               </div>
             ) : null}

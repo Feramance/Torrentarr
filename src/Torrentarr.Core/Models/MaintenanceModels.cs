@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Torrentarr.Core.Models;
 
 public enum MaintenanceOperation
@@ -29,6 +31,7 @@ public enum MaintenanceActionKind
     DeleteContent = 15,
     DeleteOrphanFile = 16,
     DeleteEmptyOrphanDirectory = 17,
+    ParkTorrent = 18,
     DeleteExpiredRecycleItem = 13
 }
 
@@ -143,6 +146,10 @@ public sealed class TorrentInventoryItem
     public bool TrackersComplete { get; set; }
     public bool FilesComplete { get; set; }
     public bool LocalFilesComplete { get; set; }
+    [JsonIgnore]
+    public bool RecycleFilesComplete { get; set; }
+    [JsonIgnore]
+    public bool CanRecycleFiles => (LocalFilesComplete || RecycleFilesComplete) && Files.Any(f => !f.ExpectedMissing);
 }
 
 public sealed class TorrentFileInventoryItem
@@ -151,6 +158,8 @@ public sealed class TorrentFileInventoryItem
     public required string ClientPath { get; init; }
     public string? LocalPath { get; init; }
     public string? ExpectedLocalPath { get; init; }
+    [JsonIgnore]
+    public bool ExpectedMissing { get; init; }
 }
 
 public sealed record TorrentClientView(
@@ -282,4 +291,7 @@ public sealed class CleanupClientStatus
 
 public sealed record RecycleFileSnapshot(string Path, long Bytes, long LastWriteTicks);
 
-public sealed record TorrentAutomationIssue(string ClientInstanceId, string TorrentHash, string TorrentName, string Reason, long AddedOn);
+public sealed record TorrentAutomationIssue(string ClientInstanceId, string TorrentHash, string TorrentName, string Reason, long AddedOn)
+{
+    public bool RequiresAttention { get; init; } = true;
+}

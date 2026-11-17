@@ -1,6 +1,6 @@
-# Manage examples
+# Maintenance examples
 
-These examples use the canonical client-neutral layout. The same nested maintenance sections work under a legacy `qBit-*` section. Configure and save them in **Manage**; use previews before applying changes.
+These examples use the canonical client-neutral layout. The same nested maintenance sections work under a legacy `qBit-*` section. Configure and save them under **Maintenance**; use previews before applying changes.
 
 ## Manual recovery that keeps failed torrents
 
@@ -23,7 +23,7 @@ ExcludedTags = ['keep', 'manual-pause']
 
 ## Daily orphan cleanup
 
-Only the orphan tool is given automatic execution here. Other tools keep their existing execution policies; configure or disable them separately under Manage.
+Only the orphan tool is given automatic execution here. Other tools keep their existing execution policies; configure or disable them separately under Maintenance.
 
 ```toml
 [TorrentClient.seedbox]

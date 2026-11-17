@@ -1,0 +1,9 @@
+<Project>
+  <Target Name="StampTorrentarrRevision" BeforeTargets="GetAssemblyAttributes"
+          DependsOnTargets="InitializeSourceControlInformation"
+          Condition="'$(TorrentarrReleaseBuild)' != 'true'">
+    <PropertyGroup Condition="'$(SourceRevisionId.Length)' &gt;= '12'">
+      <InformationalVersion>$(Version)+$(SourceRevisionId.Substring(0, 12))</InformationalVersion>
+    </PropertyGroup>
+  </Target>
+</Project>

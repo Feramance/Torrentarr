@@ -53,6 +53,58 @@ public sealed class DatabaseHealthServiceTests : IDisposable
     // ── CheckHealthAsync ──────────────────────────────────────────────────────
 
     [Fact]
+    public async Task BackupNormalizesPathsAndPreservesExistingCopyOnFailure()
+    {
+        var directory = Directory.CreateTempSubdirectory("torrentarr-backup-");
+        try
+        {
+            var source = Path.Combine(directory.FullName, "source.db");
+            var destination = Path.Combine(directory.FullName, "backup.db");
+            var logger = NullLogger<DatabaseHealthService>.Instance;
+            await using (var connection = new SqliteConnection($"Data Source={source};Pooling=False"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = "CREATE TABLE test (value INTEGER); INSERT INTO test VALUES (42);";
+                await command.ExecuteNonQueryAsync();
+            }
+            (await DatabaseHealthService.BackupFileAsync(source, Path.GetRelativePath(Directory.GetCurrentDirectory(), destination), logger)).Should().BeTrue();
+            (await DatabaseHealthService.BackupFileAsync(source, source, logger)).Should().BeFalse();
+            var previous = await File.ReadAllBytesAsync(destination);
+            await File.WriteAllTextAsync(source, "invalid sqlite");
+            (await DatabaseHealthService.BackupFileAsync(source, destination, logger)).Should().BeFalse();
+            (await File.ReadAllBytesAsync(destination)).Should().Equal(previous);
+            directory.GetFiles().Should().HaveCount(2);
+        }
+        finally { directory.Delete(recursive: true); }
+    }
+
+    [Fact]
+    public void DatabaseRestartRequiresAContinuousErrorWindow()
+    {
+        var clock = new RestartClock();
+        var coordinator = new DatabaseRestartCoordinator { Clock = clock };
+        coordinator.RecordDatabaseError();
+        clock.Now = clock.Now.AddMinutes(4);
+        coordinator.RecordDatabaseError();
+        coordinator.RecordDatabaseSuccess();
+        clock.Now = clock.Now.AddMinutes(2);
+        coordinator.RecordDatabaseError();
+        coordinator.RestartRequested.Should().BeFalse();
+        clock.Now = clock.Now.AddMinutes(4);
+        coordinator.RecordDatabaseError();
+        clock.Now = clock.Now.AddMinutes(2);
+        coordinator.RecordDatabaseError();
+        coordinator.RestartRequested.Should().BeTrue();
+    }
+
+    private sealed class RestartClock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.UnixEpoch;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
     public async Task CheckHealthAsync_InMemoryDb_IsHealthy()
     {
         var result = await _svc.CheckHealthAsync();
@@ -187,5 +239,55 @@ public sealed class DatabaseHealthServiceTests : IDisposable
     {
         var result = await _svc.MaintainAsync();
         result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task MaintainAsync_BusyCheckpointPreservesCommittedWalRows()
+    {
+        var directory = Directory.CreateTempSubdirectory("torrentarr-wal-");
+        try
+        {
+            var path = Path.Combine(directory.FullName, "test.db");
+            var connectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = path,
+                Pooling = false,
+                DefaultTimeout = 1
+            }.ToString();
+            await using var writer = new SqliteConnection(connectionString);
+            await writer.OpenAsync();
+            await using var write = writer.CreateCommand();
+            write.CommandText = "PRAGMA journal_mode=WAL; CREATE TABLE sample (value INTEGER); INSERT INTO sample VALUES (1);";
+            await write.ExecuteNonQueryAsync();
+
+            await using var reader = new SqliteConnection(connectionString);
+            await reader.OpenAsync();
+            await using var read = reader.CreateCommand();
+            read.CommandText = "BEGIN;";
+            await read.ExecuteNonQueryAsync();
+            read.CommandText = "SELECT COUNT(*) FROM sample;";
+            (await read.ExecuteScalarAsync()).Should().Be(1L);
+
+            write.CommandText = "INSERT INTO sample VALUES (2);";
+            await write.ExecuteNonQueryAsync();
+            write.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            (await write.ExecuteScalarAsync()).Should().Be(1L, "the reader still holds the older snapshot");
+
+            var options = new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite(connectionString).Options;
+            await using var db = new TorrentarrDbContext(options);
+            var health = new DatabaseHealthService(NullLogger<DatabaseHealthService>.Instance, db);
+            (await health.MaintainAsync()).Should().BeTrue();
+
+            File.Exists(path + "-wal").Should().BeTrue();
+            await using var verification = new SqliteConnection(connectionString);
+            await verification.OpenAsync();
+            await using var count = verification.CreateCommand();
+            count.CommandText = "SELECT COUNT(*) FROM sample;";
+            (await count.ExecuteScalarAsync()).Should().Be(2L);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
     }
 }

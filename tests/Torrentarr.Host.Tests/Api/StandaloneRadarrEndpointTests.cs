@@ -27,6 +27,25 @@ namespace Torrentarr.Host.Tests.Api;
 [Collection("HostWebCatalog")]
 public class StandaloneRadarrEndpointTests
 {
+    [Theory]
+    [InlineData("TorrentClient.storage-migration-fixture")]
+    [InlineData("qBit-storage-migration-fixture")]
+    public async Task StandaloneKeepFreeSpaceProtectionOff_RequiresValidExplicitSave(string section)
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        await ConfigEndpointTests.AssertStorageMigrationSave(client,
+            factory.Services.GetRequiredService<ConfigurationLoader>(), "/web/config", section);
+    }
+
+    [Fact]
+    public async Task StandalonePasswordSetup_RejectsUrlAndMalformedHeaderAndAcceptsBearer()
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        await SetPasswordEndpointTests.AssertBootstrapCredentialSources(client, "standalone-test");
+    }
+
     [Fact]
     public async Task StandaloneReconnect_UnknownClientReturnsNotFound()
     {
@@ -395,18 +414,38 @@ public class StandaloneRadarrEndpointTests
         state.FreeSpacePaused.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task NewerConfigRejectsRenameAndPreservesUnknownFields()
+    {
+        await using var factory = new StandaloneFactory(configVersion: "99.0.0-1");
+        var original = File.ReadAllBytes(factory.ConfigPath);
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsJsonAsync("/web/config", new
+        {
+            changes = new Dictionary<string, object> { ["Radarr"] = new { Category = "renamed" } },
+            renames = new Dictionary<string, string> { ["Radarr"] = "Radarr-Renamed" }
+        });
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Conflict);
+        File.ReadAllBytes(factory.ConfigPath).Should().Equal(original);
+        File.Exists(factory.ConfigPath + ".bak").Should().BeFalse();
+        File.Exists(factory.ConfigPath + ".rename.json").Should().BeFalse();
+    }
+
     private sealed class StandaloneFactory : WebApplicationFactory<Standalone::Program>
     {
         private readonly string _directory = Path.Combine(Path.GetTempPath(), "standalone-radarr-" + Guid.NewGuid());
         private readonly SqliteConnection _connection = new("Data Source=:memory:");
         private readonly string? _previousConfig = Environment.GetEnvironmentVariable("TORRENTARR_CONFIG");
         private readonly string? _previousOverride = ConfigurationLoader.TestConfigPathOverride;
-        public StandaloneFactory(string urlBase = "")
+        public string ConfigPath => Path.Combine(_directory, "config.toml");
+
+        public StandaloneFactory(string urlBase = "", string configVersion = "6.14.6")
         {
             Directory.CreateDirectory(_directory);
-            File.WriteAllText(Path.Combine(_directory, "config.toml"), $$"""
+            File.WriteAllText(ConfigPath, $$"""
                 [Settings]
-                ConfigVersion = '6.14.6'
+                ConfigVersion = '{{configVersion}}'
                 [WebUI]
                 AuthDisabled = true
                 AllowInsecureExposure = true
@@ -416,7 +455,7 @@ public class StandaloneRadarrEndpointTests
                 URI = 'http://127.0.0.1:1'
                 Category = 'movies'
                 Managed = false
-                """);
+                """ + (configVersion == "99.0.0-1" ? "\n[FutureSection]\nFutureValue = 'preserve this'\n" : ""));
             Directory.CreateDirectory(Path.Combine(_directory, "wwwroot"));
             File.WriteAllText(Path.Combine(_directory, "wwwroot", "index.html"), "<html><head></head><body></body></html>");
             _connection.Open();

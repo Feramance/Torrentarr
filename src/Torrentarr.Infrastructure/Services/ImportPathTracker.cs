@@ -6,7 +6,7 @@ namespace Torrentarr.Infrastructure.Services;
 public class ImportPathTracker : IImportPathTracker
 {
     private readonly ConcurrentDictionary<(string Instance, string Path), string> _scanned = new();
-    private readonly HashSet<(string Instance, string Hash)> _hashes = [];
+    private readonly Dictionary<(string Instance, string Hash), DateTimeOffset> _hashes = new();
     private readonly object _gate = new();
     private static string Instance(string id) => id.ToUpperInvariant();
     private static string PathKey(string path) => OperatingSystem.IsWindows() ? path.ToUpperInvariant() : path;
@@ -33,16 +33,21 @@ public class ImportPathTracker : IImportPathTracker
 
     public bool IsHashAlreadyScanned(string instanceId, string hash)
     {
-        lock (_gate) return !string.IsNullOrEmpty(hash) && _hashes.Contains((Instance(instanceId), hash.ToUpperInvariant()));
+        lock (_gate) return !string.IsNullOrEmpty(hash) && _hashes.ContainsKey((Instance(instanceId), hash.ToUpperInvariant()));
     }
 
-    public void MarkScanned(string instanceId, string normalizedPath, string hash)
+    public DateTimeOffset? GetScanStartedAt(string instanceId, string hash)
+    {
+        lock (_gate) return _hashes.TryGetValue((Instance(instanceId), hash.ToUpperInvariant()), out var started) ? started : null;
+    }
+
+    public void MarkScanned(string instanceId, string normalizedPath, string hash, DateTimeOffset? submittedAt = null)
     {
         lock (_gate)
         {
             if (!string.IsNullOrEmpty(normalizedPath))
                 _scanned[(Instance(instanceId), PathKey(normalizedPath))] = hash;
-            if (!string.IsNullOrEmpty(hash)) _hashes.Add((Instance(instanceId), hash.ToUpperInvariant()));
+            if (!string.IsNullOrEmpty(hash)) _hashes[(Instance(instanceId), hash.ToUpperInvariant())] = submittedAt ?? DateTimeOffset.UtcNow;
         }
     }
 

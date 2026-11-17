@@ -1,3 +1,4 @@
+import type { InstanceSelectionProps } from "../hooks/useInstanceSelection";
 import { useEffect, useState, type JSX } from "react";
 import { ArrCatalogShell } from "./arrCatalog/ArrCatalogShell";
 import type { AnyArrCatalogDefinition } from "./arrCatalog/definition";
@@ -39,7 +40,8 @@ async function loadArrCatalogDefinition(
 export function ArrCatalogView({
   kind,
   active,
-}: {
+  ...selection
+}: InstanceSelectionProps & {
   kind: ArrCatalogKind;
   active: boolean;
 }): JSX.Element {
@@ -77,5 +79,11 @@ export function ArrCatalogView({
     return <div className="hint">Loading catalog…</div>;
   }
 
-  return <ArrCatalogShell definition={loaded.definition} active={active} />;
+  return (
+    <ArrCatalogShell
+      definition={loaded.definition}
+      active={active}
+      {...selection}
+    />
+  );
 }

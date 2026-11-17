@@ -103,6 +103,14 @@ jobs:
         sed -i "s|<FileVersion>[^<]*</FileVersion>|<FileVersion>${FILE_VERSION}</FileVersion>|" Directory.Build.props
         sed -i "s|<AssemblyVersion>[^<]*</AssemblyVersion>|<AssemblyVersion>${FILE_VERSION}</AssemblyVersion>|" Directory.Build.props
         echo "Updated Version=${VERSION} FileVersion/AssemblyVersion=${FILE_VERSION}"
+    - name: Set up .NET
+      uses: actions/setup-dotnet@v6.1.0
+      with:
+        global-json-file: global.json
+    - name: Synchronize config schema artifacts
+      run: |
+        dotnet run --project tools/Torrentarr.ConfigSchemaGenerator/Torrentarr.ConfigSchemaGenerator.csproj
+        dotnet run --no-build --project tools/Torrentarr.ConfigSchemaGenerator/Torrentarr.ConfigSchemaGenerator.csproj -- --check
     - name: Capture new version
       id: version
       run: |
@@ -123,7 +131,7 @@ jobs:
         git config user.name "${GITHUB_ACTOR}"
         git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
         git checkout -B "${BRANCH}"
-        git add .bumpversion.cfg Directory.Build.props Dockerfile docs/index.md src/Torrentarr.Core/Configuration/TorrentarrConfig.cs src/Torrentarr.Core/Configuration/ConfigurationLoader.cs config.example.toml
+        git add .bumpversion.cfg Directory.Build.props Dockerfile docs/index.md src/Torrentarr.Core/Configuration/ConfigurationLoader.cs config.example.toml docs/configuration/config-file.md docs/configuration/maintenance-controls.md webui/src/config/configFields.generated.ts
         git commit -m "[skip ci] Bump version to v${VERSION}"
         git push origin "${BRANCH}"
 
@@ -244,6 +252,7 @@ jobs:
             -r "$rid" \
             --self-contained true \
             -p:PublishSingleFile=true \
+            -p:TorrentarrReleaseBuild=true \
             -p:IncludeNativeLibrariesForSelfExtract=true \
             -p:DebugType=embedded \
             -p:DebugSymbols=false \
@@ -256,6 +265,7 @@ jobs:
             -r "$rid" \
             --self-contained true \
             -p:PublishSingleFile=true \
+            -p:TorrentarrReleaseBuild=true \
             -p:IncludeNativeLibrariesForSelfExtract=true \
             -p:DebugType=embedded \
             -p:DebugSymbols=false \
@@ -356,12 +366,16 @@ jobs:
           type=raw,value=stable,enable=${{ env.RELEASE_TYPE != 'build' }}
           type=raw,value=v${{ env.VERSION }}
           type=raw,value=${{ env.VERSION }}
+        labels: |
+          org.opencontainers.image.version=${{ env.VERSION }}
     - name: Build and push Docker images
       uses: docker/build-push-action@v7
       with:
         context: .
         platforms: linux/amd64,linux/arm64
         push: true
+        build-args: |
+          VERSION=${{ env.VERSION }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha

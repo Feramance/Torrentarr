@@ -49,10 +49,6 @@ describe("path mapping forms", () => {
         initial={[{ ClientPath: "/downloads", LocalPath: "/data", Future: 42 }]}
       />,
     );
-    expect(
-      screen.getByText("Path mappings").closest("details"),
-    ).not.toHaveAttribute("open");
-    await user.click(screen.getByText("Path mappings"));
     fireEvent.change(screen.getByRole("textbox", { name: "Torrentarr path" }), {
       target: { value: "/data/downloads" },
     });
@@ -73,14 +69,12 @@ describe("path mapping forms", () => {
     expect(result()).toHaveLength(1);
   });
 
-  it("opens invalid mapping groups and keeps them open after fixing the row", () => {
+  it("shows invalid mappings and keeps their fields visible after correction", () => {
     render(
       <Editor
         initial={[{ ClientPath: "relative", LocalPath: "/data", Future: 42 }]}
       />,
     );
-    const details = screen.getByText("Path mappings").closest("details")!;
-    expect(details).toHaveAttribute("open");
     const row = screen.getByRole("group", { name: "Path mapping 1" });
     expect(
       within(row).getByRole("textbox", { name: "Torrent client path" }),
@@ -89,7 +83,6 @@ describe("path mapping forms", () => {
       within(row).getByRole("textbox", { name: "Torrent client path" }),
       { target: { value: "/downloads" } },
     );
-    expect(details).toHaveAttribute("open");
     expect(result()[0].Future).toBe(42);
   });
 

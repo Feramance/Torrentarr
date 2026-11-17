@@ -2,6 +2,14 @@
 
 The **Arr Views** provide a unified interface to browse and monitor your media library across all managed Radarr, Sonarr, and Lidarr instances. View movies, TV series, episodes, albums, and tracks directly from Torrentarr's WebUI without switching between multiple Arr interfaces.
 
+Expand a library type in the main sidebar to choose an instance or **All**. Torrent
+Clients uses the same navigation; there is no secondary instance sidebar. On mobile,
+open **Menu** to reach these entries.
+
+Local database statistics refresh through the statistics stream, independently of
+the direct Arr Live toggle. Hover, focus, or tap an availability-bar segment for its
+exact count and percentage.
+
 ---
 
 ## Overview
@@ -9,7 +17,7 @@ The **Arr Views** provide a unified interface to browse and monitor your media l
 Torrentarr's Arr views offer:
 
 - **Unified Library Browser**: View all media from multiple Arr instances in one place
-- **Real-time Sync**: Data refreshes from Arr APIs with configurable intervals
+- **Live statistics**: Local database commits refresh visible statistics; direct Arr polling remains separately controlled
 - **Advanced Filtering**: Filter by monitored status, file availability, quality, requests
 - **Search**: Full-text search across titles, years, artists
 - **Quality Profile Display**: See which quality profile is assigned to each entry

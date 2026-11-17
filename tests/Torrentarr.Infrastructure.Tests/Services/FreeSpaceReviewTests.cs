@@ -29,7 +29,7 @@ public sealed class FreeSpaceReviewTests : IDisposable
 
     private Mock<ITorrentClient> Client(string id, bool tags, params TorrentInfo[] torrents)
     {
-        _config.TorrentClients[id] = new() { Host = "fixture", DownloadPath = Path.GetTempPath(), FreeSpace = [new() { Path = Path.GetTempPath(), Enabled = true, Limit = "1" }] };
+        _config.TorrentClients[id] = new() { Host = "fixture", ManagedCategories = ["movies"], DownloadPath = Path.GetTempPath(), FreeSpace = [new() { Path = Path.GetTempPath(), Enabled = true, Limit = "1" }] };
         foreach (var torrent in torrents) torrent.SavePath = Path.GetTempPath();
         var client = new Mock<ITorrentClient>();
         client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent with { Tags = tags });
@@ -288,8 +288,10 @@ public sealed class FreeSpaceReviewTests : IDisposable
         client.Setup(c => c.PauseTorrentAsync(torrent.Hash, It.IsAny<CancellationToken>())).ReturnsAsync(accepted);
         client.Setup(c => c.ResumeTorrentAsync(torrent.Hash, It.IsAny<CancellationToken>())).ReturnsAsync(accepted);
         var logger = new DiagnosticLogger();
-        var result = await new DiagnosticService(logger, _config, _registry.Object, _db)
+        var observations = new FreeSpaceObservations();
+        var result = await new DiagnosticService(logger, _config, _registry.Object, _db, observations)
             .ProcessAsync(new HashSet<string> { "movies" });
+        observations.Get("diagnostic-client", Path.GetTempPath())!.EnforcementFailed.Should().Be(!accepted);
         var summary = logger.Entries.Single(e => e.Message.Contains("cycle completed"));
         summary.Message.Should().Contain($"paused={(accepted && !resume ? 1 : 0)}")
             .And.Contain($"resumed={(accepted && resume ? 1 : 0)}")
@@ -306,7 +308,8 @@ public sealed class FreeSpaceReviewTests : IDisposable
     }
 
     private sealed class DiagnosticService(ILogger<FreeSpaceService> logger, TorrentarrConfig config,
-        ITorrentClientRegistry registry, TorrentarrDbContext db) : FreeSpaceService(logger, config, registry, db)
+        ITorrentClientRegistry registry, TorrentarrDbContext db, FreeSpaceObservations observations)
+        : FreeSpaceService(logger, config, registry, db, observations)
     {
         protected override string IdentifyStorage(string path) => "diagnostic-disk";
         protected override StorageSpace ReadSpace(string path) => new("diagnostic-disk", 1000, 100);
@@ -399,6 +402,33 @@ public sealed class FreeSpaceReviewTests : IDisposable
         first.Verify(c => c.ResumeTorrentAsync("new", It.IsAny<CancellationToken>()), Times.Never);
         second.Verify(c => c.PauseTorrentAsync("old", It.IsAny<CancellationToken>()), Times.Never);
         second.Verify(c => c.ResumeTorrentAsync("old", It.IsAny<CancellationToken>()), state == "pausedDL" ? Times.Once() : Times.Never());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OwnedSubcategory_ResumesAfterSpaceRecovers(bool tags)
+    {
+        var torrent = new TorrentInfo { Hash = "child", Category = "movies/4k", State = "pausedDL", Tags = "qBitrr-free_space_paused", AmountLeft = 90 };
+        var client = Client("one", tags, torrent);
+        _config.TorrentClients["one"].ManagedCategories = ["movies"];
+        _config.TorrentClients["one"].MatchSubcategories = true;
+        if (!tags) { _db.TorrentLibrary.Add(new() { Hash = "child", QbitInstance = "one", FreeSpacePaused = true }); await _db.SaveChangesAsync(); }
+        SetLimit("10");
+        var service = new SharedDiskService(_config, _registry.Object, _db, "other");
+        (await service.ProcessAsync(new HashSet<string> { "movies" })).Resumed.Should().Be(1);
+        client.Verify(c => c.ResumeTorrentAsync("child", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CategoryOwnedByAnotherClient_IsNotAutomaticallyResumed()
+    {
+        Client("owner", true);
+        var other = Client("other", true, new TorrentInfo { Hash = "foreign", Category = "movies", State = "pausedDL", Tags = "qBitrr-free_space_paused", AmountLeft = 1 });
+        _config.TorrentClients["other"].ManagedCategories = [];
+        var result = await Service().ProcessAsync(new HashSet<string> { "movies" });
+        result.Resumed.Should().Be(0);
+        other.Verify(c => c.ResumeTorrentAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     public void Dispose() => _db.Dispose();

@@ -145,6 +145,50 @@ public class ArrCatalogRollupEndpointTests : IClassFixture<ArrCatalogWebApplicat
         json.GetProperty("total").GetInt32().Should().Be(1);
     }
 
+    [Theory]
+    [InlineData("web")]
+    [InlineData("api")]
+    public async Task GetSonarrSeries_CountsFilteredRowsBeforePaging(string prefix)
+    {
+        _factory.SetConfigEnv();
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+        await CatalogTestDataSeeder.SeedSonarrEpisodesAsync(db);
+        db.Series.Add(new SeriesFilesModel { EntryId = 2, ArrInstance = "sonarr", Title = "Complete", ArrId = 202 });
+        db.Episodes.Add(new EpisodeFilesModel
+        {
+            EntryId = 3,
+            ArrInstance = "sonarr",
+            SeriesId = 2,
+            Monitored = true,
+            EpisodeFileId = 6,
+            ArrId = 303
+        });
+        await db.SaveChangesAsync();
+
+        var client = _factory.CreateClientWithApiToken();
+        await AssertPage("missing=1", 1, 1, "Show");
+        await AssertPage("q=Complete", 1, 1, "Complete");
+        await AssertPage("q=Complete&page=1", 1, 0);
+
+        async Task AssertPage(string query, int total, int rows, string? title = null)
+        {
+            using var response = await client.GetAsync($"/{prefix}/sonarr/sonarr/series?page_size=1&{query}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var result = body.RootElement;
+            result.GetProperty("total").GetInt32().Should().Be(total);
+            var series = result.GetProperty("series");
+            series.GetArrayLength().Should().Be(rows);
+            if (title != null)
+                series[0].GetProperty("series").GetProperty("title").GetString().Should().Be(title);
+            var counts = result.GetProperty("counts");
+            counts.GetProperty("monitored").GetInt32().Should().Be(3);
+            counts.GetProperty("available").GetInt32().Should().Be(2);
+            counts.GetProperty("missing").GetInt32().Should().Be(1);
+        }
+    }
+
     [Fact]
     public async Task GetLidarrAlbums_ReturnsRollupCounts()
     {

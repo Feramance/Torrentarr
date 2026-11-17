@@ -80,7 +80,7 @@ public static class CategorySeedingApiResolver
             return new CategorySeedingApiPolicy(
                 effective.MaxUploadRatio,
                 effective.MaxSeedingTime,
-                effective.RemoveTorrent,
+                effective.RemoveTorrent ?? -1,
                 effective.HitAndRunMode,
                 effective.MinSeedRatio,
                 effective.MinSeedingTimeDays,

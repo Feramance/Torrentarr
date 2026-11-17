@@ -17,7 +17,7 @@ public static class TorrentScanInterval
             && settings.TryGetValue("LoopSleepTimer", out var timer) ? DurationParser.ParseToSeconds(timer, 5) : 5;
         var defaultInterval = FromLegacy(seconds);
         if (value is TomlTable current && current.TryGetValue("ConfigVersion", out var version)
-            && Version.TryParse(version?.ToString(), out var schema) && schema >= new Version(6, 20, 3))
+            && ConfigurationLoader.ParseConfigVersion(version?.ToString()) >= new Version(6, 20, 3))
             defaultInterval = 30;
         var clients = root.Where(pair => pair.Key.Equals("qBit", StringComparison.OrdinalIgnoreCase)
                 || pair.Key.StartsWith("qBit-", StringComparison.OrdinalIgnoreCase)).Select(pair => pair.Value).OfType<TomlTable>().ToList();

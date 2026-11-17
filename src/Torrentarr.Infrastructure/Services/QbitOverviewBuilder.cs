@@ -14,7 +14,7 @@ public static class QbitOverviewBuilder
         TorrentarrConfig cfg,
         ITorrentClientRegistry qbitManager,
         string? instanceFilter,
-        CancellationToken ct = default)
+        CancellationToken ct = default, TorrentStatisticsSnapshots? snapshots = null)
     {
         var filter = (instanceFilter ?? "").Trim();
         var includeAll = string.IsNullOrEmpty(filter) || filter.Equals("all", StringComparison.OrdinalIgnoreCase);
@@ -29,6 +29,8 @@ public static class QbitOverviewBuilder
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var categories = new List<object>();
+        var summaries = new List<object>();
+        var observations = new Dictionary<string, object>();
         foreach (var instanceName in instanceNames)
         {
             var qbit = cfg.GetTorrentClient(instanceName);
@@ -37,27 +39,47 @@ public static class QbitOverviewBuilder
             if (qbit.Disabled || qbit.Host == "CHANGE_ME" || string.IsNullOrEmpty(qbit.Host))
                 continue;
 
-            var client = qbitManager.GetClient(instanceName);
-            if (client == null) continue;
-
             List<TorrentInfo> torrents;
-            try
+            var client = qbitManager.GetClient(instanceName);
+            if (client == null)
             {
-                torrents = await client.GetTorrentsAsync(cancellationToken: ct);
+                if (snapshots != null)
+                {
+                    var unavailable = snapshots.Unavailable(instanceName, cfg);
+                    observations[instanceName] = new { unavailable.ObservedAt, unavailable.Error, unavailable.ScanIntervalSeconds };
+                    if (unavailable.ObservedAt == null) continue;
+                    torrents = unavailable.Torrents.ToList();
+                }
+                else continue;
             }
-            catch
+            else
             {
-                continue;
+                try
+                {
+                    if (snapshots != null)
+                    {
+                        var snapshot = await snapshots.GetAsync(instanceName, cfg, client, ct);
+                        torrents = snapshot.Torrents.ToList();
+                        observations[instanceName] = new { snapshot.ObservedAt, snapshot.Error, snapshot.ScanIntervalSeconds };
+                        if (snapshot.ObservedAt == null) continue;
+                    }
+                    else torrents = await client.GetTorrentsAsync(cancellationToken: ct);
+                }
+                catch (Exception) when (!ct.IsCancellationRequested)
+                {
+                    continue;
+                }
             }
 
             var monitored = new HashSet<string>(qbit.ManagedCategories, StringComparer.OrdinalIgnoreCase);
             monitored.UnionWith(arrCategories);
 
+            var matched = new Dictionary<string, TorrentInfo>(StringComparer.OrdinalIgnoreCase);
+            var byOwner = torrents.ToLookup(t => CategoryOwnershipHelper.ResolveOwningCategory(cfg, t.Category, instanceName) ?? "", StringComparer.OrdinalIgnoreCase);
             foreach (var catName in monitored.OrderBy(c => c, StringComparer.OrdinalIgnoreCase))
             {
-                var inCat = torrents.Where(t =>
-                    CategoryPathHelper.MatchesConfigured(t.Category, new[] { catName }, prefix: CategoryOwnershipHelper.PrefixMatchAllowedForOwner(cfg, catName, instanceName))
-                        == CategoryPathHelper.NormalizeCategory(catName)).ToList();
+                var inCat = byOwner[CategoryPathHelper.NormalizeCategory(catName)].ToList();
+                foreach (var torrent in inCat) matched.TryAdd(torrent.Hash, torrent);
                 var truncated = inCat.Count > MaxTorrentsPerCategory;
                 var slice = inCat.Take(MaxTorrentsPerCategory).Select(SerializeTorrent).ToList();
                 var seeding = inCat.Count(t => t.IsSeeding);
@@ -80,14 +102,35 @@ public static class QbitOverviewBuilder
                     torrents = slice
                 });
             }
+            var unique = matched.Values.ToList();
+            summaries.Add(new
+            {
+                instance = instanceName,
+                torrentCount = unique.Count,
+                totalSize = unique.Sum(t => t.Size),
+                downloading = unique.Count(t => Activity(t) == "downloading"),
+                seeding = unique.Count(t => Activity(t) == "seeding"),
+                stopped = unique.Count(t => Activity(t) == "stopped"),
+                other = unique.Count(t => Activity(t) == "other")
+            });
         }
 
         return new
         {
             instances = instanceNames,
             categories,
+            summaries,
+            observations,
             ready = true
         };
+    }
+
+    private static string Activity(TorrentInfo torrent)
+    {
+        var state = torrent.State.ToLowerInvariant();
+        if (torrent.IsStopped || state.StartsWith("paused")) return "stopped";
+        if (torrent.IsDownloading || state is "stalleddl" or "forceddl" or "queueddl" or "metadl" or "forcedmetadl") return "downloading";
+        return torrent.IsSeeding ? "seeding" : "other";
     }
 
     private static object SerializeTorrent(TorrentInfo t) => new

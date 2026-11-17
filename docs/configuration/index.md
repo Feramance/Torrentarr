@@ -2,8 +2,8 @@
 
 Use the WebUI Config editor or the TOML configuration file. Client identity,
 connection credentials, torrent scope, paths, monitors, seeding, trackers and
-maintenance are configured per client, with maintenance tools in Manage. Arr instances keep connection settings beside
-API credentials and TLS options. Global Settings, Web Settings and Authentication
+maintenance are configured per client, with maintenance tools under Maintenance. Arr instances keep connection settings beside
+API credentials and TLS options. General, Interface & Access, and Authentication
 have separate dialogs. See [editor workflows](../webui/config-editor.md).
 
 ## Configuration structure
@@ -43,7 +43,7 @@ single tables such as `[Radarr-Movies]`, `[Sonarr-TV]`, `[Lidarr-Music]`, or
 
 - [Full file reference](config-file.md): lookup order, fields, environment overrides,
   data-directory behavior, migration and live application.
-- [Manage configuration](maintenance.md) and [complete controls](maintenance-controls.md):
+- [Maintenance configuration](maintenance.md) and [complete controls](maintenance-controls.md):
   explicit roots, shared storage mappings, bounded recovery, recycling and retention.
 - [Seeding and tracker protection](seeding.md): ordinary limits, legacy aliases,
   mandatory time, deadlines, partial/freeleech obligations and evidence uncertainty.
@@ -69,7 +69,7 @@ Identity/connection sections open by default; validation opens affected sections
 Worker cycles adopt saved revisions at safe boundaries. Use Config status to distinguish
 saved/pending/applied. Connection replacement failures do not reuse an old endpoint.
 
-Manage saves only maintenance settings. Checking and applying a reviewed preview are separate actions. Manual applies once; Automatic enables future scheduled runs without requiring a restart. Existing schedules survive migration; persistent automatic execution is explicit per operation. Private tracker protection runs independently, and unknown or unmet obligations preserve seeding. Recovery preserves unresolved failures unless an explicitly configured recycling outcome passes confirmed-repair, continuous-failure, ownership, and protection checks.
+Saving maintenance settings writes only maintenance settings. Checking and applying a reviewed preview are separate actions. Manual applies once; Automatic enables future scheduled runs without requiring a restart. Existing schedules survive migration; persistent automatic execution is explicit per operation. Private tracker protection runs independently, and unknown or unmet obligations preserve seeding. Recovery preserves unresolved failures unless an explicitly configured recycling outcome passes confirmed-repair, continuous-failure, ownership, and protection checks.
 
 ## Configuration file location
 

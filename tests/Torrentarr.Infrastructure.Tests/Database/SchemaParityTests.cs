@@ -13,6 +13,28 @@ namespace Torrentarr.Infrastructure.Tests.Database;
 public class SchemaParityTests
 {
     [Fact]
+    public void ManualMigrationAddsTorrentIdentityWithoutDiscardingExistingImportState()
+    {
+        using var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>()
+            .UseSqlite(connection).Options);
+        db.Database.EnsureCreated();
+        db.Database.ExecuteSqlRaw("ALTER TABLE torrentlibrary DROP COLUMN torrentaddedon");
+        db.Database.ExecuteSqlRaw("""
+            INSERT INTO torrentlibrary (hash, category, qbitinstance, arrinstance, imported, allowedseeding, allowedstalled, freespacepaused)
+            VALUES ('hash', 'movies', 'qBit', 'Radarr-Movies', 1, 0, 0, 0)
+            """);
+
+        ManualSqliteMigrations.Apply(db);
+        ManualSqliteMigrations.Apply(db);
+
+        var entry = db.TorrentLibrary.Single();
+        entry.Imported.Should().BeTrue();
+        entry.TorrentAddedOn.Should().BeNull();
+    }
+
+    [Fact]
     public void SqliteModel_CreatesExpectedQBitrrCompatibleTables()
     {
         var connection = new SqliteConnection("Data Source=:memory:");
@@ -43,7 +65,7 @@ public class SchemaParityTests
         {
             "albumfilesmodel", "albumqueuemodel", "artistfilesmodel", "authorfilesmodel", "bookfilesmodel", "bookqueuemodel",
             "episodefilesmodel", "episodequeuemodel",
-            "filesqueued", "moviequeuemodel", "moviesfilesmodel", "searchactivity", "seriesfilesmodel", "torrentarr_maintenance_state", "torrentarr_operational_issues", "torrentarr_sonarr_search_retries", "torrentlibrary",
+            "filesqueued", "moviequeuemodel", "moviesfilesmodel", "searchactivity", "seriesfilesmodel", "torrentarr_arr_operations", "torrentarr_arr_samples", "torrentarr_maintenance_state", "torrentarr_operational_issues", "torrentarr_sonarr_search_retries", "torrentarr_transfer_samples", "torrentlibrary",
             "trackfilesmodel"
         };
         tableNames.Should().Equal(expected);

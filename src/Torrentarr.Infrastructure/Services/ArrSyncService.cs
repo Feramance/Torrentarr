@@ -1344,7 +1344,7 @@ public class ArrSyncService
         // Case 1: Year > now.year or Year == 0 → Skip
         if (year > now.Year || year == 0)
         {
-            logger?.LogInformation("Unavailable for search (availability rule 1): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+            logger?.LogDebug("Unavailable for search (availability rule 1): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                 title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
             return false;
         }
@@ -1352,7 +1352,7 @@ public class ArrSyncService
         // Case 2: Year < now.year - 1 → Grab (old movie over 1 year old)
         if (year < now.Year - 1)
         {
-            logger?.LogInformation("Available for search (availability rule 2): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+            logger?.LogDebug("Available for search (availability rule 2): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                 title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
             return true;
         }
@@ -1360,7 +1360,7 @@ public class ArrSyncService
         // Case 3: No dates + "released" → Grab
         if (inCinemas == null && digitalRelease == null && physicalRelease == null && minimumAvailability == "released")
         {
-            logger?.LogInformation("Available for search (availability rule 3): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+            logger?.LogDebug("Available for search (availability rule 3): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                 title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
             return true;
         }
@@ -1370,13 +1370,13 @@ public class ArrSyncService
         {
             if (digitalRelease <= now || physicalRelease <= now)
             {
-                logger?.LogInformation("Available for search (availability rule 4): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                logger?.LogDebug("Available for search (availability rule 4): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                     title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
                 return true;
             }
             else
             {
-                logger?.LogInformation("Unavailable for search (availability rule 5): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                logger?.LogDebug("Unavailable for search (availability rule 5): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                     title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
                 return false;
             }
@@ -1389,13 +1389,13 @@ public class ArrSyncService
             {
                 if (digitalRelease <= now)
                 {
-                    logger?.LogInformation("Available for search (availability rule 6): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                    logger?.LogDebug("Available for search (availability rule 6): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                         title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
                     return true;
                 }
                 else
                 {
-                    logger?.LogInformation("Unavailable for search (availability rule 7): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                    logger?.LogDebug("Unavailable for search (availability rule 7): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                         title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
                     return false;
                 }
@@ -1404,13 +1404,13 @@ public class ArrSyncService
             {
                 if (physicalRelease <= now)
                 {
-                    logger?.LogInformation("Available for search (availability rule 8): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                    logger?.LogDebug("Available for search (availability rule 8): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                         title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
                     return true;
                 }
                 else
                 {
-                    logger?.LogInformation("Unavailable for search (availability rule 9): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                    logger?.LogDebug("Unavailable for search (availability rule 9): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                         title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
                     return false;
                 }
@@ -1420,7 +1420,7 @@ public class ArrSyncService
         // Case 10: No dates + "inCinemas" → Grab
         if (inCinemas == null && digitalRelease == null && physicalRelease == null && minimumAvailability == "inCinemas")
         {
-            logger?.LogInformation("Available for search (availability rule 10): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+            logger?.LogDebug("Available for search (availability rule 10): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                 title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
             return true;
         }
@@ -1430,13 +1430,13 @@ public class ArrSyncService
         {
             if (inCinemas <= now)
             {
-                logger?.LogInformation("Available for search (availability rule 11): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                logger?.LogDebug("Available for search (availability rule 11): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                     title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
                 return true;
             }
             else
             {
-                logger?.LogInformation("Unavailable for search (availability rule 12): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                logger?.LogDebug("Unavailable for search (availability rule 12): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                     title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
                 return false;
             }
@@ -1449,13 +1449,13 @@ public class ArrSyncService
             {
                 if (digitalRelease <= now)
                 {
-                    logger?.LogInformation("Available for search (availability rule 13): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                    logger?.LogDebug("Available for search (availability rule 13): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                         title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
                     return true;
                 }
                 else
                 {
-                    logger?.LogInformation("Unavailable for search (availability rule 14): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                    logger?.LogDebug("Unavailable for search (availability rule 14): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                         title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
                     return false;
                 }
@@ -1464,13 +1464,13 @@ public class ArrSyncService
             {
                 if (physicalRelease <= now)
                 {
-                    logger?.LogInformation("Available for search (availability rule 15): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                    logger?.LogDebug("Available for search (availability rule 15): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                         title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
                     return true;
                 }
                 else
                 {
-                    logger?.LogInformation("Unavailable for search (availability rule 16): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                    logger?.LogDebug("Unavailable for search (availability rule 16): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                         title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
                     return false;
                 }
@@ -1478,7 +1478,7 @@ public class ArrSyncService
             else
             {
                 // Case 17: No inCinemas + no dates + "inCinemas" → Skip
-                logger?.LogInformation("Unavailable for search (availability rule 17): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+                logger?.LogDebug("Unavailable for search (availability rule 17): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                     title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
                 return false;
             }
@@ -1487,13 +1487,13 @@ public class ArrSyncService
         // Case 18: "announced" → Grab
         if (minimumAvailability == "announced")
         {
-            logger?.LogInformation("Available for search (availability rule 18): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+            logger?.LogDebug("Available for search (availability rule 18): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
                 title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
             return true;
         }
 
         // Case 19: Default → Skip
-        logger?.LogInformation("Unavailable for search (availability rule 19): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
+        logger?.LogDebug("Unavailable for search (availability rule 19): {Title} - Minimum Availability: {MinAvail}, Dates Cinema:{Cinemas}, Digital:{Digital}, Physical:{Physical}",
             title, minimumAvailability, inCinemas, digitalRelease, physicalRelease);
         return false;
     }
@@ -1504,17 +1504,17 @@ public class ArrSyncService
 
         if (airDateUtc == null)
         {
-            logger?.LogInformation("Episode {Title} - No air date, waiting before automatic search", episodeTitle);
+            logger?.LogDebug("Episode {Title} - No air date, waiting before automatic search", episodeTitle);
             return false;
         }
 
         if (airDateUtc > now)
         {
-            logger?.LogInformation("Episode {Title} - Not aired yet (AirDate: {AirDate}), skipping", episodeTitle, airDateUtc);
+            logger?.LogDebug("Episode {Title} - Not aired yet (AirDate: {AirDate}), skipping", episodeTitle, airDateUtc);
             return false;
         }
 
-        logger?.LogInformation("Episode {Title} - Available (aired on {AirDate})", episodeTitle, airDateUtc);
+        logger?.LogDebug("Episode {Title} - Available (aired on {AirDate})", episodeTitle, airDateUtc);
         return true;
     }
 
@@ -1524,17 +1524,17 @@ public class ArrSyncService
 
         if (releaseDate == null)
         {
-            logger?.LogInformation("Album {Title} - No release date, available for search", albumTitle);
+            logger?.LogDebug("Album {Title} - No release date, available for search", albumTitle);
             return true;
         }
 
         if (releaseDate > now)
         {
-            logger?.LogInformation("Album {Title} - Not released yet (ReleaseDate: {ReleaseDate}), skipping", albumTitle, releaseDate);
+            logger?.LogDebug("Album {Title} - Not released yet (ReleaseDate: {ReleaseDate}), skipping", albumTitle, releaseDate);
             return false;
         }
 
-        logger?.LogInformation("Album {Title} - Available (released on {ReleaseDate})", albumTitle, releaseDate);
+        logger?.LogDebug("Album {Title} - Available (released on {ReleaseDate})", albumTitle, releaseDate);
         return true;
     }
 

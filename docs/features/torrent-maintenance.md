@@ -1,6 +1,6 @@
-# Manage
+# Torrent maintenance
 
-Manage brings maintenance configuration, previews, execution, and history into one place. Select a torrent client, then expand one tool card. Opening the page does not scan or change torrents or files.
+Open **Maintenance** and choose a section. Select a torrent client, then choose a tool in Recovery, Organization, or Storage. Opening the page does not scan or change torrents or files.
 
 ## Tools
 
@@ -10,20 +10,20 @@ Manage brings maintenance configuration, previews, execution, and history into o
 | Organization | Category reconciliation, automatic torrent management, private-torrent tagging, tracker-error tagging |
 | Storage | Orphan-file cleanup, hardlink audit, recycle-bin retention |
 
-Every original configuration option remains available. Common options appear first; advanced tuning is collapsed. Shared settings hold the maintenance master switch, scope, path mappings, recycle bin, and execution safeguards. Connection, free-space monitoring, seeding, and trackers remain in the client configuration dialog.
+Every original configuration option remains available. Common options appear first, followed by advanced controls. Shared settings hold the maintenance master switch, scope, path mappings, recycle bin, and execution safeguards. Connection, free-space monitoring, seeding, and trackers remain in the client configuration dialog.
 
 ## Configure, check, apply
 
-1. Open **Manage**, or use **Open Manage** in a saved torrent client's configuration dialog.
+1. Open **Maintenance → Shared Settings**, or use **Open Shared Settings** in a saved torrent client's editor.
 2. Enable maintenance and configure the shared settings and chosen tool. Save changes. Saving never runs a tool.
 3. Choose the tool's **Check** action. Review proposed mutations, blocked changes, and diagnostics in **Preview results**.
 4. Apply the reviewed preview once in Manual, or select Automatic and save to enable future scheduled runs. Automatic remains enabled after restart and requires no restart to activate.
 
-Unsaved changes must be saved or discarded before switching clients or leaving. The client-dialog shortcut preserves other client edits. Preview plans expire at their configured TTL, execute once, and become invalid after relevant configuration changes. Results and history start collapsed and open when used. Existing maintenance links continue to open Manage.
+Drafts stay available while moving between Settings and Maintenance. Switching maintenance clients or leaving both groups prompts before discarding changes. Preview plans expire at their configured TTL, execute once, and become invalid after relevant configuration changes. Preview results appear in the originating category. Open **Maintenance → Recent Runs** for history.
 
 ## Scheduling and protection
 
-Every torrent removal and deletion of referenced torrent content requires current HnR clearance. Manual execution, custom-format rejection, failed categories, import errors, and file exclusions cannot bypass it. Unmet or unknown obligations preserve the torrent and content. Arr queue removal and blocklisting for failed downloads follow confirmed protected removal; Arr is not asked to remove the torrent independently. Recycle preparation rechecks clearance and restores moved content if clearance changes before client removal.
+Every torrent removal and deletion of referenced torrent content requires current HnR clearance. Manual execution, custom-format rejection, failed categories, import errors, and file exclusions cannot bypass it. Unmet or unknown obligations prevent those deletion actions. They do not block imports, configured pauses/resumes, tracker/category changes, or repair; those actions retain their own scope, capability, path, and ownership checks. Arr queue removal and blocklisting for failed downloads follow confirmed protected removal; Arr is not asked to remove the torrent independently. Recycle preparation rechecks clearance and restores moved content if clearance changes before client removal.
 
 Manual mode applies a reviewed preview once. Automatic mode runs on the saved schedule without requiring a restart and retains scheduling across restarts. Existing session settings migrate to Manual with their schedules preserved. Cron expressions use UTC. Missed runs are not replayed; persisted claims prevent the same scheduled minute from running twice after restart.
 

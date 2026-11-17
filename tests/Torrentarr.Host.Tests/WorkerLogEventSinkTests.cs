@@ -86,13 +86,15 @@ public sealed class WorkerLogEventSinkTests
         finally { directory.Delete(true); }
     }
     [Fact]
-    public void RestartAppends_AndKeepsExistingHistory()
+    public void RestartAppends_KeepsRecentHistory_AndExpiresOldFiles()
     {
         var directory = Directory.CreateTempSubdirectory("torrentarr-log-restart-");
         try
         {
-            var older = Path.Combine(directory.FullName, "torrentarr-20200101.log");
+            var older = Path.Combine(directory.FullName, $"torrentarr-{DateTime.Now.AddDays(-1):yyyyMMdd}.log");
+            var expired = Path.Combine(directory.FullName, "torrentarr-20200101.log");
             File.WriteAllText(older, "old history\n");
+            File.WriteAllText(expired, "expired history\n");
             for (var i = 0; i < 2; i++)
             {
                 using var sink = new WorkerLogEventSink(directory.FullName);
@@ -104,6 +106,7 @@ public sealed class WorkerLogEventSinkTests
             var service = Directory.GetFiles(directory.FullName, "torrentarr-*.log").Single(p => p != older);
             File.ReadAllText(service).Should().Be(File.ReadAllText(aggregate));
             File.ReadAllText(older).Should().Be("old history\n");
+            File.Exists(expired).Should().BeFalse();
             Directory.GetFiles(directory.FullName, "*.old").Should().BeEmpty();
         }
         finally { directory.Delete(true); }
@@ -232,8 +235,11 @@ public sealed class WorkerLogEventSinkTests
             lines.Count(line => line.StartsWith("System.IO.IOException: concurrent-")).Should().Be(8);
             lines.Count(line => line.Contains("InvalidOperationException: inner cause")).Should().Be(8);
             Directory.GetFiles(directory.FullName, "worker-test-*.log").Should().HaveCount(2);
+            var serviceRecords = Directory.GetFiles(directory.FullName, "worker-test-*.log")
+                .SelectMany(File.ReadAllLines).Where(line => line.Contains("]entry-")).ToArray();
+            serviceRecords.Should().BeEquivalentTo(records);
             var rolled = Directory.GetFiles(Path.Combine(directory.FullName, "rollover"), "all-*.log");
-            rolled.Should().HaveCount(7);
+            rolled.Should().HaveCount(7, "the seven-day age limit applies before the eight-file maximum");
             rolled.Select(Path.GetFileName).Should().BeEquivalentTo(Enumerable.Range(4, 7).Select(day => $"all-202601{day:00}.log"));
             foreach (var file in rolled) File.ReadAllLines(file).Should().ContainSingle();
         }

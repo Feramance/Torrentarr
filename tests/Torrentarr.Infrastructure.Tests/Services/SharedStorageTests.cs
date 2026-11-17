@@ -30,7 +30,7 @@ public sealed class SharedStorageTests : IDisposable
     private Mock<ITorrentClient> Client(string id, string disk, long remaining, string category = "movies", string state = "downloading", long reserve = 10)
     {
         var root = Root(id);
-        _config.TorrentClients[id] = new() { Host = "fixture", FreeSpace = [new() { Path = root, Enabled = true, Limit = reserve.ToString() }] };
+        _config.TorrentClients[id] = new() { Host = "fixture", ManagedCategories = ["movies"], FreeSpace = [new() { Path = root, Enabled = true, Limit = reserve.ToString() }] };
         _disks[root] = new(disk, 1000, 100);
         var client = new Mock<ITorrentClient>();
         client.SetupGet(c => c.Capabilities).Returns(TorrentClientCapabilities.QBittorrent);

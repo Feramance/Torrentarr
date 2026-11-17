@@ -12,7 +12,7 @@ export const maintenanceCategories = [
 export const maintenanceOperations: {
   operation: MaintenanceOperation;
   title: string;
-  category: string;
+  category: (typeof maintenanceCategories)[number];
   group: string;
   description: string;
   paths: string[];
@@ -46,7 +46,7 @@ export const maintenanceOperations: {
     description:
       "Handle confirmed tracker registration failures with repair and recycling safeguards.",
     paths: ["Unregistered"],
-    essential: ["Unregistered.CompletedOnly"],
+    essential: ["Unregistered.CompletedOnly", "Unregistered.ParkIncomplete"],
   },
   {
     operation: "CategoryReconcile",

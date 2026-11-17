@@ -387,10 +387,11 @@ public static class LogFileApi
         if (!includeRotated || !Directory.Exists(logsRoot))
             return files;
 
-        var prefix = Path.GetFileName(name);
+        var prefix = Regex.Replace(Path.GetFileName(name), @"(?:_\d{3,})?\.log$", "");
+        var sibling = new Regex("^" + Regex.Escape(prefix) + @"(?:_\d{3,})?\.log(?:\..*)?$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
         foreach (var candidate in Directory.GetFiles(logsRoot, prefix + "*"))
         {
-            if (files.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+            if (!sibling.IsMatch(Path.GetFileName(candidate)) || files.Contains(candidate, StringComparer.OrdinalIgnoreCase))
                 continue;
             files.Add(candidate);
         }

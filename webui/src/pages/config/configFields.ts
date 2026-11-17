@@ -65,6 +65,12 @@ function fields(
       allowNegative: f.allowNegative,
       applyLive: f.applyLive ?? undefined,
       requiresRestart: f.requiresRestart ?? undefined,
+      restartComponent:
+        f.section === "Arr"
+          ? "Arr worker"
+          : f.section === "WebUI"
+            ? "WebUI"
+            : "Torrentarr",
       minimum: f.minimum,
       maximum: f.maximum,
       ...(section === "WebUI"
@@ -151,7 +157,23 @@ export function configureConfigFields(
 }
 configureConfigFields(schema);
 export function getClientFields(): FieldDefinition[] {
-  return fields("TorrentClient");
+  return fields("TorrentClient").map((field) => {
+    const key = field.path?.[0];
+    if (key === "Type" || key === "Host") return { ...field, required: true };
+    if (key === "Port") {
+      return {
+        ...field,
+        required: true,
+        validate: (value, context) => {
+          const port = Number(value);
+          return !Number.isInteger(port) || port < 1 || port > 65535
+            ? "Port must be a whole number between 1 and 65535."
+            : field.validate?.(value, context);
+        },
+      };
+    }
+    return field;
+  });
 }
 export function getSchemaDefaults(
   section: string,
@@ -171,6 +193,20 @@ export function getSchemaDefaults(
 export function extractTooltipSummary(tooltip?: string): string | undefined {
   return tooltip?.split(/(?<=[.!?])\s/)[0];
 }
+const HIT_AND_RUN_MODE_LABELS: Record<string, string> = {
+  and: "Ratio and seeding time",
+  or: "Ratio or seeding time",
+  ratio: "Ratio only",
+  time: "Seeding time only",
+  disabled: "Disabled",
+};
+
+export function hitAndRunModeLabel(value: string): string | undefined {
+  return Object.hasOwn(HIT_AND_RUN_MODE_LABELS, value)
+    ? HIT_AND_RUN_MODE_LABELS[value]
+    : undefined;
+}
+
 export const ARR_TRACKER_FIELDS: FieldDefinition[] = [
   { label: "Name", path: ["Name"], type: "text", required: true },
   { label: "URI", path: ["URI"], type: "text", required: true },
@@ -198,6 +234,8 @@ export const ARR_TRACKER_FIELDS: FieldDefinition[] = [
     nativeUnit: "seconds",
     allowNegative: true,
     validate: (value) => {
+      if (value === undefined || value === null || value === "")
+        return undefined;
       const total = parseDurationToSeconds(value, -2);
       if (total === -1) return undefined;
       if (!Number.isFinite(total) || total < -1) {
@@ -249,6 +287,8 @@ export const ARR_TRACKER_FIELDS: FieldDefinition[] = [
     nativeUnit: "seconds",
     allowNegative: true,
     validate: (value) => {
+      if (value === undefined || value === null || value === "")
+        return undefined;
       const total = parseDurationToSeconds(value, -2);
       if (total === -1) return undefined;
       if (!Number.isFinite(total) || total < -1) {
@@ -273,7 +313,7 @@ export const ARR_TRACKER_FIELDS: FieldDefinition[] = [
     label: "Hit and Run Mode",
     path: ["HitAndRunMode"],
     type: "select",
-    options: ["and", "or", "disabled"],
+    options: ["and", "or", "ratio", "time", "disabled"],
     format: (v: unknown) =>
       v === true ? "and" : v === false ? "disabled" : (v as string),
     parse: (v: string | boolean) =>
@@ -391,7 +431,6 @@ export function getArrFieldSets(arrKey: string) {
     seedingFields: arr.filter(
       (f) => f.path?.[0] === "Torrent" && f.path[1] === "SeedingMode",
     ),
-    trackerFields: [...ARR_TRACKER_FIELDS, ...getTrackerProtectionFields()],
   };
 }
 

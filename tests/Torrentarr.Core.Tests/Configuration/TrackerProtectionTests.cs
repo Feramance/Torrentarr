@@ -65,7 +65,10 @@ public class TrackerProtectionTests
         TrackerProtectionEvaluator.Evaluate(Torrent(), policy, state, Now, true).State.Should().Be("protected");
         state.EligibleSince = Now.AddMinutes(-60);
         TrackerProtectionEvaluator.Evaluate(Torrent(), policy, state, Now, true).State.Should().Be("eligible");
-        TrackerProtectionEvaluator.Evaluate(Torrent(), policy, state, Now, false).State.Should().Be("unknown");
+        var unconfirmed = TrackerProtectionEvaluator.Evaluate(Torrent(), policy, state, Now, false);
+        unconfirmed.State.Should().Be("unknown");
+        unconfirmed.UnknownReason.Should().Be("tracker-accounting-unconfirmed");
+        unconfirmed.Reason.Should().Contain("Local requirements are met");
     }
 
     [Fact]
@@ -81,31 +84,47 @@ public class TrackerProtectionTests
     {
         var torrent = Torrent(); torrent.AddedOn = Now.AddHours(-100).ToUnixTimeSeconds();
         var decision = TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12, torrent), Now, true);
-        decision.LatestRecoveryStart.Should().Be(Now.AddHours(25));
+        decision.LatestRecoveryStart.Should().Be(Now.AddHours(19));
         TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12, torrent), Now.AddHours(1), true).DeadlineRisk.Should().Be("warning");
-        TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12, torrent), Now.AddHours(25), true).DeadlineRisk.Should().Be("critical");
+        TrackerProtectionEvaluator.Evaluate(torrent, new() { Policy = "onlyencodes" }, Observation(12, torrent), Now.AddHours(19), true).DeadlineRisk.Should().Be("critical");
     }
 
     [Fact]
     public void ObservationsDoNotCreditRestartGapsAndResetOnCounterRollback()
     {
         var torrent = Torrent(); var state = new ProtectionObservation();
-        TrackerProtectionEvaluator.Observe(state, torrent, true, Now);
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now, TimeSpan.FromMinutes(5));
         torrent.SeedingTime += 300;
-        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddMinutes(5));
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddMinutes(5), TimeSpan.FromMinutes(5));
         state.SeedSeconds.Should().Be(300);
         torrent.SeedingTime += 3600;
-        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddMinutes(65));
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddMinutes(65), TimeSpan.FromMinutes(5));
         state.SeedSeconds.Should().Be(300);
         torrent.SeedingTime = 1;
-        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddMinutes(66));
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddMinutes(66), TimeSpan.FromMinutes(5));
         state.SeedSeconds.Should().Be(0);
+    }
+
+    [Fact]
+    public void SeedCreditUsesTheConfiguredObservationGap()
+    {
+        var torrent = Torrent();
+        var state = new ProtectionObservation();
+        var gap = TimeSpan.FromSeconds(60);
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now, gap);
+        torrent.SeedingTime += 61;
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddSeconds(61), gap);
+        state.SeedSeconds.Should().Be(0);
+
+        torrent.SeedingTime += 60;
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now.AddSeconds(121), gap);
+        state.SeedSeconds.Should().Be(60);
     }
 
     [Fact]
     public void CounterRecheckDoesNotEraseAnExistingPartialObligation()
     {
-        var state = new ProtectionObservation { MaximumDownloadPercent = 55 };
+        var state = new ProtectionObservation { AddedOn = Torrent().AddedOn, MaximumDownloadPercent = 55 };
         TrackerProtectionEvaluator.Evaluate(Torrent(.05), new() { Policy = "onlyencodes" }, state, Now, true).State.Should().Be("protected");
     }
 
@@ -133,7 +152,7 @@ public class TrackerProtectionTests
             CompletionOn = torrent.CompletionOn,
             ClientSeedSeconds = torrent.SeedingTime - 300
         };
-        TrackerProtectionEvaluator.Observe(state, torrent, true, Now);
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now, TimeSpan.FromMinutes(5));
         state.SeedSeconds.Should().Be(0);
     }
 
@@ -149,7 +168,7 @@ public class TrackerProtectionTests
         var torrent = Torrent();
         var state = Observation(200000);
         state.AddedOn = torrent.AddedOn - 1;
-        TrackerProtectionEvaluator.Observe(state, torrent, true, Now);
+        TrackerProtectionEvaluator.Observe(state, torrent, true, Now, TimeSpan.FromMinutes(5));
         state.SeedSeconds.Should().Be(0);
         state.AddedOn.Should().Be(torrent.AddedOn);
     }

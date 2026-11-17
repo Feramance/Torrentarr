@@ -67,10 +67,10 @@ public class AutomationLoggingTests
     }
 
     [Fact]
-    public async Task RemovalProtection_ExplainsBlockersAtInformation()
+    public async Task RemovalProtection_ExplainsEvaluationAtDebug()
     {
         await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
-        var logger = new ActivityLogger<SeedingService>();
+        var logger = new ActivityLogger<SeedingService>(LogLevel.Debug);
         var registry = new Mock<Torrentarr.Core.Interfaces.ITorrentClientRegistry>();
         var service = new SeedingService(logger, db, new TorrentarrConfig(), registry.Object);
         var decision = await service.EvaluateRemovalAsync(new() { Hash = "protected", QBitInstanceName = "seedbox", Name = "Protected item" }, TorrentRemovalIntent.SeedingLimit);
@@ -85,7 +85,7 @@ public class AutomationLoggingTests
         await connection.OpenAsync();
         await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite(connection).Options);
         await db.Database.EnsureCreatedAsync();
-        var logger = new ActivityLogger<ArrSyncService>();
+        var logger = new ActivityLogger<ArrSyncService>(LogLevel.Debug);
         var movie = new MoviesFilesModel { ArrInstance = "Radarr", ArrId = 17, TmdbId = 17, Title = "SaveChanges movie", Reason = "Missing" };
         db.Movies.Add(movie);
         await db.SaveChangesWithRetryAsync(logger);
@@ -127,7 +127,7 @@ public class AutomationLoggingTests
         var executor = new Mock<ISearchExecutor>();
         executor.Setup(e => e.ExecuteSearchesAsync("Arr-test", It.IsAny<IEnumerable<SearchCandidate>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SearchResult());
-        var logger = new ActivityLogger<ArrMediaService>();
+        var logger = new ActivityLogger<ArrMediaService>(LogLevel.Debug);
         var service = new ArrMediaService(logger, db, config, executor.Object,
             new ArrSyncService(NullLogger<ArrSyncService>.Instance, config, db, new()));
         await service.SearchMissingMediaAsync("media");
@@ -139,7 +139,7 @@ public class AutomationLoggingTests
     [Fact]
     public void SonarrEligibility_LogsSpecialsAndUnairedDecisions()
     {
-        var logger = new ActivityLogger<ArrMediaService>();
+        var logger = new ActivityLogger<ArrMediaService>(LogLevel.Debug);
         var candidates = SonarrSearchScope.Candidates([
             new() { ArrInstance = "Sonarr", ArrId = 1, SeriesTitle = "Special", SeasonNumber = 0, Monitored = true },
             new() { ArrInstance = "Sonarr", ArrId = 2, SeriesTitle = "Future", SeasonNumber = 1, Monitored = true, AirDateUtc = DateTime.UtcNow.AddDays(1) }

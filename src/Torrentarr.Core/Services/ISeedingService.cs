@@ -11,7 +11,8 @@ public enum TorrentRemovalIntent
 {
     SeedingLimit,
     StalledDownload,
-    RejectedByAllowlist
+    RejectedByAllowlist,
+    RejectedByCustomFormat
 }
 
 public interface ISeedingService
@@ -62,6 +63,9 @@ public interface ISeedingService
     /// Matches qBitrr's _hnr_safe_to_remove() exactly.
     /// </summary>
     Task<bool> IsHnRSafeToRemoveAsync(TorrentInfo torrent, TrackerConfig config, CancellationToken cancellationToken = default);
+
+    /// <summary>Evaluate ordinary seeding limits without H&amp;R deletion authorization.</summary>
+    Task<bool> SeedingLimitsMetAsync(TorrentInfo torrent, CancellationToken cancellationToken = default) => Task.FromResult(false);
 
     /// <summary>
     /// Check if torrent meets removal conditions based on RemoveMode.

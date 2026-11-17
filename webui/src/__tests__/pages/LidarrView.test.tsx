@@ -64,7 +64,7 @@ function renderView(active = true) {
 // ── Card header ───────────────────────────────────────────────────────────────
 
 describe("Lidarr catalog – card header", () => {
-  it("renders the Lidarr card header", async () => {
+  it("renders the Lidarr catalog region", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -73,7 +73,7 @@ describe("Lidarr catalog – card header", () => {
 
     renderView();
 
-    await screen.findByText("Lidarr", {}, { timeout: 10000 });
+    await screen.findByRole("region", { name: "Lidarr" });
   });
 });
 
@@ -115,8 +115,8 @@ describe("Lidarr catalog – empty state", () => {
 
 // ── Single instance ───────────────────────────────────────────────────────────
 
-describe("Lidarr catalog – instance sidebar", () => {
-  it("shows instance button in sidebar when one lidarr instance is configured", async () => {
+describe("Lidarr catalog – centralized instance selection", () => {
+  it("does not duplicate navigation when one lidarr instance is configured", async () => {
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -129,17 +129,13 @@ describe("Lidarr catalog – instance sidebar", () => {
     renderView();
 
     // Use findByRole to get the sidebar button specifically (not the mobile select option)
-    const btn = await screen.findByRole(
-      "button",
-      { name: /lidarr hd/i },
-      { timeout: 5000 },
-    );
-    expect(btn).toBeInTheDocument();
+    await screen.findByRole("region", { name: "Lidarr HD" });
+    expect(
+      screen.queryByRole("button", { name: /lidarr hd/i }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows artist rows when artists are returned", async () => {
-    // LidarrAlbumsResponse.albums contains LidarrAlbumEntry objects:
-    // each entry has { artist: { artistName, title, ... }, totals, tracks }
     server.use(
       http.get("/web/config", () => HttpResponse.json(minimalConfig)),
       http.post("/web/config", () => HttpResponse.json({})),
@@ -172,12 +168,10 @@ describe("Lidarr catalog – instance sidebar", () => {
 
     // The sidebar button appears when instances load (before albums fetch completes).
     // Use waitFor to handle the race between instance load and album fetch.
-    const btn = await screen.findByRole(
-      "button",
-      { name: /lidarr hd/i },
-      { timeout: 5000 },
-    );
-    expect(btn).toBeInTheDocument();
+    await screen.findByRole("region", { name: "Lidarr HD" });
+    expect(
+      screen.queryByRole("button", { name: /lidarr hd/i }),
+    ).not.toBeInTheDocument();
     await screen.findByText("Radiohead");
   });
 });
@@ -193,6 +187,6 @@ describe("Lidarr catalog – inactive", () => {
 
     renderView(false);
 
-    await screen.findByText("Lidarr", {}, { timeout: 10000 });
+    await screen.findByRole("region", { name: "Lidarr" });
   });
 });

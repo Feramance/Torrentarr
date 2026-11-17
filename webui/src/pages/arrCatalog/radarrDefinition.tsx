@@ -6,6 +6,7 @@ import type {
   RadarrMovie,
   RadarrMoviesResponse,
 } from "../../api/types";
+import { arrTypeLabel } from "../../config/arrSections";
 import { RadarrMovieDetailBody } from "../../components/arr/RadarrMovieDetailBody";
 import {
   ArrHasFileBadge,
@@ -173,8 +174,6 @@ export const RADARR_DEFINITION: ArrCatalogDefinition<
 > = {
   kind: "radarr",
   arrType: "radarr",
-  cardTitle: "Radarr",
-  allInstancesLabel: "All Radarr",
   searchPlaceholder: "Filter movies",
   initialFilters: { onlyMissing: false, reasonFilter: "all" },
   filterControls: createStandardArrFilters<RadarrFilters>("All Movies"),
@@ -264,13 +263,14 @@ export const RADARR_DEFINITION: ArrCatalogDefinition<
     seed: row,
     extras: {
       category: categoryForInstanceLabel([...instances], row.__instance),
+      instanceLabel: row.__instance,
     },
   }),
-  buildInstanceSelection: (row, selectionCategory) => ({
+  buildInstanceSelection: (row, selectionCategory, instanceLabel) => ({
     id: radarrInstanceRowKey(row),
     source: "instance",
     seed: row as RadarrMovie,
-    extras: { category: selectionCategory },
+    extras: { category: selectionCategory, instanceLabel },
   }),
   getModalLiveRow: ({
     source,
@@ -288,6 +288,7 @@ export const RADARR_DEFINITION: ArrCatalogDefinition<
     <RadarrMovieDetailBody
       movie={liveRow as RadarrMovie}
       category={String(extras.category ?? "")}
+      instanceLabel={String(extras.instanceLabel ?? arrTypeLabel("radarr"))}
     />
   ),
   renderAggregateBody: (props) => <RadarrAggregateBody {...props} />,
@@ -410,7 +411,7 @@ function RadarrAggregateBody({
       summaryLine={summaryLine}
       onRefresh={onRefresh}
       loading={effectiveLoading}
-      loadingHint="Loading Radarr library…"
+      loadingHint={`Loading ${arrTypeLabel("radarr")} library…`}
       emptyOrder="syncFirst"
       showCatalogEmptyHint={showCatalogEmptyHint}
       hasRows={total > 0}

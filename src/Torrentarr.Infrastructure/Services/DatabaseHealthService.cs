@@ -165,146 +165,61 @@ public class DatabaseHealthService : IDatabaseHealthService
         }
     }
 
-    public async Task<bool> RepairAsync(CancellationToken cancellationToken = default)
+    public Task<bool> BackupAsync(string destPath, CancellationToken cancellationToken = default)
+        => BackupFileAsync(_dbPath, destPath, _logger, cancellationToken);
+
+    public static async Task<bool> BackupFileAsync(string sourcePath, string destinationPath, ILogger logger, CancellationToken ct = default)
     {
-        _logger.LogWarning("Attempting database repair via backup/restore...");
-
-        var backupPath = $"{_dbPath}.backup";
-        var tempPath = $"{_dbPath}.temp";
-
+        string? temporary = null;
         try
         {
-            await _dbContext.Database.CloseConnectionAsync();
+            if (!File.Exists(sourcePath)) throw new FileNotFoundException("Database file not found.", sourcePath);
+            var destination = Path.GetFullPath(destinationPath);
+            if (File.Exists(destination) && string.Equals(ResolvePath(new FileInfo(sourcePath)),
+                ResolvePath(new FileInfo(destination)), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                throw new IOException("Backup destination resolves to the source database.");
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            temporary = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
 
-            if (File.Exists(_dbPath))
+            static SqliteConnection Open(string path, SqliteOpenMode mode) => new(
+                new SqliteConnectionStringBuilder { DataSource = path, Mode = mode, Pooling = false }.ToString());
+            await using (var source = Open(sourcePath, SqliteOpenMode.ReadOnly))
+            await using (var backup = Open(temporary, SqliteOpenMode.ReadWriteCreate))
             {
-                _logger.LogInformation("Creating backup: {BackupPath}", backupPath);
-                File.Copy(_dbPath, backupPath, overwrite: true);
+                await source.OpenAsync(ct);
+                await backup.OpenAsync(ct);
+                source.BackupDatabase(backup);
+                await using var check = backup.CreateCommand();
+                check.CommandText = "PRAGMA quick_check";
+                if (!string.Equals((await check.ExecuteScalarAsync(ct))?.ToString(), "ok", StringComparison.OrdinalIgnoreCase))
+                    throw new IOException("Database backup failed integrity quick_check.");
             }
 
-            foreach (var suffix in new[] { "-wal", "-shm" })
-            {
-                var sidecar = _dbPath + suffix;
-                if (File.Exists(sidecar))
-                {
-                    try { File.Delete(sidecar); } catch { /* best-effort */ }
-                }
-            }
-
-            if (!File.Exists(_dbPath))
-            {
-                _logger.LogError("Database file not found: {Path}", _dbPath);
-                return false;
-            }
-
-            await using (var source = new SqliteConnection($"Data Source={_dbPath};Mode=ReadOnly"))
-            {
-                await source.OpenAsync(cancellationToken);
-                if (File.Exists(tempPath))
-                    File.Delete(tempPath);
-
-                await using var dest = new SqliteConnection($"Data Source={tempPath}");
-                await dest.OpenAsync(cancellationToken);
-                source.BackupDatabase(dest);
-            }
-
-            await using (var verify = new SqliteConnection($"Data Source={tempPath}"))
-            {
-                await verify.OpenAsync(cancellationToken);
-                await using var cmd = verify.CreateCommand();
-                cmd.CommandText = "PRAGMA integrity_check";
-                var check = (await cmd.ExecuteScalarAsync(cancellationToken))?.ToString();
-                if (check != "ok")
-                {
-                    _logger.LogError("Repaired database failed integrity check: {Result}", check);
-                    return false;
-                }
-            }
-
-            File.Delete(_dbPath);
-            File.Move(tempPath, _dbPath);
-
-            _logger.LogInformation("Database repair completed successfully");
+            ct.ThrowIfCancellationRequested();
+            File.Move(temporary, destination, overwrite: true);
+            logger.LogInformation("Database backup complete: {Destination}", destination);
             return true;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Database repair failed");
-
-            if (File.Exists(backupPath))
-            {
-                _logger.LogWarning("Restoring from backup...");
-                try
-                {
-                    File.Copy(backupPath, _dbPath, overwrite: true);
-                    _logger.LogInformation("Backup restored successfully");
-                }
-                catch (Exception restoreEx)
-                {
-                    _logger.LogError(restoreEx, "Failed to restore backup");
-                }
-            }
-
+            logger.LogError(ex, "Database backup failed");
             return false;
         }
         finally
         {
-            if (File.Exists(tempPath))
-            {
-                try { File.Delete(tempPath); } catch { }
-            }
+            if (temporary != null && File.Exists(temporary)) File.Delete(temporary);
+        }
+
+        static string ResolvePath(FileSystemInfo item)
+        {
+            if (item.ResolveLinkTarget(returnFinalTarget: true) is { } target)
+                return ResolvePath(target);
+            var parent = item is DirectoryInfo directory ? directory.Parent : ((FileInfo)item).Directory;
+            return parent == null ? item.FullName : Path.Combine(ResolvePath(parent), item.Name);
         }
     }
 
-    public async Task<bool> BackupAsync(string destPath, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(_dbPath) || !File.Exists(_dbPath))
-            {
-                _logger.LogError("Database file not found: {Path}", _dbPath);
-                return false;
-            }
-
-            var destDir = Path.GetDirectoryName(destPath);
-            if (!string.IsNullOrEmpty(destDir))
-                Directory.CreateDirectory(destDir);
-
-            await using (var source = new SqliteConnection($"Data Source={_dbPath};Mode=ReadOnly"))
-            {
-                await source.OpenAsync(cancellationToken);
-                if (File.Exists(destPath))
-                    File.Delete(destPath);
-
-                await using var dest = new SqliteConnection($"Data Source={destPath}");
-                await dest.OpenAsync(cancellationToken);
-                source.BackupDatabase(dest);
-            }
-
-            await using (var verify = new SqliteConnection($"Data Source={destPath}"))
-            {
-                await verify.OpenAsync(cancellationToken);
-                await using var cmd = verify.CreateCommand();
-                cmd.CommandText = "PRAGMA quick_check";
-                var check = (await cmd.ExecuteScalarAsync(cancellationToken))?.ToString();
-                if (!string.Equals(check, "ok", StringComparison.OrdinalIgnoreCase))
-                {
-                    _logger.LogError("Backup failed integrity quick_check: {Result}", check);
-                    return false;
-                }
-            }
-
-            _logger.LogInformation("Database backup complete: {Dest} ({Bytes} bytes)", destPath, new FileInfo(destPath).Length);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Database backup failed");
-            return false;
-        }
-    }
-
-    public async Task<bool> MaintainAsync(bool repairIfUnhealthy = true, CancellationToken cancellationToken = default)
+    public async Task<bool> MaintainAsync(CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(_dbPath) || !File.Exists(_dbPath))
             return true;
@@ -319,18 +234,7 @@ public class DatabaseHealthService : IDatabaseHealthService
             return true;
         }
 
-        _logger.LogError("Database health check failed during maintenance: {Message}", health.Message);
-        if (!repairIfUnhealthy)
-            return false;
-
-        _logger.LogWarning("Attempting automatic database repair during maintenance...");
-        if (await RepairAsync(cancellationToken))
-        {
-            _logger.LogInformation("Database repair during maintenance succeeded");
-            return true;
-        }
-
-        _logger.LogCritical("Database repair during maintenance failed");
+        _logger.LogError("Database health check failed during maintenance: {Message}. Stop Torrentarr and its workers before recovering the database offline.", health.Message);
         return false;
     }
 

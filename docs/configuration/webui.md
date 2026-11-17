@@ -274,17 +274,19 @@ UI density setting for tables and lists.
 ## Theme
 
 ```toml
-Theme = "Dark"
+Theme = "System"
 ```
 
 **Type:** String
-**Default:** `"Dark"`
-**Options:** `"Dark"`, `"Light"`
+**Default:** `"System"`
+**Options:** `"System"`, `"Light"`, `"Dark"`, `"Midnight"`
 
 Default color theme for the WebUI.
 
+- `"System"` - Follow the operating system's light or dark preference
 - `"Dark"` - Dark mode (easier on eyes, lower power consumption)
 - `"Light"` - Light mode (better in bright environments)
+- `"Midnight"` - Black background with near-black surfaces for OLED displays
 
 **Note:** Users can toggle theme in the WebUI itself. This sets the initial default.
 
@@ -296,7 +298,7 @@ Default color theme for the WebUI.
 CorsAllowedOrigins = ["https://torrentarr.example.com", "http://localhost:5173"]
 ```
 
-Optional array of exact HTTP(S) browser origins, without paths, trailing slashes, wildcards, or credentials. An omitted or empty array allows any origin without credentials. A non-empty array allows credentials only for listed origins. Edit this under **Web Settings → API access**; changes apply live in Host and standalone WebUI. Existing authentication requirements still apply.
+Optional array of exact HTTP(S) browser origins, without paths, trailing slashes, wildcards, or credentials. An omitted or empty array allows any origin without credentials. A non-empty array allows credentials only for listed origins. Edit this under **Settings → Interface & Access → API access**; changes apply live in Host and standalone WebUI. Existing authentication requirements still apply.
 
 ## Complete Configuration Examples
 

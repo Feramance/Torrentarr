@@ -13,8 +13,34 @@ namespace Torrentarr.Infrastructure.Endpoints;
 
 public static class OperationalIssueEndpoints
 {
+    private static readonly TimeSpan GracePeriod = TimeSpan.FromSeconds(30);
+
     private static IReadOnlyList<PendingOperationalIssue> Pending(IOperationalIssueReporter reporter, WorkerProcessSupervisor? workers)
-        => reporter.Pending.Concat(workers?.GetPendingIssues() ?? []).GroupBy(p => new { p.Report.Code, p.Report.ArrInstance, p.Report.ClientInstance, p.Report.SubjectType, p.Report.SubjectId }).Select(g => g.MaxBy(p => p.ObservedAt)!).ToList();
+        => reporter.Pending.Concat(workers?.GetPendingIssues() ?? []).GroupBy(p => new { p.Report.Code, Arr = p.Report.ArrInstance.ToUpperInvariant(), Client = p.Report.ClientInstance.ToUpperInvariant(), p.Report.SubjectType, p.Report.SubjectId }).Select(g => g.MaxBy(p => p.ObservedAt)!).ToList();
+
+    private static DateTime VisibilityCutoff(IServiceProvider services)
+        => (services.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow().UtcDateTime - GracePeriod;
+
+    private static bool IsVisible(PendingOperationalIssue issue, DateTime cutoff)
+        => !issue.Resolved && (issue.FirstObserved ?? issue.ObservedAt) <= cutoff
+            && issue.Report.Code is not ("thumbnail.fetch" or "config.migration");
+
+    private static IQueryable<OperationalIssue> VisibleActive(IQueryable<OperationalIssue> query,
+        DateTime cutoff, IReadOnlyList<PendingOperationalIssue> pending)
+    {
+        query = query.Where(i => i.ResolvedAt == null && i.FirstObserved <= cutoff
+            && i.Code != "thumbnail.fetch" && i.Code != "config.migration");
+        foreach (var update in pending.Where(p => p.Resolved))
+        {
+            var report = update.Report;
+            var through = update.ObservedAt;
+            var arr = report.ArrInstance.ToUpperInvariant();
+            var client = report.ClientInstance.ToUpperInvariant();
+            query = query.Where(i => i.LastObserved > through || i.Code != report.Code || i.ArrInstance.ToUpper() != arr
+                || i.ClientInstance.ToUpper() != client || i.SubjectType != report.SubjectType || i.SubjectId != report.SubjectId);
+        }
+        return query;
+    }
 
     private static async Task DescribeSubjectsAsync(List<OperationalIssue> items, IServiceProvider services, CancellationToken ct)
     {
@@ -73,10 +99,12 @@ public static class OperationalIssueEndpoints
     {
         app.MapGet(prefix + "/issues/summary", async (TorrentarrDbContext db, IOperationalIssueReporter reporter, IServiceProvider services, CancellationToken ct) =>
         {
-            var pending = Pending(reporter, services.GetService(typeof(WorkerProcessSupervisor)) as WorkerProcessSupervisor);
+            var updates = Pending(reporter, services.GetService<WorkerProcessSupervisor>());
+            var cutoff = VisibilityCutoff(services);
+            var pending = updates.Where(p => IsVisible(p, cutoff)).ToList();
             try
             {
-                var counts = await db.OperationalIssues.AsNoTracking().Where(i => i.ResolvedAt == null)
+                var counts = await VisibleActive(db.OperationalIssues.AsNoTracking(), cutoff, updates)
                     .GroupBy(i => new { i.Category, i.ArrInstance, i.ClientInstance, i.Code })
                     .Select(g => new { g.Key.Category, severity = g.Any(i => i.Severity == "error") ? "error" : "warning", g.Key.ArrInstance, g.Key.ClientInstance, g.Key.Code, affected = g.Count() }).ToListAsync(ct);
                 var instances = await db.OperationalIssues.AsNoTracking().Select(i => i.ArrInstance)
@@ -90,12 +118,15 @@ public static class OperationalIssueEndpoints
         {
             if (category is not (null or "automation" or "system") || state is not (null or "active" or "resolved") || severity is not (null or "warning" or "error"))
                 return Results.BadRequest(new { error = "Invalid issue filter." });
-            var pending = Pending(reporter, services.GetService(typeof(WorkerProcessSupervisor)) as WorkerProcessSupervisor);
+            var updates = Pending(reporter, services.GetService<WorkerProcessSupervisor>());
+            var cutoff = VisibilityCutoff(services);
+            var pending = updates.Where(p => IsVisible(p, cutoff)).ToList();
             var currentPage = Math.Max(0, page ?? 0);
             var pageSize = Math.Clamp(page_size ?? 50, 1, 100);
             try
             {
-                var query = db.OperationalIssues.AsNoTracking().Where(i => state == "resolved" ? i.ResolvedAt != null : i.ResolvedAt == null);
+                var issues = db.OperationalIssues.AsNoTracking();
+                var query = state == "resolved" ? issues.Where(i => i.ResolvedAt != null) : VisibleActive(issues, cutoff, updates);
                 if (category != null) query = query.Where(i => i.Category == category);
                 if (severity != null) query = query.Where(i => i.Severity == severity);
                 if (!string.IsNullOrWhiteSpace(instance)) query = query.Where(i => i.ArrInstance == instance || i.ClientInstance == instance);
@@ -154,13 +185,17 @@ public static class OperationalIssueEndpoints
             }
             catch (Exception) when (!ct.IsCancellationRequested) { return Results.Ok(new { available = false, items = Array.Empty<object>(), total = (int?)null, page = currentPage, pageSize, pending }); }
         });
-        app.MapGet(prefix + "/issues/{id:long}", async (long id, TorrentarrDbContext db, IServiceProvider services, int? page, int? page_size, CancellationToken ct) =>
+        app.MapGet(prefix + "/issues/{id:long}", async (long id, TorrentarrDbContext db, IOperationalIssueReporter reporter, IServiceProvider services, int? page, int? page_size, CancellationToken ct) =>
         {
             try
             {
-                var issue = await db.OperationalIssues.AsNoTracking().SingleOrDefaultAsync(i => i.Id == id, ct);
+                var cutoff = VisibilityCutoff(services);
+                var updates = Pending(reporter, services.GetService<WorkerProcessSupervisor>());
+                var issues = db.OperationalIssues.AsNoTracking();
+                var visible = issues.Where(i => i.ResolvedAt != null).Union(VisibleActive(issues, cutoff, updates));
+                var issue = await visible.SingleOrDefaultAsync(i => i.Id == id, ct);
                 if (issue == null) return Results.NotFound();
-                var query = db.OperationalIssues.AsNoTracking().Where(i => i.Code == issue.Code && i.ArrInstance == issue.ArrInstance && i.ClientInstance == issue.ClientInstance);
+                var query = visible.Where(i => i.Code == issue.Code && i.ArrInstance == issue.ArrInstance && i.ClientInstance == issue.ClientInstance);
                 var current = Math.Max(0, page ?? 0); var size = Math.Clamp(page_size ?? 50, 1, 100);
                 var items = await query.OrderBy(i => i.ResolvedAt != null).ThenByDescending(i => i.LastObserved).Skip((int)Math.Min((long)current * size, int.MaxValue)).Take(size).ToListAsync(ct);
                 await DescribeSubjectsAsync(items, services, ct);

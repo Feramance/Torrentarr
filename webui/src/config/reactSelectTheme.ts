@@ -1,56 +1,77 @@
 import type { CSSObjectWithLabel } from "react-select";
 
-/** Shared react-select style overrides for Config and Logs views. */
+/** Config and Logs controls inherit the console's theme and density tokens. */
 export function getSelectStyles(isDark: boolean) {
   return {
-    control: (base: CSSObjectWithLabel) => ({
+    control: (base: CSSObjectWithLabel, state: { isFocused: boolean }) => ({
       ...base,
-      background: isDark ? "#0f131a" : "#ffffff",
-      color: isDark ? "#eaeef2" : "#1d1d1f",
-      borderColor: isDark ? "#2a2f36" : "#d2d2d7",
-      minHeight: "38px",
+      colorScheme: isDark ? "dark" : "light",
+      background: "var(--control-bg)",
+      color: "var(--on-surface)",
+      borderColor: state.isFocused ? "var(--accent)" : "var(--control-border)",
+      minHeight: "var(--control-height)",
+      borderRadius: "4px",
       boxShadow: "none",
-      "&:hover": {
-        borderColor: isDark ? "#3a4149" : "#b8b8bd",
-      },
+      outline: state.isFocused ? "2px solid var(--accent)" : "none",
+      outlineOffset: "1px",
+      "&:hover": { borderColor: "var(--muted)" },
     }),
     menu: (base: CSSObjectWithLabel) => ({
       ...base,
-      background: isDark ? "#0f131a" : "#ffffff",
-      borderColor: isDark ? "#2a2f36" : "#d2d2d7",
-      border: `1px solid ${isDark ? "#2a2f36" : "#d2d2d7"}`,
+      background: "var(--surface)",
+      border: "1px solid var(--control-border)",
+      borderRadius: "4px",
+      boxShadow: "var(--overlay-shadow)",
+      zIndex: 10,
     }),
-    option: (base: CSSObjectWithLabel, state: { isFocused: boolean }) => ({
+    option: (
+      base: CSSObjectWithLabel,
+      state: { isFocused: boolean; isSelected: boolean },
+    ) => ({
       ...base,
-      background: state.isFocused
-        ? isDark
-          ? "rgba(59, 130, 246, 0.15)"
-          : "rgba(37, 99, 235, 0.1)"
-        : isDark
-          ? "#0f131a"
-          : "#ffffff",
-      color: isDark ? "#eaeef2" : "#1d1d1f",
-      "&:active": {
-        background: isDark
-          ? "rgba(59, 130, 246, 0.25)"
-          : "rgba(37, 99, 235, 0.2)",
-      },
+      background: state.isSelected
+        ? "var(--select-selected-bg)"
+        : state.isFocused
+          ? "var(--select-focused-bg)"
+          : "var(--surface)",
+      color: state.isSelected
+        ? "var(--select-selected-text)"
+        : "var(--on-surface)",
+      borderRadius: "2px",
+      "&:active": { background: "var(--select-focused-bg)" },
     }),
     singleValue: (base: CSSObjectWithLabel) => ({
       ...base,
-      color: isDark ? "#eaeef2" : "#1d1d1f",
+      color: "var(--on-surface)",
     }),
     input: (base: CSSObjectWithLabel) => ({
       ...base,
-      color: isDark ? "#eaeef2" : "#1d1d1f",
+      color: "var(--on-surface)",
+      margin: 0,
+      padding: 0,
     }),
     placeholder: (base: CSSObjectWithLabel) => ({
       ...base,
-      color: isDark ? "#9aa3ac" : "#6e6e73",
+      color: "var(--muted)",
     }),
-    menuList: (base: CSSObjectWithLabel) => ({
+    valueContainer: (base: CSSObjectWithLabel) => ({
       ...base,
-      padding: "4px",
+      padding: "2px 8px",
     }),
+    multiValue: (base: CSSObjectWithLabel) => ({
+      ...base,
+      background: "var(--control-hover-bg)",
+      borderRadius: "2px",
+    }),
+    multiValueLabel: (base: CSSObjectWithLabel) => ({
+      ...base,
+      color: "var(--on-surface)",
+    }),
+    multiValueRemove: (base: CSSObjectWithLabel) => ({
+      ...base,
+      color: "var(--muted)",
+      ":hover": { color: "var(--danger)", background: "transparent" },
+    }),
+    menuList: (base: CSSObjectWithLabel) => ({ ...base, padding: "4px" }),
   };
 }

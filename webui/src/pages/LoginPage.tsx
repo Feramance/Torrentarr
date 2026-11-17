@@ -1,3 +1,4 @@
+import logoUrl from "../icons/logov2-clean.svg";
 import React, { useState } from "react";
 import { login, setPassword, AuthError } from "../api/client";
 import { webPath } from "../api/urlBase";
@@ -94,6 +95,7 @@ export function LoginPage({
   return (
     <div className="login-page">
       <div className="login-card">
+        <img className="login-logo" src={logoUrl} alt="" />
         <h1 className="login-title">Torrentarr</h1>
         {view === "login" ? (
           <>

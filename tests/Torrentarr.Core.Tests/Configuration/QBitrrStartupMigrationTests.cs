@@ -102,10 +102,11 @@ public sealed class QBitrrStartupMigrationTests : IDisposable
         client.CategorySeeding.MinSeedRatio.Should().Be(2.5);
         client.CategorySeeding.MinSeedingTimeDays.Should().Be(3);
         client.CategorySeeding.StalledDelay.Should().Be(stalledDelay);
-        client.Trackers.Should().ContainSingle().Which.Should().BeEquivalentTo(new TrackerConfig
+        TrackerRules.ForClient(config, "qBit").Should().ContainSingle().Which.Should().BeEquivalentTo(new TrackerConfig
         {
             Uri = "https://tracker.example/announce",
             HitAndRunMode = "or",
+            Protection = new() { MinimumSeedHours = 0, RequireLegacyClearance = true },
             MaxSeedingTime = 1209600,
             MinSeedRatio = 3,
             MinSeedingTimeDays = 0,
@@ -113,11 +114,12 @@ public sealed class QBitrrStartupMigrationTests : IDisposable
             HitAndRunPartialSeedRatio = 1,
             TrackerUpdateBuffer = 0
         });
-        config.ArrInstances["Sonarr-TV"].Torrent.Trackers.Should().ContainSingle().Which.Should()
+        TrackerRules.ForIntegration(config, "Sonarr-TV", config.ArrInstances["Sonarr-TV"]).Should().ContainSingle().Which.Should()
             .BeEquivalentTo(new TrackerConfig
             {
                 Uri = "https://tracker.example/announce",
                 HitAndRunMode = "and",
+                Protection = new() { MinimumSeedHours = 0, RequireLegacyClearance = true },
                 MaxETA = 7200,
                 MinSeedRatio = 4,
                 MinSeedingTimeDays = 0,

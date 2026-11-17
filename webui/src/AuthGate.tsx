@@ -19,19 +19,19 @@ class ErrorBoundary extends React.Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: "2rem", textAlign: "center" }}>
-          <h2>Something went wrong</h2>
-          <p style={{ color: "#888" }}>{this.state.error?.message}</p>
-          <button
-            onClick={() => window.location.reload()}
-            style={{
-              marginTop: "1rem",
-              padding: "0.5rem 1rem",
-              cursor: "pointer",
-            }}
-          >
-            Reload Page
-          </button>
+        <div className="login-page">
+          <div className="login-card">
+            <h2 className="login-title">Something went wrong</h2>
+            <p className="login-error" role="alert">
+              {this.state.error?.message}
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="btn primary login-submit"
+            >
+              Reload Page
+            </button>
+          </div>
         </div>
       );
     }
@@ -206,14 +206,7 @@ function AuthGate({
 
   if (authState === "loading") {
     return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100vh",
-        }}
-      >
+      <div className="login-page" role="status" aria-label="Loading Torrentarr">
         <span className="spinner" aria-hidden="true" />
       </div>
     );

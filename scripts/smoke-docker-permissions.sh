@@ -36,7 +36,7 @@ docker run --detach --name "${container}" \
 
 ready=0
 for _ in $(seq 1 60); do
-    if docker exec "${container}" curl --fail --silent http://127.0.0.1:6969/health >/dev/null 2>&1; then
+    if docker exec "${container}" /app/Torrentarr.Host --healthcheck >/dev/null 2>&1; then
         ready=1
         break
     fi
@@ -78,7 +78,7 @@ done
 docker restart "${container}" >/dev/null
 restarted_ready=0
 for _ in $(seq 1 60); do
-    if docker exec "${container}" curl --fail --silent http://127.0.0.1:6969/health >/dev/null 2>&1; then
+    if docker exec "${container}" /app/Torrentarr.Host --healthcheck >/dev/null 2>&1; then
         restarted_ready=1
         break
     fi
@@ -87,6 +87,22 @@ done
 if [[ "${restarted_ready}" != "1" ]]; then
     docker logs "${container}"
     echo "Docker permission smoke test: restart lost /health" >&2
+    exit 1
+fi
+
+docker exec "${container}" sed -i 's/^Port = 6969$/Port = 16969/' /config/config.toml
+custom_port_ready=0
+for _ in $(seq 1 60); do
+    if docker exec "${container}" curl --fail --silent http://127.0.0.1:16969/health >/dev/null 2>&1 &&
+       docker exec "${container}" /app/Torrentarr.Host --healthcheck >/dev/null 2>&1; then
+        custom_port_ready=1
+        break
+    fi
+    sleep 1
+done
+if [[ "${custom_port_ready}" != "1" ]]; then
+    docker logs "${container}"
+    echo "Docker health check did not follow the custom WebUI port" >&2
     exit 1
 fi
 

@@ -1,14 +1,16 @@
+import { useInstanceSelection } from "../../hooks/useInstanceSelection";
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
   type JSX,
 } from "react";
+import { CatalogStatistics } from "../../components/CatalogStatistics";
 import { getArrList } from "../../api/client";
 import type { ArrInfo } from "../../api/types";
+import { arrTypeLabel } from "../../config/arrSections";
 import { ArrBrowseModeToggle } from "../../components/arr/ArrBrowseModeToggle";
 import { useSearch } from "../../context/SearchContext";
 import { useToast } from "../../context/ToastContext";
@@ -46,6 +48,8 @@ interface ArrCatalogShellProps<
     TRollup
   >;
   readonly active: boolean;
+  readonly selectedInstance?: string;
+  readonly onSelectInstance?: (instance: string) => void;
 }
 
 /**
@@ -79,6 +83,8 @@ export function ArrCatalogShell<
 >({
   definition,
   active,
+  selectedInstance,
+  onSelectInstance,
 }: ArrCatalogShellProps<
   TInstRow,
   TAggRow,
@@ -99,7 +105,10 @@ export function ArrCatalogShell<
   const { liveArr } = useWebUI();
 
   const [instances, setInstances] = useState<ArrInfo[]>([]);
-  const [selection, setSelection] = useState<string | "aggregate" | "">("");
+  const [selection, setSelection] = useInstanceSelection({
+    selectedInstance,
+    onSelectInstance,
+  });
   const [filters, setFilters] = useState<TFilters>(definition.initialFilters);
   const [modalSelection, setModalSelection] = useState<ArrCatalogModalSelection<
     TInstSeed | TAggSeed
@@ -168,7 +177,7 @@ export function ArrCatalogShell<
       if (data.ready === false && !backendReadyWarnedRef.current) {
         backendReadyWarnedRef.current = true;
         pushToast(
-          `${definition.cardTitle} backend is still initialising. Check the logs if this persists.`,
+          `${arrTypeLabel(definition.arrType)} backend is still initialising. Check the logs if this persists.`,
           "info",
         );
       } else if (data.ready) {
@@ -188,11 +197,11 @@ export function ArrCatalogShell<
       pushToast(
         error instanceof Error
           ? error.message
-          : `Unable to load ${definition.cardTitle} instances`,
+          : `Unable to load ${arrTypeLabel(definition.arrType)} instances`,
         "error",
       );
     }
-  }, [pushToast, definition.arrType, definition.cardTitle]);
+  }, [pushToast, definition.arrType, setSelection]);
 
   useEffect(() => {
     if (!active) return;
@@ -245,17 +254,6 @@ export function ArrCatalogShell<
     iconInstancePageSize,
   });
 
-  const handleInstanceSelection = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      const next = (event.target.value || "aggregate") as string | "aggregate";
-      setSelection(next);
-      if (next !== "aggregate") {
-        setGlobalSearch("");
-      }
-    },
-    [setGlobalSearch],
-  );
-
   const renderContext = useMemo(
     () => ({
       instances,
@@ -290,58 +288,17 @@ export function ArrCatalogShell<
     [definition, selection, instanceLabel, instances],
   );
 
+  const catalogTitle =
+    instanceLabel ||
+    (instances.length > 1
+      ? `All ${arrTypeLabel(definition.arrType)}`
+      : arrTypeLabel(definition.arrType));
+
   return (
-    <section className="card">
-      <div className="card-header">{definition.cardTitle}</div>
+    <section className="card" aria-label={catalogTitle}>
       <div className="card-body">
-        <div className="split">
-          <aside className="pane sidebar">
-            {instances.length > 1 && (
-              <button
-                type="button"
-                className={`btn ${isAggregate ? "active" : ""}`}
-                onClick={() => setSelection("aggregate")}
-              >
-                {definition.allInstancesLabel}
-              </button>
-            )}
-            {instances.map((inst) => (
-              <button
-                type="button"
-                key={inst.name}
-                className={`btn ghost ${
-                  selection === inst.name ? "active" : ""
-                }`}
-                onClick={() => {
-                  setSelection(inst.name);
-                  setGlobalSearch("");
-                }}
-              >
-                {inst.name || inst.category}
-              </button>
-            ))}
-          </aside>
+        <div className="catalog-workspace">
           <div className="pane">
-            <div className="field mobile-instance-select">
-              <label htmlFor={`${definition.kind}-instance`}>Instance</label>
-              <select
-                id={`${definition.kind}-instance`}
-                value={selection || "aggregate"}
-                onChange={handleInstanceSelection}
-                disabled={!instances.length}
-              >
-                {instances.length > 1 && (
-                  <option value="aggregate">
-                    {definition.allInstancesLabel}
-                  </option>
-                )}
-                {instances.map((inst) => (
-                  <option key={inst.name} value={inst.name}>
-                    {inst.name || inst.category}
-                  </option>
-                ))}
-              </select>
-            </div>
             <div
               className="row"
               style={{
@@ -403,6 +360,11 @@ export function ArrCatalogShell<
               </div>
             </div>
 
+            <CatalogStatistics
+              kind={definition.kind}
+              instance={selection || undefined}
+              active={active && instances.length > 0}
+            />
             {isAggregate
               ? definition.renderAggregateBody({
                   ...renderContext,

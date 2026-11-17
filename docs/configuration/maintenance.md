@@ -1,8 +1,8 @@
-# Manage configuration
+# Maintenance configuration
 
-Open **Manage** and select a torrent client. This is the single editor for maintenance tools. The client configuration dialog provides a summary and **Open Manage** shortcut; connection, free-space monitors, seeding, and tracker settings remain in Config.
+Open **Maintenance → Shared Settings** and select a torrent client. Use **Recovery**, **Organization**, or **Storage** to configure tools. The client editor under **Settings → Torrent Clients** provides an **Open Shared Settings** shortcut.
 
-Tools are grouped under **Recovery**, **Organization**, and **Storage**. Expand a card to configure or check that tool. Only one tool card stays open. Advanced filters, limits, schedules, and tuning start collapsed. Shared scope, path mappings, recycling, and safeguards are configured once under **Shared settings**.
+Tools are grouped under **Recovery**, **Organization**, and **Storage**. Tool settings and advanced controls are visible on each category page. Shared scope, path mappings, recycling, and safeguards are configured once under **Shared settings**.
 
 Save settings before checking a tool. Saving does not run it. **Manual** applies a reviewed preview once. **Automatic** runs on the saved schedule and stays enabled after restart; no restart is required. Saving Automatic enables future scheduled runs and never executes a tool immediately. The schedule is shown beside Automatic, in UTC; blank inherits the shared client schedule. Manual hides the schedule without discarding it. Schedules use UTC; displayed times use your browser timezone.
 
@@ -40,7 +40,7 @@ ExecutionMode = 'manual'
 Schedule = '15 3 * * *'
 ```
 
-The same nested settings work under legacy `qBit` / `qBit-*` sections. Do not declare the same client ID in both section styles. The persisted name remains `Maintenance`; Manage is its interface label.
+The same nested settings work under legacy `qBit` / `qBit-*` sections. Do not declare the same client ID in both section styles. The persisted section name is `Maintenance`.
 
 Path mappings describe the same storage in two namespaces; they do not mount or move folders. Filesystem cleanup needs explicit mappings and scan roots. Never select an Arr library or filesystem root as an orphan scan root.
 
@@ -50,9 +50,9 @@ See [workflow and safety](../features/torrent-maintenance.md), [all controls](ma
 
 ## Recycling and native deletion
 
-`Maintenance.RecycleBin.Enabled` is opt-in and defaults to `false`. Existing explicit values are preserved. When false, automatic torrent removal and Manage cleanup send the authorized deletion to the torrent client, including content deletion when requested. No local path mappings or global ownership inventory are required for native deletion. The client controls content handling; Torrentarr does not protect shared files across clients on this path.
+`Maintenance.RecycleBin.Enabled` is opt-in and defaults to `false`. Existing explicit values are preserved. When false, automatic torrent removal and maintenance cleanup send the authorized deletion to the torrent client, including content deletion when requested. No local path mappings or global ownership inventory are required for native deletion. The client controls content handling; Torrentarr does not protect shared files across clients on this path.
 
-When true, cleanup moves eligible files to recycling and retains ownership, shared-file and rollback checks. A recycling failure never falls back to permanent deletion. Manage previews label permanent deletion separately, and configuration changes require a new preview. Orphan-file cleanup follows the same recycling setting: it recycles when enabled and permanently deletes individual orphan files when disabled. Both orphan modes require complete global ownership inspection, explicit local path mappings, and configured scan roots. Files of every extension are eligible, including orphaned `.parts` files. Active qBittorrent `.!qB` files and hash-associated `.parts` files are protected. Empty folders and subfolders are removed after eligible contents are cleaned up; scan/mapping roots, protected paths and nonempty folders remain intact. Recycle retention requires an enabled recycle bin.
+When true, cleanup moves eligible files to recycling and retains ownership, shared-file and rollback checks. A recycling failure never falls back to permanent deletion. Maintenance previews label permanent deletion separately, and configuration changes require a new preview. Orphan-file cleanup follows the same recycling setting: it recycles when enabled and permanently deletes individual orphan files when disabled. Both orphan modes require complete global ownership inspection, explicit local path mappings, and configured scan roots. Files of every extension are eligible, including orphaned `.parts` files. Active qBittorrent `.!qB` files and hash-associated `.parts` files are protected. Empty folders and subfolders are removed after eligible contents are cleaned up; scan/mapping roots, protected paths and nonempty folders remain intact. Recycle retention requires an enabled recycle bin.
 
 Issue details show the affected subject's evidence and next action. HTTP request summaries include method, route template, status, duration and request ID: successful requests are DEBUG, 4xx WARNING and 5xx ERROR. Caller cancellations are recorded at DEBUG with status 499; unavailable upstream services return 503 and upstream timeouts return 504. URLs, credentials and tracker passkeys are redacted from diagnostic evidence.
 

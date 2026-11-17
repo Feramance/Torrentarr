@@ -51,7 +51,7 @@ describe("ArrView – routing", () => {
 
     render(<ArrView type="radarr" active={true} />, { wrapper: Wrapper });
 
-    await screen.findByText("Radarr");
+    await screen.findByRole("region", { name: "Radarr" });
   });
 
   it("renders Sonarr catalog (shows 'Sonarr' header) when type=sonarr", async () => {
@@ -63,7 +63,7 @@ describe("ArrView – routing", () => {
 
     render(<ArrView type="sonarr" active={true} />, { wrapper: Wrapper });
 
-    await screen.findByText("Sonarr");
+    await screen.findByRole("region", { name: "Sonarr" });
   });
 
   it("renders Lidarr catalog (shows 'Lidarr' header) when type=lidarr", async () => {
@@ -75,7 +75,7 @@ describe("ArrView – routing", () => {
 
     render(<ArrView type="lidarr" active={true} />, { wrapper: Wrapper });
 
-    await screen.findByText("Lidarr");
+    await screen.findByRole("region", { name: "Lidarr" });
   });
 
   it("renders ReadarrView (shows 'Readarr' header) when type=readarr", async () => {
@@ -87,7 +87,7 @@ describe("ArrView – routing", () => {
 
     render(<ArrView type="readarr" active={true} />, { wrapper: Wrapper });
 
-    await screen.findByText("Readarr");
+    await screen.findByRole("region", { name: "Readarr" });
   });
 });
 
@@ -102,7 +102,7 @@ describe("ArrView – inactive", () => {
 
     render(<ArrView type="radarr" active={false} />, { wrapper: Wrapper });
 
-    await screen.findByText("Radarr");
+    await screen.findByRole("region", { name: "Radarr" });
   });
 
   it("renders Sonarr catalog card frame when type=sonarr active=false", async () => {
@@ -113,7 +113,7 @@ describe("ArrView – inactive", () => {
 
     render(<ArrView type="sonarr" active={false} />, { wrapper: Wrapper });
 
-    await screen.findByText("Sonarr");
+    await screen.findByRole("region", { name: "Sonarr" });
   });
 
   it("renders Lidarr catalog card frame when type=lidarr active=false", async () => {
@@ -124,7 +124,7 @@ describe("ArrView – inactive", () => {
 
     render(<ArrView type="lidarr" active={false} />, { wrapper: Wrapper });
 
-    await screen.findByText("Lidarr");
+    await screen.findByRole("region", { name: "Lidarr" });
   });
 
   it("renders ReadarrView card frame when type=readarr active=false", async () => {
@@ -135,6 +135,6 @@ describe("ArrView – inactive", () => {
 
     render(<ArrView type="readarr" active={false} />, { wrapper: Wrapper });
 
-    await screen.findByText("Readarr");
+    await screen.findByRole("region", { name: "Readarr" });
   });
 });
