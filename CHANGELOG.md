@@ -1,5 +1,65 @@
 # Changelog
 
+## v7.0.0-1 (2026-11-17)
+
+### Features
+- Add scoped tracker settings and migrate existing rules ([9d1022b](https://github.com/Feramance/Torrentarr/commit/9d1022b1e1e7f5f7b7da971e733471b78d60834b))
+
+### Bug Fixes
+- Fix config migration, tracker inspection, and import state ([3380a5c](https://github.com/Feramance/Torrentarr/commit/3380a5c25926c07d4cc43676e5e2e59254296885))
+- Fix torrent cleanup retries and console reporting ([f333b7c](https://github.com/Feramance/Torrentarr/commit/f333b7caa3f9c35fd490f906311fe3dfbf51e049))
+- Fix Arr activity gaps and harden Torrentarr maintenance ([039f203](https://github.com/Feramance/Torrentarr/commit/039f203563adf6284207fe89ad4f18056fded5b1))
+- Fix transfer chart axis labels and hover flicker ([bcfc54f](https://github.com/Feramance/Torrentarr/commit/bcfc54f3e129526d10b9f984a48b6b07b1dcad69))
+
+### Maintenance
+- Wait for navigation drawer focus in WebUI test ([12c647d](https://github.com/Feramance/Torrentarr/commit/12c647d5298e624deb693802bef91fda3c1f4c75))
+- Preserve tracker assignments and inspect deferred torrents ([1c7fa59](https://github.com/Feramance/Torrentarr/commit/1c7fa5925fb43d9cdce0f9cbe81930fd0a314ab8))
+- Bound protection inspection requests per client ([e0c617c](https://github.com/Feramance/Torrentarr/commit/e0c617c5c6b6b902462b6dc41a675db2b2085bad))
+- Bump Microsoft.AspNetCore.Authentication.OpenIdConnect from 10.0.14 to 10.0.15 (#583) ([8717c62](https://github.com/Feramance/Torrentarr/commit/8717c627d2facdbaf3dca46022db420bb020b704))
+- Address import pause recovery and repair PR checks ([7511ed2](https://github.com/Feramance/Torrentarr/commit/7511ed2d682d7e6776c6f181866ebcbce6c80373))
+- Refine configuration views and torrent automation ([8c70f57](https://github.com/Feramance/Torrentarr/commit/8c70f575d4e581d9c6f25d9ea0ecdc19dfa0cd08))
+- Bump Microsoft.EntityFrameworkCore.InMemory from 10.0.14 to 10.0.15 ([ee71262](https://github.com/Feramance/Torrentarr/commit/ee71262450bed03d0a1fa220161ffb0be08ccd0f))
+- Bump Microsoft.EntityFrameworkCore from 10.0.14 to 10.0.15 ([4809de9](https://github.com/Feramance/Torrentarr/commit/4809de98cfb0d92370c6c2d4a06d7396526e3b2c))
+- Bump Microsoft.AspNetCore.Mvc.Testing from 10.0.14 to 10.0.15 ([ca8a909](https://github.com/Feramance/Torrentarr/commit/ca8a909b87b85cde2dfc37e998bf204e2f6fb044))
+- Bump Microsoft.AspNetCore.Mvc.NewtonsoftJson from 10.0.14 to 10.0.15 ([fa79d6d](https://github.com/Feramance/Torrentarr/commit/fa79d6d6c50754bfef52e41736cbf4f84331ec0e))
+- build(deps): bump @mantine/hooks from 9.7.4 to 9.8.0 in /webui ([a9cf0ca](https://github.com/Feramance/Torrentarr/commit/a9cf0ca3f7b3ba5cf8bafe2042c63430710f74ab))
+- build(deps-dev): bump @tailwindcss/postcss from 4.3.4 to 4.3.5 in /webui ([e754d6c](https://github.com/Feramance/Torrentarr/commit/e754d6ce0ce636bc2b471c3926215b0413de43c7))
+- build(deps-dev): bump @vitest/coverage-v8 from 5.0.5 to 5.1.0 in /webui ([ada4c62](https://github.com/Feramance/Torrentarr/commit/ada4c62bce596441d72dd165e067dd6c5c010c25))
+- build(deps-dev): bump @vitejs/plugin-react from 6.1.2 to 6.3.0 in /webui ([003457e](https://github.com/Feramance/Torrentarr/commit/003457e225d45141161bc82161bfd48199b7dfe2))
+- build(deps-dev): bump msw from 2.15.0 to 3.0.5 in /webui ([d8466fa](https://github.com/Feramance/Torrentarr/commit/d8466fa3e822394533811694697d8670644a19f7))
+- Harden tracker settings and Hit & Run protection ([c115d17](https://github.com/Feramance/Torrentarr/commit/c115d1730e0c82f955e0c738e7842d85eb2631dc))
+- Organize tracker settings into a compact list ([fb873e6](https://github.com/Feramance/Torrentarr/commit/fb873e67ea8013f6cdd9c7f99925e5baabcb5a84))
+- Defer torrent imports during active rechecks ([b2c7394](https://github.com/Feramance/Torrentarr/commit/b2c73941dc36b3daca2e14fb3576fe1f1a6f0f52))
+- Address PR 563 review findings and release validation ([0b1f31c](https://github.com/Feramance/Torrentarr/commit/0b1f31ceba5b01121daf9d5332c965af7307fb0f))
+- Restore instance summaries and fix settings scroll ([4e57fc6](https://github.com/Feramance/Torrentarr/commit/4e57fc6c1e2bd78136c115c504f9c7be904b4a51))
+- Polish Settings and Maintenance console UI ([a123735](https://github.com/Feramance/Torrentarr/commit/a123735471439fbbd2d0103a96b8fafce64dfe16))
+- Reorganize Settings and Maintenance navigation ([fc8976b](https://github.com/Feramance/Torrentarr/commit/fc8976be65d0bcd7cd155af515400a4e412a2882))
+- Identify development builds by commit ([07bb134](https://github.com/Feramance/Torrentarr/commit/07bb13487adf1a3d80631606d02cbdc82bcb062b))
+- Reconcile pre-scan imports and surface actionable migration issues ([af26a1f](https://github.com/Feramance/Torrentarr/commit/af26a1fb71b93c31923cfc95e1b3f3aa627c6a2d))
+- Use bump2version for PR builds ([a25a43d](https://github.com/Feramance/Torrentarr/commit/a25a43d6fef6e12303a74735d126fa9e1a31446a))
+- Allow local Compose builds to set the PR version ([a7dafa8](https://github.com/Feramance/Torrentarr/commit/a7dafa8cbeaa572228461c22e991a82c4fb78ebb))
+- Verify import isolation through public readiness checks ([56633d8](https://github.com/Feramance/Torrentarr/commit/56633d804e4e31c984e22ba3170d3257b61129e6))
+- Stamp PR Docker images with the workflow build version ([a676f6e](https://github.com/Feramance/Torrentarr/commit/a676f6e95ff859c6106c165a419ce4e30763f171))
+- Address import and tracker protection review findings ([b3cbfed](https://github.com/Feramance/Torrentarr/commit/b3cbfed244ee0358f816b6dc850556b3847a5869))
+- Gate Docker publishing on the permission smoke test ([8603b97](https://github.com/Feramance/Torrentarr/commit/8603b97a50d974d60ca2d84124b22d6bc50b5f86))
+- Run Docker smoke test alongside build matrix ([32f6e7c](https://github.com/Feramance/Torrentarr/commit/32f6e7c4a9d11d93e32674c896c89c25e873621f))
+- Refine operational issues and link to configuration fixes ([95d9bb4](https://github.com/Feramance/Torrentarr/commit/95d9bb46de60bc74e5f07476e3306accf5fdb03b))
+- Parse Arr history dates invariantly ([a4c3fbc](https://github.com/Feramance/Torrentarr/commit/a4c3fbc986ed60325478bcced2e32ae5bdcbbcbf))
+- Restore config state after dedicated logging test host ([3dfc873](https://github.com/Feramance/Torrentarr/commit/3dfc8738ff78ade0bd861edf1b593744c1756ad2))
+- Bump Microsoft.Extensions.FileProviders.Embedded from 10.0.13 to 10.0.14 (#571) ([0115f07](https://github.com/Feramance/Torrentarr/commit/0115f07659c839cf6d4bafebb4c1d9c6c13f3feb))
+- Isolate Host logging integration test ([f2fc058](https://github.com/Feramance/Torrentarr/commit/f2fc058a442e83c4b7aba333576eba590e3664dd))
+- Isolate Host logging integration test ([f5373dd](https://github.com/Feramance/Torrentarr/commit/f5373dde5f4f5e3d1f43b5646e373f4f404bf209))
+- Unify WebUI theme styling and anchor Display popup ([2225ba9](https://github.com/Feramance/Torrentarr/commit/2225ba939d97be86fc236cea7a8732968011f8ff))
+- Isolate Host logging integration test ([10820d4](https://github.com/Feramance/Torrentarr/commit/10820d4662d0d17b941610f96e3d224859d875e6))
+- Bump Swashbuckle.AspNetCore from 10.3.0 to 10.3.1 (#574) ([95b1620](https://github.com/Feramance/Torrentarr/commit/95b1620c5c1b1ebd331a3548ae97b1534dd3826f))
+- build(deps-dev): bump autoprefixer from 10.6.1 to 10.6.2 in /webui (#567) ([5152f74](https://github.com/Feramance/Torrentarr/commit/5152f746de40ed5347ad29f9a7a7340e4ce439c1))
+- Isolate Host logging integration test ([8076cc6](https://github.com/Feramance/Torrentarr/commit/8076cc61cf1feeef45dae7a14e97f65c787e9b84))
+- Keep torrent removal warnings active until recovery ([5cb8ccb](https://github.com/Feramance/Torrentarr/commit/5cb8ccbaf0714c1b42cacb7c7b160e17c93ba5df))
+- Harden torrent cleanup and activity reporting ([56f0b7c](https://github.com/Feramance/Torrentarr/commit/56f0b7c892353efff72d8de1aea6b57c7c139299))
+- Show hovered transfer data in place of latest interval ([89a80b5](https://github.com/Feramance/Torrentarr/commit/89a80b5724967089fccbcbd6da63fbc681eaa7b2))
+
+---
+
 ## v6.20.0-1 (2026-11-04)
 
 ### Bug Fixes
