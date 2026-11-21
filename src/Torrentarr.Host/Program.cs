@@ -182,7 +182,8 @@ try
         Log.Information("Log level set to {Level} from config ConsoleLevel", levelSwitch.MinimumLevel);
     }
 
-    if (!config.GetAllTorrentClients().Values.Any(q => q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME"))
+    if (!config.GetAllTorrentClients().Values.Any(q => q.Host != "CHANGE_ME" &&
+            (q.AuthMode == "api-key" || (q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME"))))
     {
         Log.Warning("qBittorrent is not configured. Please configure via WebUI at http://localhost:{Port}", config.WebUI.Port);
         Log.Warning("Or edit the config file at: {Path}", ConfigurationLoader.GetDefaultConfigPath());
@@ -228,6 +229,7 @@ try
     builder.Services.AddSingleton<IProcessOrchestrator>(sp => sp.GetRequiredService<WorkerProcessSupervisor>());
     builder.Services.AddSingleton<SearchYearCursor>();
     builder.Services.AddSingleton<StalledUploadTracker>();
+    builder.Services.AddSingleton<DownloadStallTracker>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<WorkerProcessSupervisor>());
     builder.Services.AddHostedService<ProcessOrchestratorService>();
     // Scoped services (one per request / scope)
@@ -264,7 +266,10 @@ try
     builder.Services.AddSingleton<OperationalIssueReporter>();
     builder.Services.AddSingleton<IOperationalIssueReporter>(sp => sp.GetRequiredService<OperationalIssueReporter>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<OperationalIssueReporter>());
+    builder.Services.AddSingleton<SharedFileFilterService>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<SharedFileFilterService>());
     builder.Services.AddHostedService<OperationalIssueMonitor>();
+    builder.Services.AddHostedService<IssueAlertDispatcher>();
     builder.Services.AddHttpClient();
     builder.Services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
     builder.Services.AddHttpClient("ArrOpenSkipTls").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -621,9 +626,17 @@ try
 
     app.MapOperationalIssueEndpoints("/web");
     app.MapOperationalIssueEndpoints("/api");
+    app.MapIssueAlertTest("/web");
+    app.MapIssueAlertTest("/api");
     app.MapStatisticsEndpoints();
     app.MapTransferHistory();
     app.MapArrActivity();
+    app.MapSearchDecisions("/web");
+    app.MapSharedFileFilters("/web");
+    app.MapFailedTorrentDestinations("/web");
+    app.MapSearchDecisions("/api");
+    app.MapSharedFileFilters("/api");
+    app.MapFailedTorrentDestinations("/api");
     app.MapArrCatalogEndpoints();
     app.MapRadarrMoviesEndpoints();
 
@@ -1181,6 +1194,7 @@ try
             TrackerRules.NormalizeNested(updatedConfig);
             InstanceRenamePersistence.Validate(cfg, updatedConfig, renames);
             TrackerRules.RenameReferences(cfg, updatedConfig, renames);
+            FailedTorrentRouting.RenameReferences(cfg, updatedConfig, renames);
             var (valid, validationError) = ConfigValidationHelper.ValidateAll(updatedConfig);
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
@@ -1802,6 +1816,7 @@ try
             TrackerRules.NormalizeNested(updatedConfig);
             InstanceRenamePersistence.Validate(cfg, updatedConfig, renames);
             TrackerRules.RenameReferences(cfg, updatedConfig, renames);
+            FailedTorrentRouting.RenameReferences(cfg, updatedConfig, renames);
             var (valid, validationError) = ConfigValidationHelper.ValidateAll(updatedConfig);
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
@@ -2395,7 +2410,8 @@ class ProcessOrchestratorService : BackgroundService
     private void RefreshConfiguration()
     {
         _qbitConfigured = _config.GetAllTorrentClients().Values.Any(q =>
-            !q.Disabled && q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME");
+            !q.Disabled && q.Host != "CHANGE_ME" &&
+            (q.AuthMode == "api-key" || (q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME")));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

@@ -54,6 +54,30 @@ SearchPeriodDays = 30  # Monthly (conservative)
 - **Weekly** - Balanced approach
 - **Monthly** - For established libraries
 
+## Proactive search pacing
+
+Set either control on individual Arr instances under **Entry Search**.
+
+```toml
+[Radarr-Movies.EntrySearch]
+RecentGrabCooldownMinutes = 30
+ActiveDownloadCeiling = 4
+```
+
+- `RecentGrabCooldownMinutes` uses dated grab history from the same Arr
+  instance and library item. The cooldown expires at the configured boundary
+  and survives a Torrentarr restart while Arr retains the evidence. Sonarr
+  uses episode commands with this control enabled so broad search commands
+  cannot include deferred episodes.
+- `ActiveDownloadCeiling` counts distinct client and torrent pairs in the
+  integration's owned categories. Downloading, stalled downloads and metadata
+  fetches count as active. Paused or queued torrents do not use a slot.
+
+Use zero to disable either control. Missing evidence holds affected proactive
+missing and upgrade searches. Torrentarr checks again before submission and
+reports the reason under **Processes → Search activity**. Failed-download
+replacement searches follow their usual path.
+
 ## Request Integration
 
 ### Supported Request Systems
@@ -353,3 +377,56 @@ Planned enhancements for search configuration:
 ---
 
 **Note:** Overseerr and Ombi integration are planned features. Check the latest release notes for availability.
+
+### Proactive library gates and quiet hours
+
+Entry Search offers independent opt-in controls for missing and upgrade searches.
+Replacement searches retain their existing policy. Every enabled gate must pass;
+Processes → Search activity reports the deferral reason using the same gate checks
+as execution. A preview does not issue commands or reserve work.
+
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| `IncludeTags` | `[]` | Require at least one owning-library tag label, case-insensitive. Empty disables the include gate. |
+| `ExcludeTags` | `[]` | Defer any matching label; excludes win over includes. |
+| `RequireRadarrAvailability` | `false` | Radarr only: require its fresh `isAvailable` flag. Missing evidence defers work. |
+| `UnsuccessfulSearchRestMinutes` | `0` | Rest the same item and search scope after completed no-grab work; zero disables, maximum 10080 minutes. |
+| `QuietHoursEnabled` | `false` | Defer proactive work within the daily local interval. |
+| `QuietHoursStart` | `22:00` | Start-inclusive local time, exactly `HH:mm`. |
+| `QuietHoursEnd` | `07:00` | End-exclusive local time; must differ from start. Midnight crossing is supported. |
+| `QuietHoursTimeZone` | `Etc/UTC` | Explicit IANA timezone, such as `Europe/Malta`. |
+
+Tags come from the owning movie, series, artist or author, including series tags
+for a Sonarr episode. Missing parents, malformed tags or unavailable Arr reads
+defer affected searches. Tag labels and their ID mappings are read fresh from Arr;
+Torrentarr does not create or change tags. Tag and availability reads have a
+ten-second budget and are rechecked before submission. Radarr's availability can
+differ from release-date eligibility; the opt-in gate follows the app's flag.
+
+Quiet hours evaluate each real instant in the selected zone. Repeated local times
+follow the same interval rule, and skipped local times need no synthetic run.
+Processes shows the next real instant outside quiet hours. Work resumes on the
+normal search cycle without replaying missed searches. Disable the switch to
+restore the original scheduling policy; saved boundaries and timezone are retained.
+
+Upstream resource contracts: [Radarr movie](https://github.com/Radarr/Radarr/blob/develop/src/Radarr.Api.V3/Movies/MovieResource.cs),
+[Sonarr series](https://github.com/Sonarr/Sonarr/blob/develop/src/Sonarr.Api.V3/Series/SeriesResource.cs),
+[Lidarr artist](https://github.com/Lidarr/Lidarr/blob/develop/src/Lidarr.Api.V1/Artist/ArtistResource.cs),
+and [Readarr author](https://github.com/Readarr/Readarr/blob/develop/src/Readarr.Api.V1/Author/AuthorResource.cs).
+
+An unsuccessful-search rest requires a successfully completed proactive command
+and a fresh, usable Arr grab-history read spanning its submission through a
+thirty-minute confirmation window after completion. Rejected, timed-out, pending
+or otherwise uncertain commands start no rest. A matching grab follows the separate
+recent-grab cooldown instead. Collection more than fifteen minutes after the
+confirmation window is treated as unknown and starts no rest.
+
+Rest expiry is fixed at command completion plus the confirmation window and the
+configured duration. Persisted maintenance-state receipts retain it across restarts,
+repeated observations and Arr section renames. Repeats cannot extend the expiry.
+The same instance, Arr server, item and search scope share one rest receipt; other
+items remain eligible. Expired receipts are pruned hourly. Disabling rest bypasses
+these gates while existing receipts expire, and never starts replacement work.
+Search activity distinguishes command completion, observed grabs and confirmed
+no-grab windows. Sonarr uses episode commands while item gates are enabled so a
+broader command cannot bypass a held episode.

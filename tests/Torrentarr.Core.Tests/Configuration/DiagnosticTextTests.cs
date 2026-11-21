@@ -12,6 +12,7 @@ public class DiagnosticTextTests
     [InlineData("Authorization=Bearer secret")]
     [InlineData("\"apiKey\": \"secret\"")]
     [InlineData("Bearer secret")]
+    [InlineData("qbt_secretABCDEFGHIJKLMNOPQRSTUV")]
     public void SecretsAreNeverIncluded(string input)
     {
         var text = DiagnosticText.Safe(input);

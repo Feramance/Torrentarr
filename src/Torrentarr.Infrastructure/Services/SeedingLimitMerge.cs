@@ -42,6 +42,8 @@ public static class SeedingLimitMerge
 
     private static CategorySeedingConfig Clone(CategorySeedingConfig src) => new()
     {
+        MinimumReportedSeeders = src.MinimumReportedSeeders,
+        MinimumUploadInactivitySeconds = src.MinimumUploadInactivitySeconds,
         DownloadRateLimitPerTorrent = src.DownloadRateLimitPerTorrent,
         UploadRateLimitPerTorrent = src.UploadRateLimitPerTorrent,
         MaxUploadRatio = src.MaxUploadRatio,

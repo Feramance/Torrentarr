@@ -25,6 +25,29 @@ public class LogFileApiTests
     }
 
     [Fact]
+    public void Search_IncludesDailyAndSizeRotationsFromTheSameStream()
+    {
+        var dir = Directory.CreateTempSubdirectory();
+        try
+        {
+            foreach (var name in new[] { "worker-A-20261117.log", "worker-A-20261117_001.log", "worker-A-20261116.log", "worker-AB-20261116.log" })
+                File.WriteAllText(Path.Combine(dir.FullName, name),
+                    " | Operation[MaintenanceRun] | CycleId[abc]\n | Operation[MaintenancePreview] | CycleId[abc]\n | Operation[MaintenanceRun] | CycleId[abcdef]\n");
+
+            var result = (IValueHttpResult)LogFileApi.Search(dir.FullName, "worker-A-20261117.log",
+                @"\| Operation\[MaintenanceRun\] \| CycleId\[abc\](?: \||$)", "1", "1", "1", 10, 0, includeDates: true);
+            using var payload = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result.Value));
+            payload.RootElement.GetProperty("files_searched").EnumerateArray().Select(x => x.GetString())
+                .Should().BeEquivalentTo(new[] { "worker-A-20261117.log", "worker-A-20261117_001.log", "worker-A-20261116.log" });
+            payload.RootElement.GetProperty("matches").GetArrayLength().Should().Be(3);
+        }
+        finally
+        {
+            dir.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public void Search_RequiresQuery()
     {
         var result = LogFileApi.Search("/tmp", "All.log", "", null, null, null, null, null);

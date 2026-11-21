@@ -366,6 +366,112 @@ export const CONFIG_SCHEMA = {
         "applyLive": true,
         "requiresRestart": false,
         "nativeUnit": "seconds"
+      },
+      {
+        "section": "Settings",
+        "path": [
+          "SharedFileFilters"
+        ],
+        "key": "SharedFileFilters",
+        "label": "Shared file filter lists",
+        "kind": "collection",
+        "default": [],
+        "comments": "Shared file filter lists. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Named reviewed lists. Sources are relative files below the data directory or public HTTPS URLs. Refresh every five minutes.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Name"
+            ],
+            "key": "Name",
+            "label": "Name",
+            "kind": "text",
+            "default": "",
+            "comments": "Name. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Unique case-sensitive list name.",
+            "placeholder": "reviewed"
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Source"
+            ],
+            "key": "Source",
+            "label": "Source",
+            "kind": "text",
+            "default": "",
+            "comments": "Source. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Relative file path or public HTTPS URL.",
+            "placeholder": "filters/reviewed.txt"
+          }
+        ]
+      },
+      {
+        "section": "Settings",
+        "path": [
+          "IssueAlertsEnabled"
+        ],
+        "key": "IssueAlertsEnabled",
+        "label": "Issue webhook alerts",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Issue webhook alerts. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Send selected operational issue transitions from the Host."
+      },
+      {
+        "section": "Settings",
+        "path": [
+          "IssueAlertsSecretUrl"
+        ],
+        "key": "IssueAlertsSecretUrl",
+        "label": "Webhook destination",
+        "kind": "password",
+        "default": "",
+        "comments": "Webhook destination. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": true,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "HTTP or HTTPS destination. Use HTTPS over untrusted networks."
+      },
+      {
+        "section": "Settings",
+        "path": [
+          "IssueAlertTypes"
+        ],
+        "key": "IssueAlertTypes",
+        "label": "Issue types",
+        "kind": "tags",
+        "default": [],
+        "comments": "Issue types. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Supported values are worker, import, and tracker."
       }
     ],
     "WebUI": [
@@ -1094,6 +1200,44 @@ export const CONFIG_SCHEMA = {
         "section": "qBit",
         "path": [
           "CategorySeeding",
+          "MinimumReportedSeeders"
+        ],
+        "key": "CategorySeeding.MinimumReportedSeeders",
+        "label": "Minimum reported seeders",
+        "kind": "number",
+        "default": 0,
+        "comments": "Minimum reported seeders. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Require a fresh reported swarm seeder count at least this high for automatic retirement. Zero disables the guard.",
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "CategorySeeding",
+          "MinimumUploadInactivitySeconds"
+        ],
+        "key": "CategorySeeding.MinimumUploadInactivitySeconds",
+        "label": "Minimum upload inactivity before retirement (seconds)",
+        "kind": "number",
+        "default": 0,
+        "comments": "Minimum upload inactivity before retirement (seconds). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Require a continuous verified window without payload uploads before automatic retirement. Zero disables the guard.",
+        "minimum": 0
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "CategorySeeding",
           "Categories"
         ],
         "key": "CategorySeeding.Categories",
@@ -1180,6 +1324,40 @@ export const CONFIG_SCHEMA = {
             "applyLive": true,
             "requiresRestart": false,
             "minimum": 0
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "MinimumReportedSeeders"
+            ],
+            "key": "MinimumReportedSeeders",
+            "label": "Minimum reported seeders",
+            "kind": "number",
+            "default": null,
+            "comments": "Minimum reported seeders. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false,
+            "minimum": 0
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "MinimumUploadInactivitySeconds"
+            ],
+            "key": "MinimumUploadInactivitySeconds",
+            "label": "Minimum upload inactivity before retirement (seconds)",
+            "kind": "number",
+            "default": null,
+            "comments": "Minimum upload inactivity before retirement (seconds). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false,
+            "minimum": 0
           }
         ]
       },
@@ -1259,6 +1437,43 @@ export const CONFIG_SCHEMA = {
         "kind": "password",
         "default": "CHANGE_ME",
         "comments": "Client login secret. Redacted values retain the stored credential until explicitly replaced.",
+        "required": false,
+        "secure": true,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "AuthMode"
+        ],
+        "key": "AuthMode",
+        "label": "Authentication",
+        "kind": "select",
+        "default": "legacy",
+        "comments": "Authentication. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "legacy",
+          "api-key"
+        ],
+        "description": "Legacy uses the existing username/password or client-configured bypass. API key requires qBittorrent 5.2 or later."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "APIKey"
+        ],
+        "key": "APIKey",
+        "label": "qBittorrent API key",
+        "kind": "password",
+        "default": "",
+        "comments": "qBittorrent API key. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
         "required": false,
         "secure": true,
         "uiExpose": true,
@@ -1640,16 +1855,74 @@ export const CONFIG_SCHEMA = {
           "CountLinksInsideRoot"
         ],
         "key": "Maintenance.Hardlinks.CountLinksInsideRoot",
-        "label": "Count links inside root (unsupported)",
+        "label": "Find links inside library roots",
         "kind": "checkbox",
         "default": false,
-        "comments": "Count links inside root (unsupported). Off disables this behavior; operation enablement and authorization still apply.",
+        "comments": "Find links inside library roots. Off disables this behavior; operation enablement and authorization still apply.",
         "required": false,
         "secure": false,
         "uiExpose": true,
         "applyLive": true,
         "requiresRestart": false,
-        "description": "Unsupported: leave disabled. Root-scoped hardlink inspection cannot currently run."
+        "description": "Audit mapped library roots using filesystem identity. Requires Linux local filesystems; incomplete coverage preserves tags."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "LibraryRoots"
+        ],
+        "key": "Maintenance.Hardlinks.LibraryRoots",
+        "label": "Library roots",
+        "kind": "tags",
+        "default": [],
+        "comments": "Library roots. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Local library roots, each matching an explicit path mapping."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "IgnoredRoots"
+        ],
+        "key": "Maintenance.Hardlinks.IgnoredRoots",
+        "label": "Ignored hardlink roots",
+        "kind": "tags",
+        "default": [],
+        "comments": "Ignored hardlink roots. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Mapped local roots excluded from library coverage, such as nested cross-seed folders."
+      },
+      {
+        "section": "qBit",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "MaxInspectedEntriesPerRun"
+        ],
+        "key": "Maintenance.Hardlinks.MaxInspectedEntriesPerRun",
+        "label": "Maximum library entries per audit",
+        "kind": "number",
+        "default": 10000,
+        "comments": "Maximum library entries per audit. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1,
+        "maximum": 1000000
       },
       {
         "section": "qBit",
@@ -4398,6 +4671,44 @@ export const CONFIG_SCHEMA = {
         "section": "TorrentClient",
         "path": [
           "CategorySeeding",
+          "MinimumReportedSeeders"
+        ],
+        "key": "CategorySeeding.MinimumReportedSeeders",
+        "label": "Minimum reported seeders",
+        "kind": "number",
+        "default": 0,
+        "comments": "Minimum reported seeders. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Require a fresh reported swarm seeder count at least this high for automatic retirement. Zero disables the guard.",
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
+          "MinimumUploadInactivitySeconds"
+        ],
+        "key": "CategorySeeding.MinimumUploadInactivitySeconds",
+        "label": "Minimum upload inactivity before retirement (seconds)",
+        "kind": "number",
+        "default": 0,
+        "comments": "Minimum upload inactivity before retirement (seconds). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Require a continuous verified window without payload uploads before automatic retirement. Zero disables the guard.",
+        "minimum": 0
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "CategorySeeding",
           "Categories"
         ],
         "key": "CategorySeeding.Categories",
@@ -4478,6 +4789,40 @@ export const CONFIG_SCHEMA = {
             "kind": "number",
             "default": null,
             "comments": "Minimum seed days. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false,
+            "minimum": 0
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "MinimumReportedSeeders"
+            ],
+            "key": "MinimumReportedSeeders",
+            "label": "Minimum reported seeders",
+            "kind": "number",
+            "default": null,
+            "comments": "Minimum reported seeders. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": false,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": true,
+            "requiresRestart": false,
+            "minimum": 0
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "MinimumUploadInactivitySeconds"
+            ],
+            "key": "MinimumUploadInactivitySeconds",
+            "label": "Minimum upload inactivity before retirement (seconds)",
+            "kind": "number",
+            "default": null,
+            "comments": "Minimum upload inactivity before retirement (seconds). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
             "required": false,
             "secure": false,
             "uiExpose": true,
@@ -4579,6 +4924,43 @@ export const CONFIG_SCHEMA = {
         "kind": "password",
         "default": "CHANGE_ME",
         "comments": "Client login secret. Redacted values retain the stored credential until explicitly replaced.",
+        "required": false,
+        "secure": true,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "AuthMode"
+        ],
+        "key": "AuthMode",
+        "label": "Authentication",
+        "kind": "select",
+        "default": "legacy",
+        "comments": "Authentication. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "legacy",
+          "api-key"
+        ],
+        "description": "Legacy uses the existing username/password or client-configured bypass. API key requires qBittorrent 5.2 or later."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "APIKey"
+        ],
+        "key": "APIKey",
+        "label": "qBittorrent API key",
+        "kind": "password",
+        "default": "",
+        "comments": "qBittorrent API key. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
         "required": false,
         "secure": true,
         "uiExpose": true,
@@ -4960,16 +5342,74 @@ export const CONFIG_SCHEMA = {
           "CountLinksInsideRoot"
         ],
         "key": "Maintenance.Hardlinks.CountLinksInsideRoot",
-        "label": "Count links inside root (unsupported)",
+        "label": "Find links inside library roots",
         "kind": "checkbox",
         "default": false,
-        "comments": "Count links inside root (unsupported). Off disables this behavior; operation enablement and authorization still apply.",
+        "comments": "Find links inside library roots. Off disables this behavior; operation enablement and authorization still apply.",
         "required": false,
         "secure": false,
         "uiExpose": true,
         "applyLive": true,
         "requiresRestart": false,
-        "description": "Unsupported: leave disabled. Root-scoped hardlink inspection cannot currently run."
+        "description": "Audit mapped library roots using filesystem identity. Requires Linux local filesystems; incomplete coverage preserves tags."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "LibraryRoots"
+        ],
+        "key": "Maintenance.Hardlinks.LibraryRoots",
+        "label": "Library roots",
+        "kind": "tags",
+        "default": [],
+        "comments": "Library roots. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Local library roots, each matching an explicit path mapping."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "IgnoredRoots"
+        ],
+        "key": "Maintenance.Hardlinks.IgnoredRoots",
+        "label": "Ignored hardlink roots",
+        "kind": "tags",
+        "default": [],
+        "comments": "Ignored hardlink roots. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Mapped local roots excluded from library coverage, such as nested cross-seed folders."
+      },
+      {
+        "section": "TorrentClient",
+        "path": [
+          "Maintenance",
+          "Hardlinks",
+          "MaxInspectedEntriesPerRun"
+        ],
+        "key": "Maintenance.Hardlinks.MaxInspectedEntriesPerRun",
+        "label": "Maximum library entries per audit",
+        "kind": "number",
+        "default": 10000,
+        "comments": "Maximum library entries per audit. Zero permits no mutations for action/deletion caps; inspection budgets must be positive.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "minimum": 1,
+        "maximum": 1000000
       },
       {
         "section": "TorrentClient",
@@ -8576,6 +9016,365 @@ export const CONFIG_SCHEMA = {
         "applyLive": null,
         "requiresRestart": null,
         "description": "Tracker-message matches may remove the tracker URL only when RemoveDeadTrackers is false and fresh protection permits it. Messages never directly authorize torrent/content deletion."
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "EntrySearch",
+          "RecentGrabCooldownMinutes"
+        ],
+        "key": "EntrySearch.RecentGrabCooldownMinutes",
+        "label": "Recent grab cooldown (minutes)",
+        "kind": "number",
+        "default": 0,
+        "comments": "Recent grab cooldown (minutes). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Defer proactive searches for items grabbed recently according to Arr history. Zero disables the cooldown.",
+        "minimum": 0
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "EntrySearch",
+          "ActiveDownloadCeiling"
+        ],
+        "key": "EntrySearch.ActiveDownloadCeiling",
+        "label": "Active-download ceiling",
+        "kind": "number",
+        "default": 0,
+        "comments": "Active-download ceiling. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Defer proactive search when this many active downloads belong to this instance. Zero disables the ceiling.",
+        "minimum": 0
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "EntrySearch",
+          "UnsuccessfulSearchRestMinutes"
+        ],
+        "key": "EntrySearch.UnsuccessfulSearchRestMinutes",
+        "label": "Rest after unsuccessful search (minutes)",
+        "kind": "number",
+        "default": 0,
+        "comments": "Rest after unsuccessful search (minutes). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Rest the same item and scope after confirmed successful search completion and a thirty-minute no-grab confirmation window. Zero disables rest; maximum seven days. Uncertain results start no rest.",
+        "minimum": 0,
+        "maximum": 10080
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "EntrySearch",
+          "IncludeTags"
+        ],
+        "key": "EntrySearch.IncludeTags",
+        "label": "Include Arr tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Include Arr tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Proactive searches require at least one matching owning-library tag label. Empty disables this gate."
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "EntrySearch",
+          "ExcludeTags"
+        ],
+        "key": "EntrySearch.ExcludeTags",
+        "label": "Exclude Arr tags",
+        "kind": "tags",
+        "default": [],
+        "comments": "Exclude Arr tags. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Any matching owning-library tag label defers proactive work; excludes take precedence."
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "EntrySearch",
+          "RequireRadarrAvailability"
+        ],
+        "key": "EntrySearch.RequireRadarrAvailability",
+        "label": "Require Radarr availability",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Require Radarr availability. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Require fresh Radarr isAvailable evidence for proactive searches.",
+        "arrKinds": [
+          "radarr"
+        ]
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "EntrySearch",
+          "QuietHoursEnabled"
+        ],
+        "key": "EntrySearch.QuietHoursEnabled",
+        "label": "Enable quiet hours",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable quiet hours. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Defer proactive searches during the daily interval. Replacement searches keep their existing policy."
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "EntrySearch",
+          "QuietHoursStart"
+        ],
+        "key": "EntrySearch.QuietHoursStart",
+        "label": "Quiet hours start",
+        "kind": "text",
+        "default": "22:00",
+        "comments": "Quiet hours start. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Start-inclusive local time in HH:mm format."
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "EntrySearch",
+          "QuietHoursEnd"
+        ],
+        "key": "EntrySearch.QuietHoursEnd",
+        "label": "Quiet hours end",
+        "kind": "text",
+        "default": "07:00",
+        "comments": "Quiet hours end. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "End-exclusive local time in HH:mm format. Must differ from start; midnight crossing is supported."
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "EntrySearch",
+          "QuietHoursTimeZone"
+        ],
+        "key": "EntrySearch.QuietHoursTimeZone",
+        "label": "Quiet hours timezone",
+        "kind": "text",
+        "default": "Etc/UTC",
+        "comments": "Quiet hours timezone. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Explicit IANA zone, for example Europe/Malta. Each real instant is evaluated in this zone, including DST transitions."
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "Torrent",
+          "FailedTorrentAction"
+        ],
+        "key": "Torrent.FailedTorrentAction",
+        "label": "Failed torrent action",
+        "kind": "select",
+        "default": "existing",
+        "comments": "Failed torrent action. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "options": [
+          "existing",
+          "move"
+        ],
+        "description": "Use existing policy, or move to a configured category and keep files."
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "Torrent",
+          "FailedTorrentDestinations"
+        ],
+        "key": "Torrent.FailedTorrentDestinations",
+        "label": "Failed torrent destinations",
+        "kind": "collection",
+        "default": [],
+        "comments": "Failed torrent destinations. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Select an existing destination per qBittorrent client.",
+        "itemFields": [
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Client"
+            ],
+            "key": "Client",
+            "label": "Torrent client",
+            "kind": "text",
+            "default": "",
+            "comments": "Torrent client. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Configured qBittorrent client ID.",
+            "placeholder": ""
+          },
+          {
+            "section": "TorrentClient",
+            "path": [
+              "Category"
+            ],
+            "key": "Category",
+            "label": "Destination category",
+            "kind": "text",
+            "default": "",
+            "comments": "Destination category. Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+            "required": true,
+            "secure": false,
+            "uiExpose": true,
+            "applyLive": null,
+            "requiresRestart": null,
+            "description": "Existing unmanaged category on this client.",
+            "placeholder": ""
+          }
+        ]
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "Torrent",
+          "RescueBlockedImports"
+        ],
+        "key": "Torrent.RescueBlockedImports",
+        "label": "Rescue supported blocked imports",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Enable one supported Copy import per failure incident. Pending claims retain protection while their outcome is reconciled.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Radarr only. Attempt one copy import for its matched-by-ID warning when one owned file has an unambiguous, unrejected manual-import match. Import history must confirm success. Disabling stops new attempts while pending claims are reconciled.",
+        "arrKinds": [
+          "radarr"
+        ]
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "Torrent",
+          "SharedFileFilters"
+        ],
+        "key": "Torrent.SharedFileFilters",
+        "label": "Shared file filter lists",
+        "kind": "tags",
+        "default": [],
+        "comments": "Shared file filter lists. Empty applies no additional list entries; operation filters inherit client scope.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Names of additional exclusion lists defined in general settings. Unavailable lists hold torrent processing and import."
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "Torrent",
+          "MetadataStallMinutes"
+        ],
+        "key": "Torrent.MetadataStallMinutes",
+        "label": "Metadata stall grace (minutes)",
+        "kind": "number",
+        "default": 0,
+        "comments": "Metadata stall grace (minutes). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Require this much continuously observed metadata waiting in addition to ordinary stalled grace. Zero keeps existing behavior.",
+        "minimum": 0
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "Torrent",
+          "RespectAlternateSpeedLimits"
+        ],
+        "key": "Torrent.RespectAlternateSpeedLimits",
+        "label": "Hold slow downloads under alternate speed limits",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Hold slow downloads under alternate speed limits. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Defer slow ETA cleanup while alternate limits are active or status is unavailable."
+      },
+      {
+        "section": "Arr",
+        "path": [
+          "Torrent",
+          "ResetStallOnDownloadProgress"
+        ],
+        "key": "Torrent.ResetStallOnDownloadProgress",
+        "label": "Reset stalled grace on download progress",
+        "kind": "checkbox",
+        "default": false,
+        "comments": "Reset stalled grace on download progress. Off disables this behavior; operation enablement and authorization still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "With a positive StalledDelay, require a fresh continuous stall window after verified download progress or an observation gap."
       }
     ],
     "TrackerProtection": [

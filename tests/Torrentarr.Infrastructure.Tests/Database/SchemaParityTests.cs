@@ -26,9 +26,12 @@ public class SchemaParityTests
             VALUES ('hash', 'movies', 'qBit', 'Radarr-Movies', 1, 0, 0, 0)
             """);
 
+        db.Database.ExecuteSqlRaw("INSERT INTO torrentarr_maintenance_state (Key, Data) VALUES ('broken|import-rescue', 'not-json')");
         ManualSqliteMigrations.Apply(db);
         ManualSqliteMigrations.Apply(db);
 
+        db.Database.SqlQueryRaw<string>("SELECT name AS Value FROM sqlite_master WHERE type = 'index' AND name = 'idx_pending_import_rescue'")
+            .Single().Should().Be("idx_pending_import_rescue");
         var entry = db.TorrentLibrary.Single();
         entry.Imported.Should().BeTrue();
         entry.TorrentAddedOn.Should().BeNull();
@@ -65,7 +68,7 @@ public class SchemaParityTests
         {
             "albumfilesmodel", "albumqueuemodel", "artistfilesmodel", "authorfilesmodel", "bookfilesmodel", "bookqueuemodel",
             "episodefilesmodel", "episodequeuemodel",
-            "filesqueued", "moviequeuemodel", "moviesfilesmodel", "searchactivity", "seriesfilesmodel", "torrentarr_arr_operations", "torrentarr_arr_samples", "torrentarr_maintenance_state", "torrentarr_operational_issues", "torrentarr_sonarr_search_retries", "torrentarr_transfer_samples", "torrentlibrary",
+            "filesqueued", "moviequeuemodel", "moviesfilesmodel", "searchactivity", "seriesfilesmodel", "torrentarr_arr_operations", "torrentarr_arr_samples", "torrentarr_issue_alert_events", "torrentarr_maintenance_state", "torrentarr_operational_issues", "torrentarr_retirement_upload", "torrentarr_search_decisions", "torrentarr_sonarr_search_retries", "torrentarr_transfer_samples", "torrentlibrary",
             "trackfilesmodel"
         };
         tableNames.Should().Equal(expected);

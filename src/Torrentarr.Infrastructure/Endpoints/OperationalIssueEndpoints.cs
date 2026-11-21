@@ -7,6 +7,7 @@ using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Interfaces;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Database.Models;
+using Torrentarr.Infrastructure.Logging;
 using Torrentarr.Infrastructure.Services;
 
 namespace Torrentarr.Infrastructure.Endpoints;
@@ -48,6 +49,8 @@ public static class OperationalIssueEndpoints
         var registry = services.GetService(typeof(ITorrentClientRegistry)) as ITorrentClientRegistry;
         var db = services.GetRequiredService<TorrentarrDbContext>();
         var config = services.GetRequiredService<TorrentarrConfig>();
+        foreach (var item in items.Where(i => i.ArrInstance.Length > 0))
+            item.RelatedLogStream = "worker-" + ServiceLogSink.SafeName(item.ArrInstance);
         var clients = new Dictionary<long, string>();
         foreach (var item in items.Where(i => i.SubjectType == "torrent"))
         {

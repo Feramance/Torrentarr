@@ -16,6 +16,27 @@ The logo is true vector artwork with transparent negative space, traced and shad
 
 ## Arr activity
 
+Expand **Search activity** on an Arr worker row for the ordered candidates
+remaining from its most recent proactive planning pass and the worker's recent
+decisions. Refresh to plan against the latest usable synced catalog with the
+worker's eligibility, ordering and search scopes. The timestamp and age refer to
+the most recent completed catalog sync. Preview also evaluates the configured
+search gates with current observations. An incomplete catalog sync or changed
+Arr server can make the preview unavailable. An eligible candidate can change
+before execution. Preview reads do not submit commands or change Arr state.
+
+The preview displays up to 50 planned candidates. The worker keeps up to 200
+recent decisions per instance in Torrentarr's SQLite extension. Decisions expire
+after seven days.
+Repeated deferrals for the same item, reason and outcome share an observation
+count. Submission, confirmed command completion, and matching Arr grab history
+appear separately. A grab record refers to a covered library item in the same
+Arr instance and may also reflect activity outside Torrentarr.
+
+Authenticated clients can read this data at
+`GET /web/processes/{instance}/search-activity`. The Host also exposes the
+existing token-authenticated `/api` alias.
+
 Processes uses aligned instance rows. Each Arr Torrent activity target opens its category in Torrent Clients, selecting a unique matching client or all clients when the category is shared. Old torrent searches are cleared. Search activity and restart actions remain separate. Wiki and GitHub links are available in both navigation footers.
 
 The two inline Arr graphs show queue depth and confirmed completed activity. Choose 1h, 24h (default), or 7d and group by Arr type (default) or individual worker. Radarr is orange, Sonarr teal, Lidarr green, and Readarr violet; worker colors are stable and series are distinguished by color only. Legends toggle series. Hover or focus a plotted point, touch it, or use the keyboard-accessible time slider to inspect exact timestamps and values. Dedicated sampled-data tables are omitted.
@@ -24,6 +45,7 @@ Queue observations come from fresh worker heartbeats every minute. Each worker p
 
 Only Torrentarr-submitted commands are tracked. Search requests count after Arr reports successful completion. Import requests count only with a correlated positive download-import history event dated after submission. Accepted commands, completed scans with no import, queue disappearance, tags, and failed/cancelled work do not count. Multiple files in one torrent batch and retries sharing confirmation evidence do not inflate the count. Counts use the time confirmation was recorded. Pending records survive worker restarts; unconfirmed work expires after seven days. There is no historical backfill.
 
-The server polls Arr command and history endpoints once per minute for integrations with pending work, using their API-version and TLS settings. Queue samples can also be recorded for integrations without pending work. Telemetry failures do not change search/import/protection behavior. Additional Torrentarr-specific tables retain enough samples and confirmed operation evidence to fill the seven-day chart through its oldest completed bucket. Pruning runs hourly. Standalone WebUI cannot supply worker queue observations when no supervisor is present.
+The server polls Arr command and history endpoints once per minute for integrations with pending work, using their API-version and TLS settings. Queue samples can also be recorded for integrations without pending work. Unavailable completion or grab evidence cannot confirm an import or start a
+configured unsuccessful-search rest. It grants no protection clearance. Additional Torrentarr-specific tables retain enough samples and confirmed operation evidence to fill the seven-day chart through its oldest completed bucket. Pruning runs hourly. Standalone WebUI cannot supply worker queue observations when no supervisor is present.
 
 `GET /web/statistics/arr-activity?range=24h&worker=Radarr-example` follows WebUI authentication and returns worker identity/type, timestamped values, queue/completion coverage, and expected sample counts. Omit worker for all configured workers and retained history. Existing transfer-history endpoints are unchanged.

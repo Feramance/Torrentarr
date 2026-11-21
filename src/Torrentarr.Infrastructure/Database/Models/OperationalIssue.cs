@@ -15,6 +15,7 @@ public sealed class OperationalIssue
     public string SubjectId { get; set; } = "";
     [NotMapped] public string? SubjectName { get; set; }
     [NotMapped] public string? SubjectCategory { get; set; }
+    [NotMapped] public string? RelatedLogStream { get; set; }
     public string Severity { get; set; } = "error";
     public string Title { get; set; } = "";
     public string Impact { get; set; } = "";

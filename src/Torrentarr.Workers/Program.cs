@@ -165,6 +165,8 @@ try
     builder.Services.AddSingleton<OperationalIssueReporter>();
     builder.Services.AddSingleton<IOperationalIssueReporter>(sp => sp.GetRequiredService<OperationalIssueReporter>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<OperationalIssueReporter>());
+    builder.Services.AddSingleton<SharedFileFilterService>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<SharedFileFilterService>());
     builder.Services.AddSingleton(instanceConfig);
     builder.Services.AddSingleton(levelSwitch);
     builder.Services.AddSingleton<ConfigReloader>(sp => new ConfigReloader(
@@ -204,6 +206,7 @@ try
     builder.Services.AddSingleton<IImportPathTracker, ImportPathTracker>();
     builder.Services.AddSingleton<SearchYearCursor>();
     builder.Services.AddSingleton<StalledUploadTracker>();
+    builder.Services.AddSingleton<DownloadStallTracker>();
 
     builder.Services.AddHostedService<ArrWorkerService>();
 
@@ -906,6 +909,8 @@ class ArrWorkerService : BackgroundService
                 && _yearCursor.Advance(_context.InstanceName);
             _searchLoopCompleted = !hasMoreYears;
         }
+        if (searchResult != null)
+            syncService.RecordSearchYear(_context.InstanceName, _instanceConfig, _yearCursor.Peek(_context.InstanceName));
         _runtimeMetrics.RecordSearch(searchResult);
         if (searchResult != null)
         {

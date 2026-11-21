@@ -1,5 +1,7 @@
 import type { MaintenanceSection } from "../config/settingsSections";
 import { BreakdownBar } from "../components/Statistics";
+import { CopyButton } from "../components/CopyButton";
+import { requestNavigateTab } from "../utils/navigateTab";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import equal from "fast-deep-equal";
 import { get, set } from "lodash-es";
@@ -886,6 +888,30 @@ export function MaintenanceView({
                           ) : (
                             `${run.applied} applied, ${run.skipped} skipped, ${run.failed} failed`
                           )}
+                          <div className="actions">
+                            {/^[0-9a-f]{32}$/.test(run.runId) && (
+                              <button
+                                type="button"
+                                className="btn ghost small"
+                                onClick={() =>
+                                  requestNavigateTab({
+                                    tab: "logs",
+                                    relatedLogs: {
+                                      stream: "all",
+                                      runId: run.runId,
+                                      startedAt: run.startedAt,
+                                    },
+                                  })
+                                }
+                              >
+                                View related logs
+                              </button>
+                            )}
+                            <CopyButton
+                              label="Copy details"
+                              text={`Maintenance run ${run.runId}\n${run.startedAt}\n${run.result}: ${run.applied} applied, ${run.skipped} skipped, ${run.failed} failed`}
+                            />
+                          </div>
                         </td>
                       </tr>
                     ))}

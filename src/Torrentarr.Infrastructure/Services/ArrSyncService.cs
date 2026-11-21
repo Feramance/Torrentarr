@@ -30,6 +30,7 @@ public class ArrSyncService
     private readonly ITorrentClientRegistry? _torrents;
     private readonly ISafeDeletionService? _deletion;
     private readonly IOperationalIssueReporter? _issues;
+    private readonly IArrImportService? _imports;
 
     public ArrSyncService(ILogger<ArrSyncService> logger, TorrentarrConfig config,
         TorrentarrDbContext db, DatabaseRestartCoordinator restartCoordinator)
@@ -40,7 +41,7 @@ public class ArrSyncService
         TorrentarrConfig config,
         TorrentarrDbContext db,
         DatabaseRestartCoordinator restartCoordinator,
-        ITorrentClientRegistry? torrents, ISafeDeletionService? deletion, IOperationalIssueReporter? issues = null)
+        ITorrentClientRegistry? torrents, ISafeDeletionService? deletion, IOperationalIssueReporter? issues = null, IArrImportService? imports = null)
     {
         _logger = logger;
         _config = config;
@@ -49,6 +50,7 @@ public class ArrSyncService
         _torrents = torrents;
         _deletion = deletion;
         _issues = issues;
+        _imports = imports;
     }
 
     public async Task SyncAsync(string instanceName, CancellationToken ct = default)
@@ -74,6 +76,14 @@ public class ArrSyncService
 
         try
         {
+            if (_imports != null)
+            {
+                await _imports.ReconcileImportRescuesAsync(arrConfig.Category, ct);
+                await _imports.ReconcileFailedTorrentMovesAsync(arrConfig.Category, ct);
+            }
+            var catalog = new SearchCatalogState(ArrActivityTracking.ServerKey(arrConfig), arrConfig.Category,
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds(), false, Guid.NewGuid().ToString("N"));
+            if (_db.Database.IsSqlite()) MaintenancePersistence.Write(_db, SearchCatalogState.ObservationKey(instanceName), catalog);
             switch (arrConfig.Type.ToLowerInvariant())
             {
                 case "radarr":
@@ -97,6 +107,9 @@ public class ArrSyncService
                     return;
             }
 
+            if (_db.Database.IsSqlite())
+                MaintenancePersistence.Write(_db, SearchCatalogState.ObservationKey(instanceName),
+                    catalog with { Ready = true, At = DateTimeOffset.UtcNow.ToUnixTimeSeconds() });
             if (_issues != null) await _issues.ResolveAsync(SyncIssue(instanceName, "catalog"), ct);
             _logger.LogInformation("[{Instance}] Sync completed for {Name}; elapsed={ElapsedMs:F1}ms", instanceName, instanceName, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
         }
@@ -110,6 +123,14 @@ public class ArrSyncService
             _logger.LogError(ex, "[{Instance}] ArrSyncService: error syncing {Type} instance {Name}", instanceName, arrConfig.Type, instanceName);
             throw;
         }
+    }
+
+    public void RecordSearchYear(string instance, ArrInstanceConfig arr, int? year)
+    {
+        if (!_db.Database.IsSqlite() || !SearchYearCursor.ShouldFilter(arr)) return;
+        MaintenancePersistence.Write(_db, SearchCatalogState.YearKey(instance),
+            new SearchCatalogState(ArrActivityTracking.ServerKey(arr), arr.Category, 0, true, "",
+                SearchDecisionHistory.SettingsKey(arr), year));
     }
 
     /// <summary>
@@ -1756,6 +1777,18 @@ public class ArrSyncService
             if (!complete || matches.Count != 1)
             {
                 _logger.LogInformation("Arr cleanup blocked for {Hash}: owning client is unknown or ambiguous", downloadId);
+                continue;
+            }
+            if (_imports != null)
+            {
+                var rescue = await _imports.TryRescueImportAsync(matches[0].Torrent, cfg.Category, ct);
+                if (rescue is ImportRescueOutcome.Pending or ImportRescueOutcome.Confirmed) continue;
+            }
+            else if (cfg.Torrent.RescueBlockedImports) continue;
+            if (FailedTorrentRouting.Enabled(cfg))
+            {
+                if (_imports != null)
+                    await _imports.ParkFailedTorrentAsync(matches[0].Torrent, cfg.Category, blocklist: true, replace: cfg.ReSearch, ct);
                 continue;
             }
             var removal = await _deletion.RemoveTorrentAsync(matches[0].Instance, downloadId, true, ct);

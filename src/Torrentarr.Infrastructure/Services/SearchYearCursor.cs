@@ -63,6 +63,10 @@ public sealed class SearchYearCursor
         return true;
     }
 
+    public int? Peek(string instanceName) =>
+        _states.TryGetValue(instanceName, out var state) && state.Index >= 0 && state.Index < state.Years.Count
+            ? state.Years[state.Index] : null;
+
     public void Reset(string instanceName) => _states.TryRemove(instanceName, out _);
 
     public static bool ShouldFilter(ArrInstanceConfig arrConfig) =>

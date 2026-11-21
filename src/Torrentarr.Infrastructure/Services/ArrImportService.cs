@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Torrentarr.Infrastructure.Services;
 
-public class ArrImportService : IArrImportService
+public partial class ArrImportService : IArrImportService
 {
     private readonly ILogger<ArrImportService> _logger;
     private readonly TorrentarrConfig _config;
@@ -18,16 +18,20 @@ public class ArrImportService : IArrImportService
     private readonly TorrentarrDbContext _dbContext;
     private readonly ISearchExecutor _searchExecutor;
     private readonly IOperationalIssueReporter? _issues;
+    private readonly SharedFileFilterService? _sharedFilters;
+    private readonly TimeProvider _rescueClock;
 
     public ArrImportService(
         ILogger<ArrImportService> logger,
         TorrentarrConfig config,
         ITorrentClientRegistry qbitManager,
         TorrentarrDbContext dbContext,
-        ISearchExecutor? searchExecutor = null, IOperationalIssueReporter? issues = null)
+        ISearchExecutor? searchExecutor = null, IOperationalIssueReporter? issues = null, SharedFileFilterService? sharedFilters = null, TimeProvider? clock = null)
     {
         _logger = logger;
         _issues = issues;
+        _sharedFilters = sharedFilters;
+        _rescueClock = clock ?? TimeProvider.System;
         _config = config;
         _qbitManager = qbitManager;
         _dbContext = dbContext;

@@ -48,7 +48,18 @@ function groupFields(
 export function clientGroups(fields: FieldDefinition[]): ConfigFieldGroup[] {
   return groupFields(fields, [
     ["General", ["__name", "Type", "Disabled"]],
-    ["Connection", ["Host", "Port", "UserName", "Password", "SkipTLSVerify"]],
+    [
+      "Connection",
+      [
+        "Host",
+        "Port",
+        "AuthMode",
+        "UserName",
+        "Password",
+        "APIKey",
+        "SkipTLSVerify",
+      ],
+    ],
     [
       "Torrent scope",
       ["TorrentScanIntervalSeconds", "ManagedCategories", "MatchSubcategories"],
@@ -119,6 +130,15 @@ export function simpleGroups(
   if (section === "general")
     return groupFields(fields, [
       ["Logging", ["Settings.ConsoleLevel", "Settings.Logging"]],
+      ["Shared file filters", ["Settings.SharedFileFilters"]],
+      [
+        "Issue alerts",
+        [
+          "Settings.IssueAlertsEnabled",
+          "Settings.IssueAlertsSecretUrl",
+          "Settings.IssueAlertTypes",
+        ],
+      ],
       [
         "Processing and categories",
         [

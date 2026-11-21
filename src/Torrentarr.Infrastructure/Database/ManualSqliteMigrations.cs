@@ -23,6 +23,14 @@ public static class ManualSqliteMigrations
             );
             """);
         db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS idx_operational_issues_state ON torrentarr_operational_issues (ResolvedAt, Category, LastObserved)");
+        ApplyIssueAlertTriggers(db);
+        CreateTableIfMissing(db, "torrentarr_retirement_upload", """
+            CREATE TABLE IF NOT EXISTS torrentarr_retirement_upload (
+                Client TEXT NOT NULL, Hash TEXT NOT NULL, Identity TEXT NOT NULL, Category TEXT NOT NULL,
+                AddedOn INTEGER NOT NULL, Uploaded INTEGER NOT NULL, Seen INTEGER NOT NULL, Since INTEGER NOT NULL,
+                PRIMARY KEY (Client, Hash)
+            );
+            """);
         AddColumnIfMissing(db, "seriesfilesmodel", "tvdbid", "INTEGER NOT NULL DEFAULT 0");
 
         AddColumnIfMissing(db, "moviesfilesmodel", "InCinemas", "TEXT");
@@ -43,12 +51,34 @@ public static class ManualSqliteMigrations
         CreateTableIfMissing(db, "torrentarr_arr_samples", "CREATE TABLE IF NOT EXISTS torrentarr_arr_samples (Instance TEXT NOT NULL, Minute INTEGER NOT NULL, Type TEXT NOT NULL, QueueDepth INTEGER, CompletionObserved INTEGER NOT NULL, PRIMARY KEY (Instance, Minute));");
         db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_arr_samples_Minute ON torrentarr_arr_samples (Minute)");
         MigrateArrActivityOperations(db);
+        CreateTableIfMissing(db, "torrentarr_search_decisions", """
+            CREATE TABLE IF NOT EXISTS torrentarr_search_decisions (
+                Instance TEXT NOT NULL, Key TEXT NOT NULL, ObservedAt INTEGER NOT NULL,
+                Occurrences INTEGER NOT NULL, GrabbedAt INTEGER, Data TEXT NOT NULL, PRIMARY KEY (Instance, Key)
+            );
+            """);
+        AddColumnIfMissing(db, "torrentarr_search_decisions", "GrabbedAt", "INTEGER");
+        AddColumnIfMissing(db, "torrentarr_search_decisions", "NoGrabAt", "INTEGER");
         AddColumnIfMissing(db, "torrentlibrary", "autodeletependingaddedon", "INTEGER");
         AddColumnIfMissing(db, "torrentlibrary", "importsubmittedat", "INTEGER");
         AddColumnIfMissing(db, "torrentlibrary", "torrentaddedon", "INTEGER");
         CreateTableIfMissing(db, "torrentarr_transfer_samples", "CREATE TABLE IF NOT EXISTS torrentarr_transfer_samples (ClientInstance TEXT NOT NULL, Minute INTEGER NOT NULL, DownloadRate INTEGER NOT NULL, UploadRate INTEGER NOT NULL, PRIMARY KEY (ClientInstance, Minute));");
         db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_torrentarr_transfer_samples_Minute ON torrentarr_transfer_samples (Minute)");
         CreateTableIfMissing(db, "torrentarr_maintenance_state", "CREATE TABLE IF NOT EXISTS torrentarr_maintenance_state (Key TEXT NOT NULL PRIMARY KEY, Data TEXT NOT NULL DEFAULT '{}');");
+
+        db.Database.ExecuteSqlRaw("""
+            CREATE INDEX IF NOT EXISTS idx_pending_import_rescue ON torrentarr_maintenance_state
+                (CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Server') END, Key)
+            WHERE substr(Key, -14) = '|import-rescue'
+                AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Stage') END = 'pending'
+            """);
+
+        db.Database.ExecuteSqlRaw("""
+            CREATE INDEX IF NOT EXISTS idx_pending_failed_parking ON torrentarr_maintenance_state
+                (CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Server') END, Key)
+            WHERE substr(Key, -15) = '|failed-parking'
+                AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Stage') END IN ('moving', 'queue')
+            """);
 
         CreateTableIfMissing(db, "searchactivity", "CREATE TABLE IF NOT EXISTS searchactivity ( category TEXT NOT NULL PRIMARY KEY, summary TEXT, timestamp TEXT );");
         CreateTableIfMissing(db, "torrentarr_sonarr_search_retries", "CREATE TABLE IF NOT EXISTS torrentarr_sonarr_search_retries ( ArrInstance TEXT NOT NULL, DownloadId TEXT NOT NULL, CandidatesJson TEXT NOT NULL DEFAULT '[]', PRIMARY KEY (ArrInstance, DownloadId) );");
@@ -183,6 +213,58 @@ public static class ManualSqliteMigrations
         CreateIndexIfMissing(db, "idx_arrinstance_albumqueue", "albumqueuemodel", "arrinstance");
         CreateIndexIfMissing(db, "idx_arrinstance_bookqueue", "bookqueuemodel", "arrinstance");
         CreateIndexIfMissing(db, "idx_arrinstance_filesqueued", "filesqueued", "arrinstance");
+    }
+
+    internal static void ApplyIssueAlertTriggers(TorrentarrDbContext db)
+    {
+        CreateTableIfMissing(db, "torrentarr_issue_alert_events", """
+            CREATE TABLE IF NOT EXISTS torrentarr_issue_alert_events (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT, IssueId INTEGER NOT NULL, OpeningId INTEGER, OpenedAt TEXT NOT NULL,
+                ObservedAt TEXT NOT NULL, State TEXT NOT NULL, Code TEXT NOT NULL,
+                Severity TEXT NOT NULL, Instance TEXT NOT NULL
+            );
+            """);
+        db.Database.ExecuteSqlRaw("""
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_torrentarr_issue_alert_events_IssueId_OpenedAt_State
+            ON torrentarr_issue_alert_events (IssueId, OpenedAt, State);
+            """);
+        db.Database.ExecuteSqlRaw("""
+            CREATE TRIGGER IF NOT EXISTS torrentarr_issue_alert_insert
+            AFTER INSERT ON torrentarr_operational_issues
+            WHEN NEW.Code IN ('worker.lifecycle', 'automation.protection', 'import.scan', 'import.ownership', 'import.history')
+            BEGIN
+                INSERT INTO torrentarr_issue_alert_events (IssueId, OpenedAt, ObservedAt, State, Code, Severity, Instance)
+                VALUES (NEW.Id, NEW.FirstObserved, NEW.FirstObserved, 'opened', NEW.Code, NEW.Severity,
+                    COALESCE(NULLIF(NEW.ArrInstance, ''), NEW.ClientInstance));
+                INSERT INTO torrentarr_issue_alert_events (IssueId, OpeningId, OpenedAt, ObservedAt, State, Code, Severity, Instance)
+                SELECT NEW.Id, last_insert_rowid(), NEW.FirstObserved, NEW.ResolvedAt, 'resolved', NEW.Code, NEW.Severity,
+                    COALESCE(NULLIF(NEW.ArrInstance, ''), NEW.ClientInstance) WHERE NEW.ResolvedAt IS NOT NULL;
+            END;
+            """);
+        db.Database.ExecuteSqlRaw("""
+            CREATE TRIGGER IF NOT EXISTS torrentarr_issue_alert_reopen
+            AFTER UPDATE ON torrentarr_operational_issues
+            WHEN OLD.ResolvedAt IS NOT NULL AND NEW.ResolvedAt IS NULL
+                AND NEW.Code IN ('worker.lifecycle', 'automation.protection', 'import.scan', 'import.ownership', 'import.history')
+            BEGIN
+                INSERT OR IGNORE INTO torrentarr_issue_alert_events (IssueId, OpenedAt, ObservedAt, State, Code, Severity, Instance)
+                VALUES (NEW.Id, NEW.FirstObserved, NEW.FirstObserved, 'opened', NEW.Code, NEW.Severity,
+                    COALESCE(NULLIF(NEW.ArrInstance, ''), NEW.ClientInstance));
+            END;
+            """);
+        db.Database.ExecuteSqlRaw("""
+            CREATE TRIGGER IF NOT EXISTS torrentarr_issue_alert_resolve
+            AFTER UPDATE ON torrentarr_operational_issues
+            WHEN OLD.ResolvedAt IS NULL AND NEW.ResolvedAt IS NOT NULL
+                AND EXISTS (SELECT 1 FROM torrentarr_issue_alert_events
+                    WHERE IssueId = NEW.Id AND OpenedAt = NEW.FirstObserved AND State = 'opened')
+            BEGIN
+                INSERT OR IGNORE INTO torrentarr_issue_alert_events (IssueId, OpeningId, OpenedAt, ObservedAt, State, Code, Severity, Instance)
+                SELECT NEW.Id, Id, NEW.FirstObserved, NEW.ResolvedAt, 'resolved', NEW.Code, NEW.Severity,
+                    COALESCE(NULLIF(NEW.ArrInstance, ''), NEW.ClientInstance) FROM torrentarr_issue_alert_events
+                    WHERE IssueId = NEW.Id AND OpenedAt = NEW.FirstObserved AND State = 'opened';
+            END;
+            """);
     }
 
     private static void MigrateArrActivityOperations(TorrentarrDbContext db)

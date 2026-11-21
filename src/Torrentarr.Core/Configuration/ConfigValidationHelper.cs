@@ -95,7 +95,14 @@ public static class ConfigValidationHelper
         if (duplicate != null) return (false, $"Torrent client instance '{duplicate}' is declared in both legacy and canonical sections.");
         foreach (var (id, client) in config.GetAllTorrentClients())
         {
+            if (client.CategorySeeding.MinimumReportedSeeders < 0 || client.CategorySeeding.MinimumUploadInactivitySeconds < 0
+                || client.CategorySeeding.Categories.Any(category => category.MinimumReportedSeeders < 0 || category.MinimumUploadInactivitySeconds < 0))
+                return (false, $"Torrent client '{id}': retirement thresholds must be zero or positive.");
             if (string.IsNullOrWhiteSpace(client.Type)) return (false, $"Torrent client '{id}' requires a Type.");
+            if (client.AuthMode is not ("legacy" or "api-key"))
+                return (false, $"Torrent client '{id}' has an unknown AuthMode.");
+            if (!client.Disabled && client.AuthMode == "api-key" && !IsQBitApiKey(client.APIKey))
+                return (false, $"Torrent client '{id}' requires a qBittorrent API key starting with qbt_.");
             foreach (var tracker in client.Trackers)
             {
                 var protectionError = TrackerProtectionValidation.Validate(tracker.Protection);
@@ -106,6 +113,9 @@ public static class ConfigValidationHelper
         }
         return (true, null);
     }
+
+    public static bool IsQBitApiKey(string? value) => value is { Length: 32 }
+        && value.StartsWith("qbt_", StringComparison.Ordinal) && value.Skip(4).All(char.IsAsciiLetterOrDigit);
 
     public static string? ValidateCorsOrigins(WebUIConfig webui)
     {
@@ -154,8 +164,23 @@ public static class ConfigValidationHelper
                     return $"Torrent client '{id}', category '{category.Name}': {categoryError}";
         }
         foreach (var (id, arr) in config.ArrInstances)
+        {
+            if (arr.Torrent.MetadataStallMinutes < 0)
+                return $"Integration '{id}': MetadataStallMinutes must be zero or positive.";
+            if (arr.Search.UnsuccessfulSearchRestMinutes is < 0 or > 10080)
+                return $"Integration '{id}': unsuccessful-search rest must be between zero and 10080 minutes.";
+            if (arr.Search.IncludeTags.Concat(arr.Search.ExcludeTags).Any(tag => string.IsNullOrWhiteSpace(tag) || tag.Length > 100)
+                || arr.Search.IncludeTags.Count > 100 || arr.Search.ExcludeTags.Count > 100)
+                return $"Integration '{id}': search tags must be nonempty labels, at most 100 labels of 100 characters.";
+            if (arr.Search.RequireRadarrAvailability && !arr.Type.Equals("radarr", StringComparison.OrdinalIgnoreCase))
+                return $"Integration '{id}': the availability gate is supported only for Radarr.";
+            if (SearchQuietHours.Validate(arr.Search) is { } quietError)
+                return $"Integration '{id}': {quietError}";
+            if (arr.Search.RecentGrabCooldownMinutes < 0 || arr.Search.ActiveDownloadCeiling < 0)
+                return $"Integration '{id}': RecentGrabCooldownMinutes and ActiveDownloadCeiling must be zero or positive.";
             if (arr.Torrent.SeedingMode?.RemoveTorrent is not (null or -1 or 1 or 2 or 3 or 4))
                 return $"Integration '{id}': invalid RemoveTorrent mode.";
+        }
 
         foreach (var rule in TrackerRules.All(config))
             if (Check(rule.HitAndRunMode, rule.MinSeedRatio, rule.MinSeedingTimeDays, rule.HitAndRunMinimumDownloadPercent, rule.HitAndRunPartialSeedRatio, rule.TrackerUpdateBuffer, rule.RemoveTorrent) is { } error)
@@ -185,11 +210,45 @@ public static class ConfigValidationHelper
         return null;
     }
 
+    public static string? SharedFileFilterSourceError(string? source)
+    {
+        if (string.IsNullOrWhiteSpace(source) || source.Length > 2048 || source.Any(char.IsControl))
+            return "Shared list source must contain at most 2048 printable characters.";
+        if (Uri.TryCreate(source, UriKind.Absolute, out var uri) && !uri.IsFile)
+            return uri.Scheme == Uri.UriSchemeHttps && uri.Port == 443 && uri.UserInfo.Length == 0
+                && uri.Query.Length == 0 && uri.Fragment.Length == 0
+                ? null : "Use an HTTPS URL on port 443 with no credentials, query, or fragment.";
+        var segments = source.Split(['/', '\\']);
+        return segments.Any(segment => segment.Length == 0 || segment is "." or ".." || segment.Contains(':'))
+            ? "Use a relative list path below the Torrentarr data directory." : null;
+    }
+
     public static (bool Ok, string? Error) ValidateAll(TorrentarrConfig config)
     {
+        var shared = config.Settings.SharedFileFilters;
+        if (shared == null || shared.Count > 32 || shared.Any(item => item == null
+            || string.IsNullOrWhiteSpace(item.Name) || item.Name.Length > 80 || item.Name.Any(char.IsControl)
+            || SharedFileFilterSourceError(item.Source) != null)
+            || shared.Select(item => item.Name).Distinct(StringComparer.Ordinal).Count() != shared.Count)
+            return (false, "Shared file filter lists require up to 32 unique printable names and safe relative-file or HTTPS source syntax.");
+        if (config.ArrInstances.Values.Any(arr => arr.Torrent.SharedFileFilters == null
+            || arr.Torrent.SharedFileFilters.Count > 32
+            || arr.Torrent.SharedFileFilters.Distinct(StringComparer.Ordinal).Count() != arr.Torrent.SharedFileFilters.Count
+            || arr.Torrent.SharedFileFilters.Any(name => !shared.Any(item => item.Name == name))))
+            return (false, "Arr shared file filter references must name a configured list.");
+
+        if (config.ArrInstances.Values.Any(arr => arr.Torrent.RescueBlockedImports && !arr.Type.Equals("radarr", StringComparison.OrdinalIgnoreCase)))
+            return (false, "Blocked import rescue currently supports Radarr only.");
+        foreach (var (name, arr) in config.ArrInstances)
+            if (FailedTorrentRouting.Validate(config, arr) is { } routeError)
+                return (false, $"Integration '{name}': {routeError}");
         if (ValidateHnrModes(config) is { } hnrError) return (false, hnrError);
         if (TrackerRules.Validate(config) is { } trackerError) return (false, trackerError);
         if (ValidateCorsOrigins(config.WebUI) is { } corsError) return (false, corsError);
+        if (config.Settings.IssueAlertsEnabled && IssueAlertDestination(config.Settings) == null)
+            return (false, "Issue alerts require an HTTP or HTTPS webhook destination without URL user information or a fragment.");
+        if (config.Settings.IssueAlertTypes == null || config.Settings.IssueAlertTypes.Any(type => type is not ("worker" or "import" or "tracker")))
+            return (false, "Issue alert types must be worker, import, or tracker.");
         if (config.WebUI.Port is < 1 or > 65535 || !System.Net.IPAddress.TryParse(config.WebUI.Host, out _))
             return (false, "WebUI requires an IP bind address and port between 1 and 65535.");
 
@@ -216,4 +275,9 @@ public static class ConfigValidationHelper
 
         return (true, null);
     }
+
+    public static Uri? IssueAlertDestination(SettingsConfig settings) =>
+        Uri.TryCreate(settings.IssueAlertsSecretUrl, UriKind.Absolute, out var uri) &&
+        uri.Scheme is "http" or "https" && uri.Host.Length > 0 && uri.UserInfo.Length == 0 && uri.Fragment.Length == 0
+            ? uri : null;
 }

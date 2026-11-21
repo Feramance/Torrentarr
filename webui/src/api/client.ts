@@ -12,6 +12,7 @@ import type {
   LogsListResponse,
   LogFileInfo,
   ProcessesResponse,
+  SearchDecisionResponse,
   QbitCategoriesResponse,
   RadarrMoviesResponse,
   RestartResponse,
@@ -34,6 +35,39 @@ import type {
 } from "./types";
 
 export type { LogFileInfo };
+
+export function sendIssueAlertTest(): Promise<{ success: boolean }> {
+  return fetchJson("/web/issues/alerts/test", { method: "POST" });
+}
+
+export interface FileFilterPreview {
+  available: boolean;
+  reason: string | null;
+  lists: {
+    name: string;
+    source: string | null;
+    loadedAt: string | null;
+    checkedAt: string | null;
+    error: string | null;
+  }[];
+}
+
+export function getFileFilterPreview(
+  instance: string,
+  path: string,
+): Promise<FileFilterPreview> {
+  return fetchJson(
+    `/web/file-filters/preview?instance=${encodeURIComponent(instance)}&path=${encodeURIComponent(path)}`,
+  );
+}
+
+export function getSearchDecisions(
+  instance: string,
+): Promise<SearchDecisionResponse> {
+  return fetchJson(
+    `/web/processes/${encodeURIComponent(instance)}/search-activity`,
+  );
+}
 export class AuthError extends Error {
   code?: string;
   constructor(message: string, code?: string) {
@@ -394,6 +428,22 @@ export async function getStatus(): Promise<StatusResponse> {
   return fetchJson<StatusResponse>("/web/status");
 }
 
+export function getFailedTorrentDestinations(category: string) {
+  return fetchJson<
+    {
+      client: string;
+      available: boolean;
+      categories: {
+        name: string;
+        arrOwner: string | null;
+        unavailableReason: string | null;
+      }[];
+    }[]
+  >(
+    `/web/config/failed-torrent-destinations?category=${encodeURIComponent(category)}`,
+  );
+}
+
 export async function getQbitCategories(): Promise<QbitCategoriesResponse> {
   return fetchJson<QbitCategoriesResponse>("/web/qbit/categories");
 }
@@ -504,6 +554,7 @@ export async function searchLogs(
     maxMatches?: number;
     context?: number;
     includeRotated?: boolean;
+    includeDates?: boolean;
   },
 ): Promise<LogSearchResponse> {
   const params = new URLSearchParams();
@@ -514,6 +565,7 @@ export async function searchLogs(
     params.set("max_matches", String(options.maxMatches));
   if (options?.context != null) params.set("context", String(options.context));
   if (options?.includeRotated === false) params.set("include_rotated", "0");
+  if (options?.includeDates) params.set("include_dates", "1");
   return fetchJson<LogSearchResponse>(
     `/web/logs/${encodeURIComponent(name)}/search?${params}`,
   );

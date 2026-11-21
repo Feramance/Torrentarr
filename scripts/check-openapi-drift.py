@@ -7,13 +7,14 @@ import json
 import sys
 from copy import deepcopy
 from openapi_status import STATUS_SCHEMA
+from openapi_roadmap import EXTENSION_PATHS as ROADMAP_PATHS
 from openapi_statistics import EXTENSION_PATHS as STATISTICS_PATHS, apply as apply_statistics
 from openapi_maintenance import EXTENSION_PATHS as MAINTENANCE_PATHS, apply as apply_maintenance
 from pathlib import Path
 from typing import Any
 
 HTTP_METHODS = {"get", "put", "post", "delete", "patch", "head", "options", "trace"}
-TORRENTARR_EXTENSIONS = STATISTICS_PATHS | MAINTENANCE_PATHS | {f"{prefix}/issues{suffix}" for prefix in ("/web", "/api") for suffix in ("", "/summary", "/{id}")} | {
+TORRENTARR_EXTENSIONS = ROADMAP_PATHS | STATISTICS_PATHS | MAINTENANCE_PATHS | {f"{prefix}/issues{suffix}" for prefix in ("/web", "/api") for suffix in ("", "/summary", "/{id}")} | {
     "/api/arr/{category}/open/{kind}/{entryId}",
     "/api/lidarr/{category}/tracks",
     "/api/qbit/categories",

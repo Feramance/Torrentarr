@@ -51,6 +51,7 @@ public interface ITorrentClient
     Task<bool> EditCategoryAsync(string name, string savePath, CancellationToken ct = default);
     Task<bool> DeleteCategoryAsync(string name, CancellationToken ct = default);
     Task<TorrentTransferRecord?> GetTransferInfoAsync(CancellationToken ct = default);
+    Task<bool?> GetAlternateSpeedLimitsStateAsync(CancellationToken ct = default) => Task.FromResult<bool?>(null);
     Task<TorrentClientSnapshot?> GetMainDataAsync(long? revision = null, CancellationToken ct = default);
     Task<IReadOnlyDictionary<string, byte[]>> ExportResumeDataAsync(string hash, CancellationToken ct = default);
 }

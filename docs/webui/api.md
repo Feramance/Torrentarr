@@ -106,3 +106,42 @@ The Maintenance sidebar group uses the existing `/web/maintenance/*` and `/api/m
 Preview supports saved configuration or draft overrides; draft plans cannot execute. Apply rejects expired, consumed, stale, or unauthorized plans. Configure automatic execution through `Maintenance.Operations.<operation>.ExecutionMode` and its UTC schedule. Manual permits reviewed one-time application. Automatic persists across restarts and requires no restart to activate. Legacy `armed` and `armedOperations` status fields remain false/empty for compatibility. These operations retain their original identifiers.
 
 All configuration controls use the existing config API. A maintenance settings save sends only changed maintenance paths and reports validation, reload, and application status through that API.
+
+
+## Shared file filter preview
+
+`GET /web/file-filters/preview?instance=Sonarr-TV&path=Movie%2Fextra.exe`
+returns the saved effective file-filter decision and list freshness. The Host
+also exposes `GET /api/file-filters/preview` with the same query parameters.
+The response includes `available`, `reason`, and `lists` with `name`, `source`,
+`loadedAt`, `checkedAt`, and `error`. A missing usable list sets `available`
+to false and holds the decision. Remote source URLs expose only their origin in
+this response. Unknown instances return 404 and paths longer
+than 4096 characters return 400. The preview performs no refresh or client
+mutation and follows the authentication rules above.
+
+## Search decisions and issue alert tests
+
+`GET /web/processes/{instance}/search-activity` and the Host's corresponding
+`/api` route return an Arr worker's bounded decision history and candidate
+preview. The preview includes the latest usable catalog sync time, its age,
+ordered candidates, and candidates deferred by current pacing evidence. History
+distinguishes submission, command completion, correlated grab evidence, and
+`noGrabAt` for a verified unsuccessful-search confirmation window. Preview deferrals
+also include library tags, Radarr availability, quiet hours and persisted item rest
+when those gates are enabled.
+Unknown workers return 404. Reading this endpoint performs no search or profile
+mutation.
+
+`POST /web/issues/alerts/test` and the Host's corresponding `/api` route send
+one test payload to the saved webhook destination. A missing destination returns
+400. A rejected delivery returns 502 with a generic error. Accepted delivery
+returns `{ "success": true }`. A test creates no operational issue transition.
+Both endpoint families use the authentication rules above.
+
+`GET /web/config/failed-torrent-destinations?category=movies` and the Host's
+corresponding `/api` route list existing categories for each configured and
+enabled qBittorrent client. Each result includes `client`, `available`, and
+`categories`. A category supplies `name`, `arrOwner`, and `unavailableReason`.
+Unavailable clients have an empty category list. The authenticated endpoint
+reads category inventories and makes no changes.

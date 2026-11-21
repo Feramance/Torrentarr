@@ -41,7 +41,7 @@ Expose a read-only candidate preview for one worker using the same eligibility a
 - [ ] The same inputs give the same eligibility and ordering in preview and execution. Preview produces no mutation.
 - [ ] An accepted command without completion or grab evidence shows only the confirmed state. Stale or unavailable data is visible.
 - [ ] Repeated skips and old decisions are bounded. Preview and history work for multiple instances without leaking decisions between them.
-- [ ] **Ready to ship.** Evidence:
+- [ ] **Ready to ship.** Evidence: [search activity documentation](../webui/console-statistics.md#arr-activity), the SQLite search-decision fixtures, and the Processes drilldown. Preview plans from the latest usable synced catalog with the worker’s planner and current gate observations.
 
 Source: [Cleanuparr Seeker](https://github.com/Cleanuparr/Cleanuparr/blob/v2.11.1/docs/docs/configuration/seeker/index.mdx) and [Torrentarr console statistics](../webui/console-statistics.md).
 
@@ -57,7 +57,7 @@ Apply bounded timeouts and retries. Use a stable event ID for retry deduplicatio
 - [ ] Host restart, delivery timeout and HTTP failure exercise retry and deduplication behavior.
 - [ ] Disabled notifications and non-selected issues cause no delivery. Send test does not create an operational issue transition.
 - [ ] The payload, test response and logs contain no credentials, private tracker URLs or raw upstream responses.
-- [ ] **Ready to ship.** Evidence:
+- [ ] **Ready to ship.** Evidence: [webhook alerts](../webui/issues.md#webhook-alerts), `IssueAlertDispatcherTests` and `IssueAlertEndpointTests`. Release-commit verification is pending.
 
 Source: [Cleanuparr notifications](https://github.com/Cleanuparr/Cleanuparr/blob/v2.11.1/docs/docs/configuration/notifications/index.mdx) and [Torrentarr Issues](../webui/issues.md).
 
@@ -73,7 +73,7 @@ Add an optional alternate-speed exception to slow-speed decisions when the clien
 - [ ] Genuine progress resets the stall window. Snapshot gaps and rechecks neither fabricate progress nor authorize removal.
 - [ ] Alternate-speed mode suppresses only the configured slow judgment. Unsupported or unavailable status is explicitly handled without inferring that normal limits are active.
 - [ ] Unknown private-tracker evidence, explicit never-remove policies and active rechecks remain protected.
-- [ ] **Ready to ship.** Evidence:
+- [ ] **Ready to ship.** Evidence: [stall safeguards configuration](../configuration/torrents.md#qbittorrent-stall-safeguards), `DownloadStallTrackerTests` and the processor's `MetadataGrace` fixture. Release-commit validation is pending.
 
 Source: [Cleanuparr Queue Cleaner](https://github.com/Cleanuparr/Cleanuparr/blob/v2.11.1/docs/docs/configuration/queue-cleaner/index.mdx) and [Torrentarr torrent rules](../configuration/torrents.md).
 
@@ -89,7 +89,7 @@ Surface these decisions in Package 1. Apply the gates to proactive missing and u
 - [ ] Duplicate observations count once. Below, at and above the active ceiling produce the expected result.
 - [ ] Arr unavailability and stale client data explain the deferral. Clearing the condition resumes proactive work without manual intervention.
 - [ ] Replacement searches keep their existing behavior. Restart does not erase a cooldown while reliable grab evidence remains available.
-- [ ] **Ready to ship.** Evidence:
+- [ ] **Ready to ship.** Evidence: [pacing configuration](../configuration/search/index.md#proactive-search-pacing), `SearchPacingTests` and the search executor and preview fixtures. Release-commit verification is pending.
 
 ## 5. qBittorrent API-key login
 
@@ -100,7 +100,7 @@ Surface these decisions in Package 1. Apply the gates to proactive missing and u
 - [ ] Old credential and configured bypass flows still work. A supported instance can connect, reconnect and perform a representative authorized client operation with its key.
 - [ ] Old versions, expired or rejected keys, and unreachable instances produce actionable errors.
 - [ ] Redacted fields preserve the stored key until explicitly replaced or cleared. No key leaks through configuration reads, logs or connection tests.
-- [ ] **Ready to ship.** Evidence:
+- [ ] **Ready to ship.** Evidence: [API key configuration](../configuration/qbittorrent.md#api-key-authentication), loopback qBittorrent fixtures, and config API credential-preservation tests. Live qBittorrent and release-commit validation are pending.
 
 ## 6. Shared file filter lists
 
@@ -115,6 +115,16 @@ Provide a read-only preview for example paths, with matching source and list fre
 - [ ] A torrent with eligible media and an excluded extra can still import under existing rules. File matches grant no new deletion authority.
 - [ ] **Ready to ship.** Evidence:
 
+Implementation checkpoint. Named Settings lists and per-Arr references round-trip
+through TOML and the generated schema. Hosted refresh activates validated bounded
+snapshots, retains last-valid data, reports Issues, and holds unavailable lists.
+The processing matcher and authenticated preview share these snapshots.
+Shared-only matches cannot authorize deletion. Persistent priority ownership
+supports restoration after refresh or restart. Focused tests cover source access,
+validation, two consumers, failure retention, deletion withholding, and priority
+restoration. Full release review, integration coverage, and UI layout verification
+remain pending.
+
 Source: [Cleanuparr Malware Blocker](https://github.com/Cleanuparr/Cleanuparr/blob/v2.11.1/docs/docs/configuration/malware-blocker/index.mdx) and [Torrentarr file filtering](../configuration/torrents.md).
 
 ## 7. Related log links
@@ -126,7 +136,7 @@ Source: [Cleanuparr Malware Blocker](https://github.com/Cleanuparr/Cleanuparr/bl
 - [ ] A link finds the intended run across eligible active and rotated logs, without matching an unrelated instance.
 - [ ] Expired or missing data produces a clear empty state and a way back to normal log browsing.
 - [ ] Copied details follow the same redaction policy as the source view.
-- [ ] **Ready to ship.** Evidence:
+- [ ] **Ready to ship.** Evidence: [related log links](../webui/logs.md), rotated log search and issue API fixtures, and `LogsView.test.tsx`. Search decisions link to their submission cycle. Release-commit verification is pending.
 
 ## 8. Root-aware hardlink auditing
 
@@ -139,6 +149,14 @@ Source: [Cleanuparr Malware Blocker](https://github.com/Cleanuparr/Cleanuparr/bl
 - [ ] Preview explains the proposed tag change and its evidence. Unknown results never grant deletion authorization.
 - [ ] Supported filesystems and platforms are documented. If reliable inspection is infeasible, leave the option unsupported and close this package as deferred.
 - [ ] **Ready to ship.** Evidence:
+
+Implementation checkpoint. Root-aware inspection now uses Linux device/inode
+identity on supported local filesystems, explicit mapped library/ignored roots,
+bounded coverage, and tag ownership. Native fixtures cover library, cross-seed,
+missing, symlink, nested-root and budget cases. Maintenance fixtures cover owned
+tags, unknown coverage, apply-time revalidation and shared execution budgets.
+Other platforms and unsupported filesystems remain explicitly unknown.
+Release-commit tests and UI verification remain pending.
 
 ## 9. Arr-blocked import rescue
 
@@ -155,6 +173,15 @@ Treat an accepted command as pending. Require positive Arr import history correl
 
 Source: [Cleanuparr Queue Cleaner](https://github.com/Cleanuparr/Cleanuparr/blob/v2.11.1/docs/docs/configuration/queue-cleaner/index.mdx) and [Torrentarr import behavior](../configuration/torrents.md).
 
+Implementation checkpoint. Radarr's matched-by-ID blocked import now has an
+opt-in rescue through its manual-import API. The shared matcher, mapped owned
+files, fresh queue and client snapshots, and one unrejected movie match constrain
+submission. SQLite claims precede a single nonredirecting Copy command. Matching
+import history and queue clearance confirm success; pending receipts hold competing
+removal. Loopback fixtures cover restart, concurrency, timeout, rejected submission,
+wrong/ambiguous identity, inaccessible files and shared exclusions. Other Arr
+adapters remain explicitly unsupported. Integration and release review are pending.
+
 ## 10. Failed-torrent category choice
 
 **Goal.** Let operators decide whether a qualifying failed torrent stays under the existing policy or moves to a category they choose. The move option retains the client entry and payload while resolving the associated Arr queue item where safe.
@@ -167,7 +194,9 @@ Use a fresh client snapshot and validate the effective save path and automatic t
 - [ ] No destination, a missing category, an invalid owner, a relocation risk or an unsupported Arr operation leaves the entry and payload intact and explains the hold.
 - [ ] A valid move preserves client identity, files, path and applicable tracker evidence. The Arr queue entry is cleared without asking Arr to delete the retained download.
 - [ ] Confirmed import rescue wins over parking. Failed queue removal or a restart between steps resumes reconciliation without repeating a confirmed move, blocklisting twice or falling back to deletion.
-- [ ] **Ready to ship.** Evidence:
+- [ ] **Ready to ship.** Evidence: [failed torrent action](../configuration/torrents.md#failed-torrent-action),
+  per-client destination settings and editor, disposable queue and restart fixtures,
+  and retained-torrent protection tests. Release-commit and layout verification are pending.
 
 ## 11. Seeder-count and inactivity retirement guards
 
@@ -181,7 +210,7 @@ Define inactivity as elapsed time since the last verified payload upload. Use a 
 - [ ] Test zero, below, equal and above the minimum, plus stale, missing, and unsupported counts. Only fresh evidence meeting the configured minimum clears the seeder guard.
 - [ ] Recent uploads reset the inactivity window. Missing intervals, resets and re-additions cannot grant clearance. Test threshold boundaries, restart, and both guards enabled together.
 - [ ] Revalidation holds the torrent when evidence changes before removal. Non-retirement workflows retain their existing safeguards.
-- [ ] **Ready to ship.** Evidence:
+- [ ] **Ready to ship.** Evidence: [retirement guard settings](../configuration/seeding.md#retirement-guards) and `RetirementGuardTests`. Release-commit verification is pending.
 
 Source: [Cleanuparr Download Cleaner](https://github.com/Cleanuparr/Cleanuparr/blob/v2.11.1/docs/docs/configuration/download-cleaner/index.mdx) and [Torrentarr seeding policy](../configuration/seeding.md).
 
@@ -207,6 +236,35 @@ Source: [Cleanuparr Download Cleaner](https://github.com/Cleanuparr/Cleanuparr/b
 - [ ] **Ready to ship.** Evidence:
 
 Source: [Cleanuparr Seeker](https://github.com/Cleanuparr/Cleanuparr/blob/v2.11.1/docs/docs/configuration/seeker/index.mdx).
+
+Implementation checkpoint. Opt-in include/exclude tag labels, Radarr availability,
+and IANA-zone quiet hours now share gates between execution and preview. Fresh
+owning-library resources supply tags; unavailable evidence defers. Sonarr uses
+per-episode commands with item gates enabled. Boundary, DST, inherited-tag,
+availability and replacement-isolation fixtures cover these controls. Persisted
+no-grab item rest now uses completed command evidence, a thirty-minute confirmation
+window, scoped expiring receipts, and bounded negative-evidence age. Focused
+search, no-grab, activity and rename tests pass, as do config partial-save and
+frontend checks. The preview now plans from the latest usable synced catalog
+with the same planner and gate checks as execution. Release verification remains
+pending.
+
+## Local validation
+
+The Docker Compose build and redeploy passed its health check with the existing
+config and database. The search preview and failed torrent destination selector
+were exercised at 390px and 1440px. Search preview returned current catalog
+evidence, and the selector listed live categories by client and disabled those
+owned by Arr. The editor was closed without saving. Destructive and
+retention-changing paths were exercised against disposable fixtures.
+
+Keep the new automation switches off during upgrade if you want to retain
+existing behavior. Enable features per integration or client after reviewing
+their configuration prerequisites. Disabling import rescue or failed torrent
+moves stops new attempts while recorded operations can still reconcile.
+Before rolling back application binaries, stop the service and save current
+config and database separately. Restore the pre-upgrade backup only when
+needed, as restoring a backup discards newer recorded activity.
 
 ## Deferred until a use case is demonstrated
 

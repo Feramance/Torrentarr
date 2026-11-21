@@ -176,6 +176,33 @@ separate from mandatory completion-based protection observations.
 
 -1 never; 1 ratio; 2 time; 3 either; 4 both. HnR protection still gates removal.
 
+### Retirement guards
+
+Two optional controls apply to automatic retirement of completed torrents after
+the usual ratio or time limits. Tracker protection still applies. Both controls
+default to zero, which disables them independently.
+
+```toml
+[qBit.CategorySeeding]
+MinimumReportedSeeders = 3
+MinimumUploadInactivitySeconds = 3600
+```
+
+`MinimumReportedSeeders` uses qBittorrent's reported swarm seeder count. A
+reported zero is a count. Missing, unsupported, or stale values hold retirement.
+`MinimumUploadInactivitySeconds` uses persisted observations of the uploaded
+payload counter. A fresh unchanged counter must span the configured window. [qBittorrent's torrent status serialization](https://github.com/qbittorrent/qBittorrent/blob/master/src/webui/api/serialize/serialize_torrent.cpp), [libtorrent's payload counters](https://libtorrent.org/reference-Torrent_Status.html#all-time-upload-all-time-download)
+Uploads, counter resets, identity changes, and missing observations restart the
+window. A gap longer than twice the client scan interval breaks continuity.
+
+Use the same keys in `TorrentClient.<id>.CategorySeeding`. Category overrides
+inherit the client defaults when blank. Enter zero in an override to disable
+that guard for the category. The client editor shows the resulting requirements.
+The Host retains inactive observation rows for up to seven days. Disabling the
+inactivity guard stops recording samples for that policy. The normal scan gap
+rule applies when it is enabled again. Debug logs show the latest evidence,
+observation age, and threshold.
+
 ### RemoveDeadTrackers
 
 Legacy compatibility flag. True reports matching tracker failures and preserves

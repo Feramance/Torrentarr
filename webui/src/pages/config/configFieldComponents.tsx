@@ -1,5 +1,7 @@
+import { FailedTorrentDestinations } from "./FailedTorrentDestinations";
 import { useContext } from "react";
 import { ConfigFieldSearch } from "./ConfigFieldSearch";
+import { SharedFileFilterPreview } from "../../components/SharedFileFilterPreview";
 import { PathMappingsEditor } from "./PathMappingsEditor";
 import React, {
   useCallback,
@@ -572,6 +574,27 @@ export function FieldGroup({
       .filter(Boolean)
       .join(" ");
 
+    if (pathSegments.join(".") === "Torrent.FailedTorrentDestinations") {
+      if (
+        getValue(state as ConfigDocument, [
+          ...basePath,
+          "Torrent",
+          "FailedTorrentAction",
+        ]) !== "move"
+      )
+        return null;
+      return (
+        <FailedTorrentDestinations
+          key={key}
+          category={String(
+            getValue(state as ConfigDocument, [...basePath, "Category"]) ?? "",
+          )}
+          value={Array.isArray(rawValue) ? rawValue : []}
+          onChange={(value) => onChange(path, field, value)}
+        />
+      );
+    }
+
     if (field.secure) {
       return (
         <SecureField
@@ -662,21 +685,27 @@ export function FieldGroup({
       }
 
       const optionLabel = (value: string) =>
-        field.path?.at(-1) === "HitAndRunMode"
-          ? hitAndRunModeLabel(value) ?? value
-          : field.path?.at(-1) === "SearchBySeries"
-            ? {
-                smart: "Smart",
-                series: "Series",
-                season: "Season",
-                episode: "Episode",
-              }[value] ?? value
-            : field.path?.at(-1) === "ExecutionMode"
-              ? {
-                  manual: "Manual",
-                  automatic: "Automatic",
-                }[value] ?? value
-              : value;
+        field.path?.at(-1) === "FailedTorrentAction"
+          ? value === "move"
+            ? "Move to a category and keep files"
+            : "Use existing policy"
+          : field.path?.at(-1) === "AuthMode" && value === "api-key"
+            ? "API key"
+            : field.path?.at(-1) === "HitAndRunMode"
+              ? hitAndRunModeLabel(value) ?? value
+              : field.path?.at(-1) === "SearchBySeries"
+                ? {
+                    smart: "Smart",
+                    series: "Series",
+                    season: "Season",
+                    episode: "Episode",
+                  }[value] ?? value
+                : field.path?.at(-1) === "ExecutionMode"
+                  ? {
+                      manual: "Manual",
+                      automatic: "Automatic",
+                    }[value] ?? value
+                  : value;
       return (
         <div key={key} className={fieldClassName} data-field-path={dataPath}>
           <label htmlFor={dataPath} title={tooltip}>
@@ -838,6 +867,8 @@ export function FieldGroup({
           {description && (
             <div className="field-description">{description}</div>
           )}
+          {pathSegments.join(".") === "Torrent.SharedFileFilters" &&
+            sectionName && <SharedFileFilterPreview instance={sectionName} />}
           {renderReloadHint(field)}
           <FieldErrorText message={errorMessage} />
         </div>

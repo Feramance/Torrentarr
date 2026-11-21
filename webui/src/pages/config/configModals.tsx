@@ -7,6 +7,7 @@ import ReactMarkdown from "react-markdown";
 import { get } from "lodash-es";
 import {
   testArrConnection,
+  sendIssueAlertTest,
   setPassword as apiSetPassword,
   type TestConnectionResponse,
 } from "../../api/client";
@@ -781,6 +782,22 @@ export function SimpleConfigModal({
   const webUI = useWebUI();
   const { push } = useToast();
   const [savingModal, setSavingModal] = useState(false);
+  const [testingAlerts, setTestingAlerts] = useState(false);
+
+  async function testAlerts() {
+    setTestingAlerts(true);
+    try {
+      await sendIssueAlertTest();
+      push("Issue alert test delivered.", "success");
+    } catch (error) {
+      push(
+        error instanceof Error ? error.message : "Issue alert test failed.",
+        "error",
+      );
+    } finally {
+      setTestingAlerts(false);
+    }
+  }
 
   const handleSave = async () => {
     if (!onSave || savingModal) return;
@@ -847,6 +864,19 @@ export function SimpleConfigModal({
                 onChange={onChange}
                 validationErrors={validationErrors}
               >
+                {group.title === "Issue alerts" && (
+                  <div className="field--full-width">
+                    <button
+                      className="btn ghost small"
+                      type="button"
+                      disabled={testingAlerts}
+                      onClick={() => void testAlerts()}
+                    >
+                      {testingAlerts ? "Sending test…" : "Send test"}
+                    </button>
+                    <p className="hint">Uses the saved webhook destination.</p>
+                  </div>
+                )}
                 {group.title === "Appearance and live display" && (
                   <div className="field--full-width">
                     {showLiveSettings && webUI && (

@@ -34,15 +34,21 @@ public class TorrentarrDbContext : DbContext
 
     public DbSet<ArrActivitySample> ArrActivitySamples { get; set; }
     public DbSet<ArrActivityOperation> ArrActivityOperations { get; set; }
+    public DbSet<SearchDecision> SearchDecisions { get; set; }
 
     public DbSet<TransferSample> TransferSamples { get; set; }
 
     public DbSet<OperationalIssue> OperationalIssues { get; set; }
+    public DbSet<IssueAlertEvent> IssueAlertEvents { get; set; }
+    public DbSet<RetirementUploadObservation> RetirementUploads { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<RetirementUploadObservation>().HasKey(o => new { o.Client, o.Hash });
+        modelBuilder.Entity<IssueAlertEvent>().HasIndex(e => new { e.IssueId, e.OpenedAt, e.State }).IsUnique();
         modelBuilder.Entity<ArrActivitySample>().HasKey(s => new { s.Instance, s.Minute });
+        modelBuilder.Entity<SearchDecision>().HasKey(s => new { s.Instance, s.Key });
         modelBuilder.Entity<ArrActivitySample>().HasIndex(s => s.Minute);
         modelBuilder.Entity<ArrActivityOperation>().HasKey(s => new { s.Instance, s.Server, s.CommandId });
         modelBuilder.Entity<ArrActivityOperation>().HasIndex(s => new { s.Instance, s.Server, s.EvidenceId }).IsUnique();

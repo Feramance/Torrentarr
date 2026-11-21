@@ -53,7 +53,15 @@ describe("configuration groups", () => {
       groups
         .find((g) => g.title === "Connection")!
         .fields.map((f) => f.path?.join(".")),
-    ).toEqual(["Host", "Port", "UserName", "Password", "SkipTLSVerify"]);
+    ).toEqual([
+      "Host",
+      "Port",
+      "AuthMode",
+      "UserName",
+      "Password",
+      "APIKey",
+      "SkipTLSVerify",
+    ]);
     for (const [title, definitions] of [
       ["general", SETTINGS_FIELDS],
       ["interface", WEB_SETTINGS_FIELDS],

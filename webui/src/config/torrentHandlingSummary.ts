@@ -374,6 +374,42 @@ export function getQbitTorrentHandlingSummary(
   );
   blocks.push(seedParts.join(" "));
 
+  const retirementRequirements = (policy: Record<string, unknown>) => {
+    const seeders = Number(
+      policy.MinimumReportedSeeders ?? seeding.MinimumReportedSeeders ?? 0,
+    );
+    const inactivity = Number(
+      policy.MinimumUploadInactivitySeconds ??
+        seeding.MinimumUploadInactivitySeconds ??
+        0,
+    );
+    return [
+      ...(seeders > 0 ? [`at least ${seeders} reported seeders`] : []),
+      ...(inactivity > 0
+        ? [`${formatSeconds(inactivity)} of verified upload inactivity`]
+        : []),
+    ].join(" and ");
+  };
+  const defaults = retirementRequirements(seeding);
+  if (defaults) blocks.push(`Automatic retirement also requires ${defaults}.`);
+  const categoryRules = seeding.Categories;
+  if (Array.isArray(categoryRules)) {
+    for (const rule of categoryRules) {
+      if (
+        !rule?.Name ||
+        (rule.MinimumReportedSeeders == null &&
+          rule.MinimumUploadInactivitySeconds == null)
+      )
+        continue;
+      const requirements = retirementRequirements(rule);
+      blocks.push(
+        requirements
+          ? `For ${rule.Name}, automatic retirement also requires ${requirements}.`
+          : `For ${rule.Name}, both retirement guards are disabled.`,
+      );
+    }
+  }
+
   const hnrMode = resolveHnrMode(seeding.HitAndRunMode);
   const minRatio = Number(seeding.MinSeedRatio ?? 1);
   const minDays = Number(seeding.MinSeedingTimeDays ?? 0);

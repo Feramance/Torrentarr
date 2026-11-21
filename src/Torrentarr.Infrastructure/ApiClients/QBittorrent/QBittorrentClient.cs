@@ -2,9 +2,9 @@ using Torrentarr.Core.Models;
 using Torrentarr.Core.Interfaces;
 using Newtonsoft.Json;
 using RestSharp;
-using RestSharp.Authenticators;
 using Torrentarr.Infrastructure.Http;
 using Torrentarr.Core.Services;
+using System.Net;
 
 namespace Torrentarr.Infrastructure.ApiClients.QBittorrent;
 
@@ -18,6 +18,8 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     private readonly int _port;
     private readonly string _username;
     private readonly string _password;
+    private readonly string? _apiKey;
+    private bool UsesBypass => _apiKey == null && _username.Length == 0 && _password.Length == 0;
     private string? _cookie;
     private Version? _version;
     private DateTimeOffset _versionAt;
@@ -32,13 +34,14 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     /// <summary>Set when <see cref="LoginAsync"/> returns false; includes HTTP status and cookie names.</summary>
     public string? LastLoginFailure { get; private set; }
 
-    public QBittorrentClient(string host, int port, string username, string password, bool skipTlsVerify = false, string instanceId = "qBit")
+    public QBittorrentClient(string host, int port, string username, string password, bool skipTlsVerify = false, string instanceId = "qBit", string? apiKey = null)
     {
         Identity = new TorrentClientIdentity(instanceId, "qbittorrent");
         _host = host;
         _port = port;
         _username = username;
         _password = password;
+        _apiKey = apiKey;
 
         // Host may already include a protocol prefix (e.g. "http://192.168.0.240")
         // Avoid double-prefix like "http://http://..."
@@ -49,7 +52,10 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         else
             baseUrl = $"http://{host}:{port}";
 
-        _client = new RestClient(TlsSkipHelper.CreateRestOptions(baseUrl, skipTlsVerify));
+        var options = TlsSkipHelper.CreateRestOptions(baseUrl, skipTlsVerify);
+        if (apiKey != null) options.FollowRedirects = false;
+        _client = new RestClient(options);
+        if (apiKey != null) _client.AddDefaultHeader("Authorization", $"Bearer {apiKey}");
     }
 
     public void Dispose() => _client.Dispose();
@@ -63,7 +69,7 @@ public class QBittorrentClient : ITorrentClient, IDisposable
     private async Task<RestResponse> ExecuteAuthenticatedAsync(RestRequest request, CancellationToken ct)
     {
         var response = await ExecuteAsync(request, ct);
-        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden && await LoginAsync(ct))
+        if (_apiKey == null && !UsesBypass && response.StatusCode == HttpStatusCode.Forbidden && await LoginAsync(ct))
         {
             Serilog.Log.Debug("qBittorrent session renewed for {ClientInstance}; retrying {Method} {Route}", Identity.InstanceId, request.Method, request.Resource.Split('?', '#')[0]);
             request.AddOrUpdateHeader("Cookie", _cookie!);
@@ -135,6 +141,17 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         LastLoginFailure = null;
         LastConnectionFailure = null;
         LastConnectionFailureKind = TorrentClientConnectionFailureKind.Unknown;
+        if (_apiKey != null) return await VerifyApiKeyAsync(ct);
+        if (UsesBypass)
+        {
+            var probe = await ExecuteAsync(new RestRequest("/api/v2/app/version"), ct);
+            ct.ThrowIfCancellationRequested();
+            if (probe.IsSuccessful && IsVersionText(probe.Content?.Trim())) return true;
+            LastConnectionFailureKind = TorrentClientConnectionFailureKind.Transient;
+            LastLoginFailure = LastConnectionFailure =
+                $"Could not verify client-configured authentication bypass (HTTP {(int)probe.StatusCode}; {probe.ResponseStatus}).";
+            return false;
+        }
         var request = new RestRequest("/api/v2/auth/login", Method.Post);
         request.AddParameter("username", _username);
         request.AddParameter("password", _password);
@@ -163,6 +180,28 @@ public class QBittorrentClient : ITorrentClient, IDisposable
             : TorrentClientConnectionFailureKind.Transient;
         var transport = response.ErrorException == null ? response.ResponseStatus.ToString() : DiagnosticText.Error(response.ErrorException);
         LastConnectionFailure = $"Login endpoint=/api/v2/auth/login; HTTP {(int)response.StatusCode} {response.StatusCode}; failure={LastConnectionFailureKind}; {failureReason}; transport={transport}";
+        return false;
+    }
+
+    private async Task<bool> VerifyApiKeyAsync(CancellationToken ct)
+    {
+        var response = await ExecuteAsync(new RestRequest("/api/v2/app/webapiVersion"), ct);
+        ct.ThrowIfCancellationRequested();
+        var status = response.StatusCode;
+        if (response.IsSuccessful && Version.TryParse(response.Content?.Trim(), out var version)
+            && version >= new Version(2, 14, 1)) return true;
+
+        LastConnectionFailureKind = status == HttpStatusCode.Unauthorized
+            ? TorrentClientConnectionFailureKind.AuthenticationRejected
+            : TorrentClientConnectionFailureKind.Transient;
+        LastLoginFailure = LastConnectionFailure = status switch
+        {
+            HttpStatusCode.Unauthorized => "qBittorrent rejected the API key. Check whether it was rotated.",
+            HttpStatusCode.Forbidden => "qBittorrent denied API-key access (HTTP 403). Verify the key and that the server supports API keys (qBittorrent 5.2+).",
+            HttpStatusCode.OK or HttpStatusCode.NotFound => "API-key support was not confirmed. Verify the qBittorrent endpoint and WebAPI version (2.14.1+).",
+            0 => $"Unable to reach qBittorrent ({response.ResponseStatus}).",
+            _ => $"qBittorrent API-key verification failed (HTTP {(int)status})."
+        };
         return false;
     }
 
@@ -214,8 +253,16 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         var response = await ExecuteAuthenticatedAsync(request, ct);
         if (!response.IsSuccessful)
             throw new HttpRequestException($"Torrent version request failed (HTTP {(int)response.StatusCode}).", null, response.StatusCode);
-        return response.Content ?? "";
+        var version = response.Content ?? "";
+        if (_apiKey == null) return version;
+        version = version.Trim();
+        if (!IsVersionText(version))
+            throw new HttpRequestException("Unrecognized qBittorrent version.");
+        return version;
     }
+
+    private static bool IsVersionText(string? text) => text != null && System.Text.RegularExpressions.Regex.IsMatch(text,
+        @"^[vV]?\d+\.\d+(?:\.\d+)?(?:[-+][a-zA-Z0-9.+-]+|(?:alpha|beta|rc)\d*)?$");
 
     /// <summary>
     /// Get all torrents
@@ -717,6 +764,15 @@ public class QBittorrentClient : ITorrentClient, IDisposable
         }
 
         return null;
+    }
+
+    public async Task<bool?> GetAlternateSpeedLimitsStateAsync(CancellationToken ct = default)
+    {
+        var request = new RestRequest("/api/v2/transfer/speedLimitsMode");
+        AddAuthCookie(request);
+        var response = await ExecuteAuthenticatedAsync(request, ct);
+        ct.ThrowIfCancellationRequested();
+        return response.IsSuccessful ? response.Content?.Trim() switch { "0" => false, "1" => true, _ => null } : null;
     }
 
     /// <summary>

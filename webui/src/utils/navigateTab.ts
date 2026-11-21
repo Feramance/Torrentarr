@@ -23,6 +23,12 @@ export interface ConfigDestination {
 
 export interface NavigateTabDetail {
   tab: NavigableTab;
+  relatedLogs?: {
+    stream: string;
+    runId?: string;
+    startedAt?: string;
+    operation?: "SearchSubmission";
+  };
   manageClientId?: string;
   configDestination?: ConfigDestination;
   issueInstance?: string;

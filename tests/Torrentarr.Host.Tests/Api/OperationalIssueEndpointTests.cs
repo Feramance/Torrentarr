@@ -271,6 +271,7 @@ public sealed class OperationalIssueEndpointTests
         var group = response.GetProperty("items")[0];
         var example = group.GetProperty("examples")[0];
         example.GetProperty("subjectName").GetString().Should().Be(matches == 1 ? "Anime episode" : null);
+        example.GetProperty("relatedLogStream").GetString().Should().Be("worker-Sonarr-Anime");
         example.GetProperty("subjectCategory").GetString().Should().Be(matches == 1 ? "sonarr-anime/season" : "sonarr-anime");
         example.GetProperty("clientInstance").GetString().Should().BeEmpty();
         var history = await client.GetFromJsonAsync<JsonElement>("/web/issues/" + group.GetProperty("id").GetInt64());

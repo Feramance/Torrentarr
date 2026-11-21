@@ -200,7 +200,8 @@ public static class LogFileApi
             request.Query["regex"].FirstOrDefault(),
             request.Query["include_rotated"].FirstOrDefault(),
             maxMatches,
-            context);
+            context,
+            request.Query["include_dates"].FirstOrDefault() == "1");
     }
 
     public static IResult Search(
@@ -211,7 +212,8 @@ public static class LogFileApi
         string? regexFlag,
         string? includeRotatedFlag,
         int? maxMatches,
-        int? context)
+        int? context,
+        bool includeDates = false)
     {
         var q = (query ?? "").Trim();
         if (string.IsNullOrEmpty(q))
@@ -233,7 +235,7 @@ public static class LogFileApi
             return Results.BadRequest(new { error = ex.Message });
         }
 
-        var files = SiblingLogFiles(logsRoot, name, includeRotated);
+        var files = SiblingLogFiles(logsRoot, name, includeRotated, includeDates);
         if (files.Count == 0)
             return Results.NotFound(new { error = "not found" });
 
@@ -378,18 +380,20 @@ public static class LogFileApi
         return line => line.Contains(query, comparison);
     }
 
-    private static List<string> SiblingLogFiles(string logsRoot, string name, bool includeRotated)
+    private static List<string> SiblingLogFiles(string logsRoot, string name, bool includeRotated, bool includeDates)
     {
         var files = new List<string>();
         var primary = ResolveLogFile(logsRoot, name);
         if (primary != null && File.Exists(primary))
             files.Add(primary);
-        if (!includeRotated || !Directory.Exists(logsRoot))
+        if (primary == null || !includeRotated || !Directory.Exists(logsRoot))
             return files;
 
         var prefix = Regex.Replace(Path.GetFileName(name), @"(?:_\d{3,})?\.log$", "");
-        var sibling = new Regex("^" + Regex.Escape(prefix) + @"(?:_\d{3,})?\.log(?:\..*)?$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
-        foreach (var candidate in Directory.GetFiles(logsRoot, prefix + "*"))
+        var daily = Regex.Match(prefix, @"^(.*)-\d{8}$");
+        var streamPattern = includeDates && daily.Success ? Regex.Escape(daily.Groups[1].Value) + @"-\d{8}" : Regex.Escape(prefix);
+        var sibling = new Regex("^" + streamPattern + @"(?:_\d{3,})?\.log(?:\..*)?$", RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+        foreach (var candidate in Directory.EnumerateFiles(logsRoot))
         {
             if (!sibling.IsMatch(Path.GetFileName(candidate)) || files.Contains(candidate, StringComparer.OrdinalIgnoreCase))
                 continue;
@@ -398,6 +402,7 @@ public static class LogFileApi
 
         return files
             .OrderBy(f => Path.GetFileName(f) == Path.GetFileName(name) ? 0 : 1)
+            .ThenByDescending(f => Path.GetFileName(f).StartsWith(prefix + "_", StringComparison.Ordinal))
             .ThenByDescending(f => File.GetLastWriteTimeUtc(f))
             .ToList();
     }

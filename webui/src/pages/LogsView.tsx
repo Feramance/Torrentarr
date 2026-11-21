@@ -23,6 +23,7 @@ import { isDarkTheme } from "../utils/theme";
 import { useInterval } from "../hooks/useInterval";
 import { IconImage } from "../components/IconImage";
 import { CopyButton } from "../components/CopyButton";
+import type { NavigateTabDetail } from "../utils/navigateTab";
 import Select from "react-select";
 import { getSelectStyles } from "../config/reactSelectTheme";
 import RefreshIcon from "../icons/refresh-arrow.svg";
@@ -31,6 +32,7 @@ import LiveIcon from "../icons/live-streaming.svg";
 
 interface LogsViewProps {
   active: boolean;
+  relatedLogs?: NavigateTabDetail["relatedLogs"];
 }
 
 type LiveTransport = "sse" | "poll";
@@ -81,7 +83,7 @@ function lineMatchesLevel(line: string, levels: Set<string>): boolean {
   return levels.size === 0 || levels.has(logLevel(line) ?? "");
 }
 
-export function LogsView({ active }: LogsViewProps): JSX.Element {
+export function LogsView({ active, relatedLogs }: LogsViewProps): JSX.Element {
   const [pageVisible, setPageVisible] = useState(!document.hidden);
   useEffect(() => {
     const changed = () => setPageVisible(!document.hidden);
@@ -109,6 +111,31 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
   const [searchMatches, setSearchMatches] = useState<LogSearchMatch[]>([]);
   const [searchTruncated, setSearchTruncated] = useState(false);
   const [showSearchPanel, setShowSearchPanel] = useState(false);
+  const [dismissedRelated, setDismissedRelated] =
+    useState<NavigateTabDetail["relatedLogs"]>();
+  const related = relatedLogs !== dismissedRelated ? relatedLogs : undefined;
+  const [relatedResult, setRelatedResult] = useState<{
+    request: NonNullable<typeof relatedLogs>;
+    matches?: LogSearchMatch[];
+    truncated?: boolean;
+    error?: boolean;
+  }>();
+  const relatedFile = useMemo(() => {
+    if (!related) return undefined;
+    const prefix = related.stream + "-";
+    const streamFiles = files
+      .filter(
+        (file) =>
+          file.startsWith(prefix) &&
+          /^\d{8}(?:_\d{3,})?\.log$/.test(file.slice(prefix.length)),
+      )
+      .sort();
+    const day = related.startedAt?.slice(0, 10).replaceAll("-", "");
+    return (
+      streamFiles.find((file) => file === `${prefix}${day}.log`) ??
+      streamFiles.at(-1)
+    );
+  }, [related, files]);
   const [pendingScrollLine, setPendingScrollLine] = useState<number | null>(
     null,
   );
@@ -253,6 +280,40 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     }, 0);
     return () => window.clearTimeout(id);
   }, [active, loadList]);
+
+  useEffect(() => {
+    if (!active || !related || !relatedFile) return;
+    let current = true;
+    const id = window.setTimeout(() => {
+      followAggregateRef.current = false;
+      setSelected(relatedFile);
+      if (!related.runId) return;
+      void searchLogs(
+        relatedFile,
+        `\\| Operation\\[${related.operation ?? "MaintenanceRun"}\\] \\| CycleId\\[${related.runId}\\](?: \\||$)`,
+        {
+          regex: true,
+          caseSensitive: true,
+          includeRotated: true,
+          includeDates: true,
+          context: 2,
+        },
+      ).then(
+        (result) =>
+          current &&
+          setRelatedResult({
+            request: related,
+            matches: result.matches,
+            truncated: result.truncated,
+          }),
+        () => current && setRelatedResult({ request: related, error: true }),
+      );
+    }, 0);
+    return () => {
+      current = false;
+      window.clearTimeout(id);
+    };
+  }, [active, related, relatedFile]);
 
   const fetchTail = useCallback(
     async (showLoading: boolean = false) => {
@@ -663,6 +724,11 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
     [filteredText, isDark],
   );
 
+  const correlation =
+    relatedResult?.request === related ? relatedResult : undefined;
+  const displayedMatches = related?.runId
+    ? correlation?.matches ?? []
+    : searchMatches;
   return (
     <section className="card logs-view" aria-label="Logs">
       <div className="card-body logs-view__body">
@@ -675,6 +741,7 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
               value={selected ? { value: selected, label: selected } : null}
               onChange={(option) => {
                 followAggregateRef.current = false;
+                if (related) setDismissedRelated(related);
                 const next = option?.value || "";
                 if (next !== selected) {
                   setSelected(next);
@@ -832,61 +899,93 @@ export function LogsView({ active }: LogsViewProps): JSX.Element {
           )}
         </div>
 
-        <div className="logs-search-bar">
-          <input
-            className="logs-search-input"
-            type="search"
-            placeholder="Search log file on server…"
-            title="Server-side search across the selected log file (and rotated files if enabled). Use the viewer's find control to search loaded lines only."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                void runServerSearch();
-              }
-            }}
-            disabled={!selected}
-          />
-          <label className="hint inline logs-toolbar__check">
+        {!related?.runId && (
+          <div className="logs-search-bar">
             <input
-              type="checkbox"
-              checked={includeRotated}
-              onChange={(e) => setIncludeRotated(e.target.checked)}
+              className="logs-search-input"
+              type="search"
+              placeholder="Search log file on server…"
+              title="Server-side search across the selected log file (and rotated files if enabled). Use the viewer's find control to search loaded lines only."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  void runServerSearch();
+                }
+              }}
+              disabled={!selected}
             />
-            <span>Include rotated</span>
-          </label>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => void runServerSearch()}
-            disabled={!selected || !searchQuery.trim() || searching}
-          >
-            {searching ? "Searching…" : "Search file"}
-          </button>
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => setShowSearchPanel((v) => !v)}
-            disabled={searchMatches.length === 0 && !showSearchPanel}
-          >
-            {showSearchPanel ? "Hide results" : "Show results"}
-            {searchMatches.length > 0 ? ` (${searchMatches.length})` : ""}
-          </button>
-        </div>
+            <label className="hint inline logs-toolbar__check">
+              <input
+                type="checkbox"
+                checked={includeRotated}
+                onChange={(e) => setIncludeRotated(e.target.checked)}
+              />
+              <span>Include rotated</span>
+            </label>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void runServerSearch()}
+              disabled={!selected || !searchQuery.trim() || searching}
+            >
+              {searching ? "Searching…" : "Search file"}
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => setShowSearchPanel((v) => !v)}
+              disabled={searchMatches.length === 0 && !showSearchPanel}
+            >
+              {showSearchPanel ? "Hide results" : "Show results"}
+              {searchMatches.length > 0 ? ` (${searchMatches.length})` : ""}
+            </button>
+          </div>
+        )}
 
-        {showSearchPanel && (
+        {related && (
+          <div className="actions">
+            <span role="status">
+              {loadingList
+                ? "Loading log streams…"
+                : !relatedFile
+                  ? "This log stream is unavailable or has expired."
+                  : !related.runId
+                    ? "Browsing the worker stream"
+                    : correlation?.error
+                      ? "Related log search failed."
+                      : !correlation
+                        ? related.operation === "SearchSubmission"
+                          ? "Searching for the search decision…"
+                          : "Searching for the maintenance run…"
+                        : correlation.truncated
+                          ? "The search reached its limit. Older records may be unavailable in these results."
+                          : displayedMatches.length === 0
+                            ? "No retained logs matched this run."
+                            : `${related.operation === "SearchSubmission" ? "Search decision" : "Maintenance run"} ${related.runId}`}
+            </span>
+            <button
+              type="button"
+              className="btn ghost small"
+              onClick={() => setDismissedRelated(related)}
+            >
+              Return to log browsing
+            </button>
+          </div>
+        )}
+        {(related?.runId ? displayedMatches.length > 0 : showSearchPanel) && (
           <div className="logs-search-results">
-            {searchMatches.length === 0 ? (
+            {displayedMatches.length === 0 ? (
               <div className="hint">No search results</div>
             ) : (
               <>
-                {searchTruncated && (
+                {!related && searchTruncated && (
                   <div className="hint logs-search-truncated">
                     Results truncated — refine your query for more precision.
                   </div>
                 )}
                 <ul className="logs-search-list">
-                  {searchMatches.map((match) => (
+                  {displayedMatches.map((match) => (
                     <li
                       key={`${match.file}:${match.line}:${match.text.slice(0, 40)}`}
                     >

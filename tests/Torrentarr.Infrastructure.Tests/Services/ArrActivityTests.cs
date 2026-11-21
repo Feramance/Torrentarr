@@ -4,6 +4,8 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
+using Moq;
 using Newtonsoft.Json.Linq;
 using RestSharp;
 using Torrentarr.Core.Configuration;
@@ -44,6 +46,28 @@ public sealed class ArrActivityTests : IDisposable
         SubmittedAt = Now.AddMinutes(-5).ToUnixTimeSeconds()
     };
     public void Dispose() { _services.Dispose(); _connection.Dispose(); }
+
+    [Fact]
+    public async Task MalformedCommandReceiptsCannotLeakResponseValuesThroughExceptions()
+    {
+        await using var db = Db();
+        var logger = new Mock<ILogger>();
+        logger.Setup(log => log.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
+        var request = new RestRequest("/api/v3/command", Method.Post);
+        var response = new RestResponse
+        {
+            StatusCode = HttpStatusCode.Accepted,
+            IsSuccessStatusCode = true,
+            ResponseStatus = ResponseStatus.Completed,
+            Content = "{\"id\":\"private-response-secret\"}"
+        };
+        using (ArrActivityTracking.Begin(db, logger.Object, "Sonarr-one", _settings, "import", "hash"))
+            await ArrActivityTracking.RecordAcceptedAsync(request, response, default);
+        var call = logger.Invocations.Single(invocation => invocation.Method.Name == "Log");
+        call.Arguments[3].Should().BeNull();
+        call.Arguments[2]?.ToString().Should().NotContain("private-response-secret");
+        response.IsSuccessful.Should().BeTrue();
+    }
 
     [Fact]
     public async Task Tracking_AttributesNestedScopesAndPersistsWithoutChangingMainResponse()
@@ -158,6 +182,49 @@ public sealed class ArrActivityTests : IDisposable
         history.Series.Single().Points.First().SearchesCompleted.Should().BeNull();
         foreach (var range in new[] { "1h", "24h", "7d" })
             (await ArrActivityApi.QueryAsync(db, _config, range, null, Now)).Series.Single().Points.Count.Should().Be(range switch { "1h" => 60, "24h" => 24, _ => 168 });
+    }
+
+    [Fact]
+    public async Task CollectorObservesNoGrabAfterCompletionAndSkipsOldUnknownSearches()
+    {
+        _settings.Search.UnsuccessfulSearchRestMinutes = 60;
+        await using var db = Db();
+        var submitted = Now.AddHours(-2).ToUnixTimeSeconds();
+        var completed = Now.AddMinutes(-40).ToUnixTimeSeconds();
+        var operation = Operation(71);
+        operation.SubmittedAt = submitted;
+        operation.Outcome = "completed";
+        operation.ConfirmedAt = completed;
+        db.ArrActivityOperations.Add(operation);
+        SearchDecision Row(int id, int command) => new()
+        {
+            Instance = "Sonarr-one",
+            Key = "submitted:" + command,
+            ObservedAt = submitted,
+            Data = System.Text.Json.JsonSerializer.Serialize(new SearchDecisionHistory.Decision(
+                new(id, "Episode", 10, 1, null, null, "Missing", "EpisodeSearch"), "submitted", command,
+                submitted, ArrActivityTracking.ServerKey(_settings), "cycle", [id]))
+        };
+        db.SearchDecisions.AddRange(Row(1, 71), Row(2, 72));
+        await db.SaveChangesAsync();
+        var reads = 0;
+        Task<JArray> Read(ArrInstanceConfig _, string resource, CancellationToken ct)
+        {
+            Assert.StartsWith("history/since?", resource);
+            reads++;
+            return Task.FromResult(new JArray());
+        }
+        var collector = new ArrActivityCollector(_services.GetRequiredService<IServiceScopeFactory>(), _services,
+            _config, NullLogger<ArrActivityCollector>.Instance);
+        await collector.CollectAsync(Now, new Dictionary<string, ProcessStatus>(), Read);
+        await collector.CollectAsync(Now.AddMinutes(1), new Dictionary<string, ProcessStatus>(), Read);
+        reads.Should().Be(1);
+        db.ChangeTracker.Clear();
+        (await db.SearchDecisions.SingleAsync(row => row.Key == "submitted:71")).NoGrabAt.Should().Be(completed + 1800);
+        (await db.SearchDecisions.SingleAsync(row => row.Key == "submitted:72")).NoGrabAt.Should().BeNull();
+        var rest = await SearchItemRest.ObserveAsync(db, "Sonarr-one", _settings, default);
+        rest.Hold(1, "EpisodeSearch", 60, Now.ToUnixTimeSeconds()).Should().NotBeNull();
+        rest.Hold(2, "EpisodeSearch", 60, Now.ToUnixTimeSeconds()).Should().BeNull();
     }
 
     [Fact]

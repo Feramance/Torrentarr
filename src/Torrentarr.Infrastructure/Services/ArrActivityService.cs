@@ -86,6 +86,13 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
                     }
                     await ReconcileAsync(db, eligible, commands, history, now, ct);
                 }
+                try { await ObserveSearchGrabsAsync(db, name, settings, now, read, ct); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception ex)
+                {
+                    logger.LogDebug("Search grab evidence unavailable for {Instance}: {Error}", name,
+                    Torrentarr.Core.Services.DiagnosticText.Error(ex));
+                }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception ex) { observed = false; logger.LogDebug(ex, "Arr completion evidence unavailable for {Instance}", name); }
@@ -107,9 +114,79 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
             await db.ArrActivityOperations.Where(o => o.ConfirmedAt != null
                 ? o.ConfirmedAt < oldestMinute * 60
                 : o.SubmittedAt < expiredSubmission).ExecuteDeleteAsync(ct);
+            await db.SearchDecisions.Where(d => d.ObservedAt < expiredSubmission).ExecuteDeleteAsync(ct);
+            await db.RetirementUploads.Where(o => o.Seen < expiredSubmission).ExecuteDeleteAsync(ct);
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                DELETE FROM torrentarr_maintenance_state
+                WHERE Key LIKE '%||search-rest:%'
+                    AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.SearchRestUntil') END < {now.ToUnixTimeSeconds()}
+                """, ct);
             _lastPrune = minute;
         }
     }
+
+    private static async Task ObserveSearchGrabsAsync(TorrentarrDbContext db, string instance, ArrInstanceConfig arr,
+        DateTimeOffset now, Func<ArrInstanceConfig, string, CancellationToken, Task<JArray>> read, CancellationToken ct)
+    {
+        var since = arr.Search.UnsuccessfulSearchRestMinutes > 0 ? now.AddDays(-7) : now.AddMinutes(-30);
+        var server = ArrActivityTracking.ServerKey(arr);
+        var decisions = (await db.SearchDecisions.Where(d => d.Instance == instance
+            && d.ObservedAt > since.ToUnixTimeSeconds() && d.Key.StartsWith("submitted:") && d.GrabbedAt == null && d.NoGrabAt == null).ToListAsync(ct))
+            .Select(row => (Row: row, Entry: System.Text.Json.JsonSerializer.Deserialize<SearchDecisionHistory.Decision>(row.Data)))
+            .Where(pair => pair.Entry?.Server == server && pair.Entry.SubmittedAt.HasValue).ToList();
+        if (arr.Search.UnsuccessfulSearchRestMinutes > 0)
+        {
+            var recentCompletion = now.ToUnixTimeSeconds() - SearchItemRest.ConfirmationSeconds - 15 * 60;
+            var completed = await db.ArrActivityOperations.AsNoTracking().Where(operation => operation.Instance == instance
+                && operation.Server == server && operation.Kind == "search" && operation.Outcome == "completed"
+                && operation.ConfirmedAt >= recentCompletion)
+                .Select(operation => new { operation.CommandId, operation.SubmittedAt }).ToListAsync(ct);
+            var confirmed = completed.Select(operation => (operation.CommandId, operation.SubmittedAt)).ToHashSet();
+            decisions = decisions.Where(pair => pair.Row.ObservedAt >= now.AddMinutes(-30).ToUnixTimeSeconds()
+                || pair.Entry!.CommandId is int command && confirmed.Contains((command, pair.Entry.SubmittedAt!.Value))).ToList();
+        }
+        if (decisions.Count == 0) return;
+        since = DateTimeOffset.FromUnixTimeSeconds(decisions.Min(pair => pair.Entry!.SubmittedAt!.Value));
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        var history = await read(arr, $"history/since?date={Uri.EscapeDataString(since.ToString("O"))}&eventType=1", timeout.Token);
+        foreach (var (row, entry) in decisions)
+            row.GrabbedAt = FindSearchGrab(entry!, history, now);
+        await SearchItemRest.ReconcileAsync(db, instance, arr, decisions, history, now, ct);
+    }
+
+    internal static long? FindSearchGrab(SearchDecisionHistory.Decision decision, JArray history, DateTimeOffset now)
+    {
+        if (decision.SubmittedAt is not long submitted) return null;
+        var itemField = decision.Item.Type.ToLowerInvariant() switch
+        {
+            "movie" => "movieId",
+            "episode" => "episodeId",
+            "album" => "albumId",
+            "artist" => "artistId",
+            "book" => "bookId",
+            "author" => "authorId",
+            _ => null
+        };
+        if (itemField == null) return null;
+        var ids = (decision.CoveredIds ?? []).ToHashSet();
+        return history.OfType<JObject>().Where(entry =>
+                entry["eventType"]?.Value<string>()?.ToLowerInvariant() is "grabbed" or "1"
+                && int.TryParse(entry[itemField]?.Value<string>(), out var id) && ids.Contains(id)
+                && !string.IsNullOrWhiteSpace(entry["downloadId"]?.Value<string>()))
+            .Select(entry => EvidenceTimestamp(entry["date"]))
+            .Where(date => date >= submitted && date <= now.ToUnixTimeSeconds())
+            .Select(date => (long?)date).Min();
+    }
+
+    internal static long EvidenceTimestamp(JToken? token) => token switch
+    {
+        JValue { Value: DateTime date } when date.Kind != DateTimeKind.Unspecified => new DateTimeOffset(date).ToUnixTimeSeconds(),
+        JValue { Value: DateTimeOffset date } => date.ToUnixTimeSeconds(),
+        JValue { Value: string text } when DateTimeOffset.TryParse(text, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AssumeUniversal, out var date) => date.ToUnixTimeSeconds(),
+        _ => -1L
+    };
 
     internal static async Task ReconcileAsync(TorrentarrDbContext db, List<ArrActivityOperation> pending,
         JArray commands, JArray history, DateTimeOffset now, CancellationToken ct = default)
@@ -156,8 +233,7 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
         return history["id"] != null && !string.IsNullOrEmpty(operation.DownloadId)
             && string.Equals(history["downloadId"]?.Value<string>(), operation.DownloadId, StringComparison.OrdinalIgnoreCase)
             && (string.Equals(type, expected, StringComparison.OrdinalIgnoreCase) || type == numeric)
-            && DateTimeOffset.TryParse(history["date"]?.Value<string>(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var date)
-            && date.ToUnixTimeSeconds() >= operation.SubmittedAt;
+            && EvidenceTimestamp(history["date"]) is var date && date >= 0 && date >= operation.SubmittedAt;
     }
 }
 

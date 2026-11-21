@@ -9,8 +9,55 @@ namespace Torrentarr.Infrastructure.Tests.ApiClients;
 
 public sealed class QBittorrentInventoryResponseTests
 {
-    [Fact]
-    public async Task FailedLogin_PreservesTransportDiagnosisWithoutCredentials()
+    [Theory]
+    [InlineData(200, "2.14.1", true, null)]
+    [InlineData(200, "2.13.1", false, "support was not confirmed")]
+    [InlineData(401, "secret-response", false, "rejected the API key")]
+    [InlineData(403, "secret-response", false, "denied API-key access")]
+    public async Task ApiKeyAuthentication_UsesBearerWithoutCookieLogin(int status, string response, bool accepted, string? reason)
+    {
+        const string key = "qbt_ABCDEFGHIJKLMNOPQRSTUVWXYZ01";
+        using var listener = StartListenerOnAvailablePort(out var port);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        async Task ReplyAsync(string path, int code, string content)
+        {
+            var request = await listener.GetContextAsync().WaitAsync(timeout.Token);
+            request.Request.Url!.AbsolutePath.Should().Be(path);
+            request.Request.Headers["Authorization"].Should().Be("Bearer " + key);
+            request.Request.Headers["Cookie"].Should().BeNull();
+            request.Response.StatusCode = code;
+            var bytes = Encoding.UTF8.GetBytes(content);
+            request.Response.ContentLength64 = bytes.Length;
+            await request.Response.OutputStream.WriteAsync(bytes, timeout.Token);
+            request.Response.Close();
+        }
+        var server = Task.Run(async () =>
+        {
+            await ReplyAsync("/api/v2/app/webapiVersion", status, response);
+            if (!accepted) return;
+            await ReplyAsync("/api/v2/torrents/info", 200, "[]");
+            await ReplyAsync("/api/v2/torrents/delete", 200, "");
+            await ReplyAsync("/api/v2/app/webapiVersion", status, response);
+        });
+        using var client = new QBittorrentClient("127.0.0.1", port, "user", "password", apiKey: key);
+        (await client.LoginAsync(timeout.Token)).Should().Be(accepted);
+        if (accepted)
+        {
+            (await client.GetTorrentsAsync(cancellationToken: timeout.Token)).Should().BeEmpty();
+            (await client.DeleteTorrentsAsync(["fixture-hash"], deleteFiles: false, timeout.Token)).Should().BeTrue();
+            (await client.LoginAsync(timeout.Token)).Should().BeTrue();
+        }
+        else
+        {
+            client.LastConnectionFailure.Should().Contain(reason!).And.NotContain(key).And.NotContain(response);
+        }
+        await server;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FailedLogin_PreservesTransportDiagnosisWithoutCredentials(bool useKey)
     {
         using var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
         socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
@@ -30,12 +77,16 @@ public sealed class QBittorrentInventoryResponseTests
             }
             catch (OperationCanceledException) when (timeout.IsCancellationRequested) { }
         });
-        using var client = new QBittorrentClient("127.0.0.1", port, "private-user", "private-password");
+        const string key = "qbt_ABCDEFGHIJKLMNOPQRSTUVWXYZ01";
+        using var client = new QBittorrentClient("127.0.0.1", port, "private-user", "private-password", apiKey: useKey ? key : null);
         try
         {
             (await client.LoginAsync(timeout.Token)).Should().BeFalse();
-            client.LastConnectionFailure.Should().Contain("transport=").And.MatchRegex(@"(?:Socket error=|Network failure: )\w+\.")
-                .And.NotContain("private-user").And.NotContain("private-password");
+            if (useKey)
+                client.LastConnectionFailure.Should().Contain("Unable to reach qBittorrent").And.NotContain(key);
+            else
+                client.LastConnectionFailure.Should().Contain("transport=").And.MatchRegex(@"(?:Socket error=|Network failure: )\w+\.");
+            client.LastConnectionFailure.Should().NotContain("private-user").And.NotContain("private-password");
         }
         finally
         {
@@ -67,6 +118,21 @@ public sealed class QBittorrentInventoryResponseTests
     [InlineData("trackers")]
     public async Task SuccessfulEmptyArray_IsAccepted(string operation)
         => await Request(200, "[]", operation, async action => await action());
+
+    [Theory]
+    [InlineData(200, "1")]
+    [InlineData(200, "0")]
+    [InlineData(200, "unknown")]
+    [InlineData(404, "")]
+    public async Task AlternateSpeedLimits_RequireAnExplicitQBitState(int status, string body)
+        => await Request(status, body, "alternate-speed", action => action());
+
+    [Theory]
+    [InlineData(200, "v5.2.0")]
+    [InlineData(200, "<html>login</html>")]
+    [InlineData(403, "Forbidden")]
+    public async Task BlankCredentials_VerifyClientConfiguredBypass(int status, string body)
+        => await Request(status, body, "bypass", action => action());
 
     [Theory]
     [InlineData("torrents")]
@@ -166,6 +232,13 @@ public sealed class QBittorrentInventoryResponseTests
                 {
                     var request = await listener.GetContextAsync().WaitAsync(cancellation.Token);
                     Interlocked.Increment(ref requests);
+                    if (operation == "alternate-speed")
+                        request.Request.Url!.AbsolutePath.Should().Be("/api/v2/transfer/speedLimitsMode");
+                    if (operation == "bypass")
+                    {
+                        request.Request.Url!.AbsolutePath.Should().Be("/api/v2/app/version");
+                        request.Request.Headers["Authorization"].Should().BeNull();
+                    }
                     if (status == -1)
                     {
                         request.Response.ContentLength64 = 100;
@@ -183,7 +256,9 @@ public sealed class QBittorrentInventoryResponseTests
             }
             catch (OperationCanceledException) { }
         });
-        using var client = new QBittorrentClient("127.0.0.1", port, "u", "p");
+        using var client = operation == "bypass"
+            ? new QBittorrentClient("127.0.0.1", port, "", "")
+            : new QBittorrentClient("127.0.0.1", port, "u", "p");
         Func<Task> action = operation switch
         {
             "delete" => async () => { (await client.DeleteTorrentsAsync(["abc"])).Should().Be(status == 200); }
@@ -194,6 +269,14 @@ public sealed class QBittorrentInventoryResponseTests
             ,
             "trackers" => async () => { (await client.GetTorrentTrackersAsync("abc")).Should().BeEmpty(); }
             ,
+            "alternate-speed" => async () =>
+            {
+                bool? expected = status == 200 ? body switch { "0" => false, "1" => true, _ => null } : null;
+                (await client.GetAlternateSpeedLimitsStateAsync()).Should().Be(expected);
+            }
+            ,
+            "bypass" => async () => { (await client.LoginAsync()).Should().Be(status == 200 && body == "v5.2.0"); }
+            ,
             _ => async () => { (await client.GetTorrentsAsync()).Should().BeEmpty(); }
         };
         try { await verify(() => action().WaitAsync(TimeSpan.FromSeconds(10))); }
@@ -202,6 +285,6 @@ public sealed class QBittorrentInventoryResponseTests
             cancellation.Cancel();
             await server.WaitAsync(TimeSpan.FromSeconds(5));
         }
-        requests.Should().Be(operation == "delete" ? 1 : status == 503 ? 4 : status == 403 ? 2 : 1);
+        requests.Should().Be(operation is "delete" or "bypass" ? 1 : status == 503 ? 4 : status == 403 ? 2 : 1);
     }
 }

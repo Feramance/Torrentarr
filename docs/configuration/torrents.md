@@ -26,6 +26,63 @@ Torrent settings control:
 
 ## File Filtering
 
+### Shared file filter lists
+
+Define reviewed lists under general Settings and reference their case-sensitive
+names from each Arr's Torrent settings. The WebUI collection editor and per-Arr
+list-name editor save the same fields.
+
+```toml
+[Settings]
+SharedFileFilters = [
+    { Name = "reviewed", Source = "filters/reviewed.txt" },
+    { Name = "public", Source = "https://example.org/torrent-exclusions.txt" },
+]
+
+[Radarr-Movies.Torrent]
+SharedFileFilters = ["reviewed", "public"]
+
+[Sonarr-TV.Torrent]
+SharedFileFilters = ["reviewed"]
+```
+
+Use UTF-8 text containing one regular expression per line. Blank lines and lines
+starting with `#` are ignored. Expressions match the complete torrent-relative
+path with forward slashes, using each Arr's `CaseSensitiveMatches` setting.
+For example, `\.exe$` excludes executable files. The format supports .NET's
+nonbacktracking regex subset. Lookarounds and backreferences fail validation.
+Each source has a 32 KiB limit, at most 128 patterns, and at most 256 characters
+per pattern. Matching has a 25 ms per-pattern timeout and a 4096-character path
+limit. A source must validate in full before activation.
+
+At most 32 named lists can be configured. Local paths are relative to the
+Torrentarr data directory and must identify ordinary files. Parent traversal,
+absolute paths, links, and devices are rejected. The data directory must be
+operator-controlled. On Linux, source files are opened through directory handles
+with no-follow checks. HTTPS sources require port 443 and public addresses,
+with no credentials, query, fragment, proxy, or redirects. DNS answers are checked
+and the connection uses a vetted address. Fetches have a ten-second timeout.
+
+Each process refreshes lists outside torrent processing every five minutes.
+A refresh failure raises an Issue and retains that process's last valid version.
+A process starting without a usable version holds affected torrent processing and
+imports until loading succeeds. Changing the configured source also holds work
+until that source loads. Removing a reference disables its exclusions. Current
+local exclusions and extension rules continue to apply.
+
+Shared matches set excluded file priorities to zero. Torrentarr records previous
+priorities in its maintenance-state extension before changing them, so it can
+restore its own shared-only priority changes when an exclusion stops matching.
+The record includes the torrent's added timestamp, file index, and filename.
+Restoration does not claim ownership of files already disabled by the operator.
+Shared-only matches retain the payload and torrent entry. Eligible media can
+still import alongside excluded extras.
+
+Expand **Preview saved file filters** in the Arr editor to check an example path.
+The preview uses saved settings and the processing matcher, showing each list's
+source, last successful load, latest check, and refresh error. An unavailable
+list shows a processing hold.
+
 ### CaseSensitiveMatches
 
 **Type:** Boolean
@@ -407,6 +464,21 @@ StalledDelay = -1
 ```
 
 ---
+
+### qBittorrent stall safeguards
+
+These opt-in settings are available in the Arr integration's torrent settings.
+Each defaults to `0` or `false`.
+
+| Setting | Behavior |
+| --- | --- |
+| `MetadataStallMinutes` | Adds an elapsed observation threshold while qBittorrent reports a metadata download state. Ordinary `StalledDelay`, minimum age, and removal protections still apply. |
+| `ResetStallOnDownloadProgress` | With a positive `StalledDelay`, requires a continuous payload stall. Torrentarr resets the window when downloaded bytes increase together with a decrease in remaining bytes. Rechecks and missing observations reset continuity. |
+| `RespectAlternateSpeedLimits` | Holds slow ETA cleanup when qBittorrent reports its alternate limits are active or the current limit mode is unavailable. Other torrent workflows continue under their own rules. |
+
+Stall windows restart on worker restart, configuration change, or a gap between
+samples exceeding twice the client's configured scan interval. Debug logs show elapsed time,
+threshold and resets. [qBittorrent WebAPI transfer methods](https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-%28qBittorrent-5.0%29#get-alternative-speed-limits-state)
 
 ### ReSearchStalled
 
@@ -923,3 +995,104 @@ Import rejection and cleanup are separate outcomes. H&R can preserve a rejected 
 Unchanged allowlist and removal diagnostics move to Debug after the first message. Changed blockers or configuration produce a fresh message; retries continue normally and operational issues remain current. Suppression is in memory and resets after a restart or cache eviction.
 
 Configured file inclusion/exclusion rules determine import eligibility. If allowed content remains and ordinary readiness checks pass, excluded files remaining on disk do not block import. `AutoDelete` cleanup is independent and retries safely; H&R can prevent that cleanup or torrent removal without suppressing the import. This applies to all excluded file types, with no screenshot or metadata exception list. All-files-excluded releases remain rejected, and unsafe paths, missing storage, failed filtering requests, and Arr failures remain actionable.
+
+
+## Rescue supported blocked imports
+
+`RescueBlockedImports` defaults to `false` and is available for Radarr instances.
+Enable it in the Arr torrent settings or the instance's Torrent section.
+
+```toml
+[Radarr-Movies.Torrent]
+RescueBlockedImports = true
+```
+
+The first supported incident is Radarr's blocked import for a release matched by
+ID through grab history. Torrentarr asks Radarr's manual-import preview for its
+own match and accepts exactly one eligible file for the same movie and download.
+The preview must contain no rejection for that file. Ambiguous matches and other
+rejection reasons keep their existing failure policy. Sonarr, Lidarr and Readarr
+rescue policies remain disabled until their rejection and import contracts have
+fixtures. Radarr's upstream implementation defines this warning and its manual
+import workflow. [Radarr completed-download handling](https://github.com/Radarr/Radarr/blob/develop/src/NzbDrone.Core/Download/CompletedDownloadService.cs)
+
+Rescue requires a completed torrent past the normal sixty-second grace period,
+fresh queue and client observations, unique client ownership, a stable download
+identity, and explicit client-to-local path mappings. The Arr output path must
+match the client content path or its explicitly mapped local path. Each selected file must be
+owned by the torrent, accessible through its mapping, and match its reported
+size. Current local exclusions, extension rules and shared filter snapshots all
+apply. Excluded extras stay outside the submitted import.
+
+Torrentarr submits one `ManualImport` command in Copy mode, preserving the client
+entry and source payload. It stores a claim before the request and sends the POST
+once, with redirects disabled. A timeout or worker restart keeps that claim and
+cannot repeat the command for the same incident. Command acceptance and queue
+disappearance leave the result pending. Positive import history must match the
+movie, download ID and submission time, and the queue must be clear, before the
+rescue is confirmed. A reported source path must also match the selected file.
+
+Competing automatic removal and failed outcomes wait while confirmation is
+pending. After fifteen minutes, fresh Arr and client observations can classify
+the result as unconfirmed and resume normal failure handling. An unavailable
+observation keeps the hold and raises an Issue. Fresh queue or command evidence
+of an active import extends the hold beyond that window. A confirmed rescue skips failed
+custom-format handling, blocklisting and replacement. Existing configured
+post-import cleanup still uses its normal protection checks.
+
+Receipts use Torrentarr's existing maintenance-state extension, with one record
+per client and torrent hash. They retain download identity, incident and outcome
+information across restarts. A repeated warning cannot create another attempt
+until a fresh, unique queue entry reports a healthy import-pending state for the
+same movie and output path, or a new verified download identity supersedes it.
+Queue disappearance preserves the old claim. Receipts are retained alongside torrent state.
+Disabling rescue stops new attempts while existing pending claims are reconciled.
+Catalog sync also reconciles receipts after Arr removes a successfully imported
+download from the client. It checks up to 100 pending receipts within a thirty-second
+budget, rotating a persisted cursor between batches. A missing torrent requires a
+fresh client inventory, positive matching history and no active import command;
+it never triggers a new submission. Database updates match the original download
+epoch so a re-added torrent cannot inherit success. A SQLite partial index bounds
+receipt selection to pending rescues for that Arr server.
+A pending claim tied to a changed Arr server configuration remains held until its
+original server configuration is restored and its outcome can be inspected.
+Unreadable or incomplete receipts raise an Issue and preserve removal protection
+until valid database evidence is restored.
+
+### Failed torrent action
+
+In Torrent Handling, each Arr integration can **Use existing policy** (the
+default) or **Move to a category and keep files**. For the move policy, select an
+existing category on every configured, enabled qBittorrent client. The editor
+shows categories on their own clients and identifies destinations managed by Arr.
+Torrentarr checks the destination again before applying the move. The source,
+failed and recheck categories, and destinations owned by an Arr are unavailable.
+
+Set `FailedTorrentAction = 'move'` and configure a separate
+`FailedTorrentDestinations = [{ Client = 'qBit', Category = 'parked' }]` entry per
+client in the Arr's Torrent section when using TOML. Torrentarr requires a
+fresh, unambiguous torrent identity and manual torrent management with known
+absolute save and content paths. It holds automatic or unknown torrent management
+because a category change can relocate data.
+
+The worker retains the original torrent and files. Once the new category and the
+unchanged paths are confirmed, it clears the saved Arr queue entries using
+queue-only removal. Configured blocklisting uses that same queue request. A
+replacement is queued only after a fresh Arr queue read confirms clearance.
+Pending and confirmed import rescue take precedence over the move.
+
+SQLite records the original client, download epoch, Arr server, paths and queue
+identities before the category change. Catalog sync can continue the queue step
+after a restart, including after the policy is disabled. It reviews up to 50
+pending receipts per batch with a 30-second budget. An ambiguous blocklist response
+holds the operation if the row is still present. A move never falls back to a
+torrent or file delete. Its receipt continues to protect the original download
+epoch against automatic removal, even after a later category or policy change.
+
+The upstream contracts are documented in the
+[qBittorrent category change](https://github.com/qbittorrent/qBittorrent/blob/master/src/base/bittorrent/torrentimpl.cpp)
+and the queue controllers for
+[Radarr](https://github.com/Radarr/Radarr/blob/develop/src/Radarr.Api.V3/Queue/QueueController.cs),
+[Sonarr](https://github.com/Sonarr/Sonarr/blob/develop/src/Sonarr.Api.V3/Queue/QueueController.cs),
+[Lidarr](https://github.com/Lidarr/Lidarr/blob/develop/src/Lidarr.Api.V1/Queue/QueueController.cs),
+and [Readarr](https://github.com/Readarr/Readarr/blob/develop/src/Readarr.Api.V1/Queue/QueueController.cs).

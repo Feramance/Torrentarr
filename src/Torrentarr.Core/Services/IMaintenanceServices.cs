@@ -21,7 +21,13 @@ public interface ITorrentInventoryService
 public interface IHardlinkInspector
 {
     Task<int?> GetLinkCountAsync(string path, CancellationToken ct = default);
+    Task<HardlinkRootInspection> InspectLibraryRootsAsync(IReadOnlyList<string> files, IReadOnlyList<string> roots,
+        IReadOnlyList<string> ignored, int budget, CancellationToken ct = default)
+        => Task.FromResult(new HardlinkRootInspection(files.Distinct().ToDictionary(path => path, _ => (bool?)null),
+            "Root-aware filesystem identity is unsupported by this inspector."));
 }
+
+public sealed record HardlinkRootInspection(IReadOnlyDictionary<string, bool?> LibraryLinks, string Evidence, int InspectedEntries = 0);
 
 public interface ISafeDeletionService
 {
@@ -31,6 +37,8 @@ public interface ISafeDeletionService
     Task<SafeDeletionResult> RemoveTorrentForIntentAsync(string clientInstanceId, string hash, bool removeContent,
         TorrentRemovalIntent intent, CancellationToken ct = default)
         => Task.FromResult(new SafeDeletionResult(false, true, 0, "Intent-aware removal is unsupported by this deletion service."));
+    Task<SafeDeletionResult> RemoveObservedTorrentAsync(TorrentInfo expected, TorrentRemovalIntent intent, CancellationToken ct = default)
+        => Task.FromResult(new SafeDeletionResult(false, true, 0, "Observed removal is unsupported by this deletion service."));
     Task<SafeDeletionResult> RemoveMaintenanceTorrentAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory inventory, CancellationToken ct = default);
     Task<SafeDeletionResult> QuarantineFileAsync(string clientInstanceId, string localPath, CancellationToken ct = default);
     Task<SafeDeletionResult> DeleteOrphanFileAsync(string clientInstanceId, string localPath, TorrentInventory inventory, CancellationToken ct = default);

@@ -1,4 +1,5 @@
 import { ArrActivityCharts } from "../components/ArrActivityCharts";
+import { SearchDecisionDetails } from "../components/SearchDecisionDetails";
 import { useStatisticsUpdates } from "../hooks/useStatisticsUpdates";
 import {
   useCallback,
@@ -280,6 +281,9 @@ function ProcessActivity({
       {item.observationError ? (
         <p className="observation-stale">{item.observationError}</p>
       ) : null}
+      {item.kind === "worker" && (
+        <SearchDecisionDetails instance={item.name} category={item.category} />
+      )}
     </>
   );
 }

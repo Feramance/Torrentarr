@@ -16,8 +16,15 @@ public static class ConfigSchemaBuilder
     public static IReadOnlyDictionary<string, IReadOnlyList<ConfigSchemaField>> Sections { get; } =
         new Dictionary<string, IReadOnlyList<ConfigSchemaField>>
         {
-            ["Settings"] = Qbitrr5146ConfigSchema.Settings.Where(f => f.key is not ("CompletedDownloadFolder" or "FreeSpace" or "FreeSpaceFolder" or "AutoPauseResume" or "FreeSpaceThresholdGB")).Select(f => f.key == "ConfigVersion" ? f with { @default = ConfigurationLoader.ExpectedConfigVersion }
-                : f.key == "LoopSleepTimer" ? f with { label = "Database refresh interval", comments = "Interval in seconds between Arr catalog refreshes into SQLite. Torrent scans use each client’s scan interval." } : f).Select(RuntimeField).ToList(),
+            ["Settings"] = [.. Qbitrr5146ConfigSchema.Settings.Where(f => f.key is not ("CompletedDownloadFolder" or "FreeSpace" or "FreeSpaceFolder" or "AutoPauseResume" or "FreeSpaceThresholdGB")).Select(f => f.key == "ConfigVersion" ? f with { @default = ConfigurationLoader.ExpectedConfigVersion }
+                : f.key == "LoopSleepTimer" ? f with { label = "Database refresh interval", comments = "Interval in seconds between Arr catalog refreshes into SQLite. Torrent scans use each client’s scan interval." } : f).Select(RuntimeField),
+                Field("SharedFileFilters", "collection", "Shared file filter lists", Array.Empty<object>()) with
+                { section = "Settings", description = "Named reviewed lists. Sources are relative files below the data directory or public HTTPS URLs. Refresh every five minutes.", itemFields = [
+                    Item("Name", "Name", "Unique case-sensitive list name.", "reviewed"),
+                    Item("Source", "Source", "Relative file path or public HTTPS URL.", "filters/reviewed.txt")] },
+                RuntimeField(Field("IssueAlertsEnabled", "checkbox", "Issue webhook alerts", false)) with { section = "Settings", description = "Send selected operational issue transitions from the Host." },
+                RuntimeField(Field("IssueAlertsSecretUrl", "password", "Webhook destination", "", secure: true)) with { section = "Settings", description = "HTTP or HTTPS destination. Use HTTPS over untrusted networks." },
+                RuntimeField(Field("IssueAlertTypes", "tags", "Issue types", Array.Empty<string>())) with { section = "Settings", description = "Supported values are worker, import, and tracker." }],
             ["WebUI"] = [.. Qbitrr5146ConfigSchema.WebUI.Select(RuntimeField).Select(f => f.key == "Theme" ? f with
                 {
                     @default = "System",
@@ -33,7 +40,44 @@ public static class ConfigSchemaBuilder
                 }],
             ["qBit"] = TorrentClientFields().Where(f => f.key != "Type").Select(f => f with { section = "qBit" }).ToList(),
             ["TorrentClient"] = TorrentClientFields(),
-            ["Arr"] = Qbitrr5146ConfigSchema.Arr.Select(ClarifyTrackerMessages).Select(ClarifySearchScope).ToList(),
+            ["Arr"] = [.. Qbitrr5146ConfigSchema.Arr.Select(ClarifyTrackerMessages).Select(ClarifySearchScope),
+                RuntimeField(Field("EntrySearch.RecentGrabCooldownMinutes", "number", "Recent grab cooldown (minutes)", 0, minimum: 0)) with
+                { section = "Arr", description = "Defer proactive searches for items grabbed recently according to Arr history. Zero disables the cooldown." },
+                RuntimeField(Field("EntrySearch.ActiveDownloadCeiling", "number", "Active-download ceiling", 0, minimum: 0)) with
+                { section = "Arr", description = "Defer proactive search when this many active downloads belong to this instance. Zero disables the ceiling." },
+                RuntimeField(Field("EntrySearch.UnsuccessfulSearchRestMinutes", "number", "Rest after unsuccessful search (minutes)", 0, minimum: 0, maximum: 10080)) with
+                { section = "Arr", description = "Rest the same item and scope after confirmed successful search completion and a thirty-minute no-grab confirmation window. Zero disables rest; maximum seven days. Uncertain results start no rest." },
+                RuntimeField(Field("EntrySearch.IncludeTags", "tags", "Include Arr tags", Array.Empty<string>())) with
+                { section = "Arr", description = "Proactive searches require at least one matching owning-library tag label. Empty disables this gate." },
+                RuntimeField(Field("EntrySearch.ExcludeTags", "tags", "Exclude Arr tags", Array.Empty<string>())) with
+                { section = "Arr", description = "Any matching owning-library tag label defers proactive work; excludes take precedence." },
+                RuntimeField(Field("EntrySearch.RequireRadarrAvailability", "checkbox", "Require Radarr availability", false)) with
+                { section = "Arr", arrKinds = ["radarr"], description = "Require fresh Radarr isAvailable evidence for proactive searches." },
+                RuntimeField(Field("EntrySearch.QuietHoursEnabled", "checkbox", "Enable quiet hours", false)) with
+                { section = "Arr", description = "Defer proactive searches during the daily interval. Replacement searches keep their existing policy." },
+                RuntimeField(Field("EntrySearch.QuietHoursStart", "text", "Quiet hours start", "22:00")) with
+                { section = "Arr", description = "Start-inclusive local time in HH:mm format." },
+                RuntimeField(Field("EntrySearch.QuietHoursEnd", "text", "Quiet hours end", "07:00")) with
+                { section = "Arr", description = "End-exclusive local time in HH:mm format. Must differ from start; midnight crossing is supported." },
+                RuntimeField(Field("EntrySearch.QuietHoursTimeZone", "text", "Quiet hours timezone", "Etc/UTC")) with
+                { section = "Arr", description = "Explicit IANA zone, for example Europe/Malta. Each real instant is evaluated in this zone, including DST transitions." },
+                RuntimeField(Field("Torrent.FailedTorrentAction", "select", "Failed torrent action", FailedTorrentRouting.Existing,
+                    options: [FailedTorrentRouting.Existing, FailedTorrentRouting.Move])) with
+                { section = "Arr", description = "Use existing policy, or move to a configured category and keep files." },
+                RuntimeField(Field("Torrent.FailedTorrentDestinations", "collection", "Failed torrent destinations", Array.Empty<object>())) with
+                { section = "Arr", description = "Select an existing destination per qBittorrent client.", itemFields = [
+                    Item("Client", "Torrent client", "Configured qBittorrent client ID.", ""),
+                    Item("Category", "Destination category", "Existing unmanaged category on this client.", "")] },
+                RuntimeField(Field("Torrent.RescueBlockedImports", "checkbox", "Rescue supported blocked imports", false)) with
+                { section = "Arr", arrKinds = ["radarr"], description = "Radarr only. Attempt one copy import for its matched-by-ID warning when one owned file has an unambiguous, unrejected manual-import match. Import history must confirm success. Disabling stops new attempts while pending claims are reconciled.", comments = "Enable one supported Copy import per failure incident. Pending claims retain protection while their outcome is reconciled." },
+                RuntimeField(Field("Torrent.SharedFileFilters", "tags", "Shared file filter lists", Array.Empty<string>())) with
+                { section = "Arr", description = "Names of additional exclusion lists defined in general settings. Unavailable lists hold torrent processing and import." },
+                RuntimeField(Field("Torrent.MetadataStallMinutes", "number", "Metadata stall grace (minutes)", 0, minimum: 0)) with
+                { section = "Arr", description = "Require this much continuously observed metadata waiting in addition to ordinary stalled grace. Zero keeps existing behavior." },
+                RuntimeField(Field("Torrent.RespectAlternateSpeedLimits", "checkbox", "Hold slow downloads under alternate speed limits", false)) with
+                { section = "Arr", description = "Defer slow ETA cleanup while alternate limits are active or status is unavailable." },
+                RuntimeField(Field("Torrent.ResetStallOnDownloadProgress", "checkbox", "Reset stalled grace on download progress", false)) with
+                { section = "Arr", description = "With a positive StalledDelay, require a fresh continuous stall window after verified download progress or an observation gap." }],
             ["TrackerProtection"] = ProtectionFields().Select(f => f with { section = "TrackerProtection" }).ToList()
         };
 
@@ -75,6 +119,10 @@ public static class ConfigSchemaBuilder
         .. Qbitrr5146ConfigSchema.qBit
             .Where(field => field.key is not ("Disabled" or "Host" or "Port" or "UserName" or "Password" or "DownloadPath"))
             .Select(ClarifyTrackerMessages).Select(field => field with { section = "TorrentClient", applyLive = true, requiresRestart = false }),
+        Field("CategorySeeding.MinimumReportedSeeders", "number", "Minimum reported seeders", 0, minimum: 0) with
+        { description = "Require a fresh reported swarm seeder count at least this high for automatic retirement. Zero disables the guard." },
+        Field("CategorySeeding.MinimumUploadInactivitySeconds", "number", "Minimum upload inactivity before retirement (seconds)", 0, minimum: 0) with
+        { description = "Require a continuous verified window without payload uploads before automatic retirement. Zero disables the guard." },
         Field("CategorySeeding.Categories", "collection", "Category overrides", Array.Empty<object>()) with
         {
             description = "Override Hit & Run for individual torrent categories. Blank values inherit client defaults.",
@@ -83,7 +131,9 @@ public static class ConfigSchemaBuilder
                 Field("Name", "text", "Category", "") with { required = true },
                 Field("HitAndRunMode", "select", "Hit & Run mode", null, options: ["and", "or", "ratio", "time", "disabled"]),
                 Field("MinSeedRatio", "number", "Minimum seed ratio", null, minimum: 0),
-                Field("MinSeedingTimeDays", "number", "Minimum seed days", null, minimum: 0)
+                Field("MinSeedingTimeDays", "number", "Minimum seed days", null, minimum: 0),
+                Field("MinimumReportedSeeders", "number", "Minimum reported seeders", null, minimum: 0),
+                Field("MinimumUploadInactivitySeconds", "number", "Minimum upload inactivity before retirement (seconds)", null, minimum: 0)
             ]
         },
         Field("Type", "text", "Client Type", "qbittorrent"),
@@ -92,6 +142,9 @@ public static class ConfigSchemaBuilder
         Field("Port", "number", "Port", 8080, minimum: 1, maximum: 65535),
         Field("UserName", "text", "Username", "CHANGE_ME"),
         Field("Password", "password", "Password", "CHANGE_ME", secure: true),
+        Field("AuthMode", "select", "Authentication", "legacy", options: ["legacy", "api-key"]) with
+        { description = "Legacy uses the existing username/password or client-configured bypass. API key requires qBittorrent 5.2 or later." },
+        Field("APIKey", "password", "qBittorrent API key", "", secure: true),
         Field("DownloadPath", "text", "Download path", "") with
         { description = "Default download root as seen by this torrent client. Existing category paths are preserved.", applyLive = true, requiresRestart = false },
         Field("TorrentScanIntervalSeconds", "select", "Torrent scan interval (seconds)", 30,
@@ -122,7 +175,10 @@ public static class ConfigSchemaBuilder
         Field("Maintenance.Orphans.ExcludePatterns", "tags", "Orphan exclusion patterns", Array.Empty<string>()),
         Field("Maintenance.Hardlinks.Enabled", "checkbox", "Enable hardlink audit", false),
         Field("Maintenance.Hardlinks.Tag", "text", "Missing hardlink tag", "noHL"),
-        Field("Maintenance.Hardlinks.CountLinksInsideRoot", "checkbox", "Count links inside root (unsupported)", false) with { description = "Unsupported: leave disabled. Root-scoped hardlink inspection cannot currently run." },
+        Field("Maintenance.Hardlinks.CountLinksInsideRoot", "checkbox", "Find links inside library roots", false) with { description = "Audit mapped library roots using filesystem identity. Requires Linux local filesystems; incomplete coverage preserves tags." },
+        Field("Maintenance.Hardlinks.LibraryRoots", "tags", "Library roots", Array.Empty<string>()) with { description = "Local library roots, each matching an explicit path mapping." },
+        Field("Maintenance.Hardlinks.IgnoredRoots", "tags", "Ignored hardlink roots", Array.Empty<string>()) with { description = "Mapped local roots excluded from library coverage, such as nested cross-seed folders." },
+        Field("Maintenance.Hardlinks.MaxInspectedEntriesPerRun", "number", "Maximum library entries per audit", 10000, minimum: 1, maximum: 1000000),
         Field("Maintenance.Hardlinks.Categories", "tags", "Hardlink audit categories", Array.Empty<string>()),
         Field("Maintenance.Hardlinks.ExcludedTags", "tags", "Hardlink audit excluded tags", Array.Empty<string>()),
         Field("Maintenance.AutomaticManagement.Enabled", "checkbox", "Enable automatic management", false) with { description = "Enables client automatic management, which may relocate content according to category paths." },

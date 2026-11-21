@@ -12,7 +12,8 @@ public enum TorrentRemovalIntent
     SeedingLimit,
     StalledDownload,
     RejectedByAllowlist,
-    RejectedByCustomFormat
+    RejectedByCustomFormat,
+    OrdinaryRetirement
 }
 
 public interface ISeedingService

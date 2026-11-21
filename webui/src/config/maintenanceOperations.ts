@@ -110,9 +110,13 @@ export const maintenanceOperations: {
     category: "Storage",
     group: "Storage",
     description:
-      "Find torrents without additional hardlinks and apply the configured tag.",
+      "Find torrents without additional hardlinks or a link in mapped library roots and apply the configured tag.",
     paths: ["Hardlinks"],
-    essential: ["Hardlinks.Tag"],
+    essential: [
+      "Hardlinks.Tag",
+      "Hardlinks.CountLinksInsideRoot",
+      "Hardlinks.LibraryRoots",
+    ],
   },
   {
     operation: "RecycleRetention",

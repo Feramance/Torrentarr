@@ -41,6 +41,37 @@ export interface ProcessesResponse {
   processes: ProcessInfo[];
 }
 
+export interface SearchDecisionItem {
+  id: number;
+  type: string;
+  seriesId: number | null;
+  season: number | null;
+  artistId: number | null;
+  authorId: number | null;
+  reason: string;
+  scope: string;
+}
+
+export interface SearchDecisionResponse {
+  preview: {
+    observedAt: string;
+    ageSeconds: number;
+    candidateCount: number;
+    items: SearchDecisionItem[];
+    deferred: { item: SearchDecisionItem; reason: string }[];
+  } | null;
+  history: {
+    item: SearchDecisionItem;
+    outcome: string;
+    cycleId: string;
+    observedAt: string;
+    completedAt: string | null;
+    grabbedAt: string | null;
+    noGrabAt?: string | null;
+    occurrences: number;
+  }[];
+}
+
 export interface ArrInfo {
   category: string;
   name: string;
@@ -817,6 +848,7 @@ export interface OperationalIssue {
   subjectId: string;
   subjectName?: string | null;
   subjectCategory?: string | null;
+  relatedLogStream?: string | null;
   severity: "warning" | "error";
   title: string;
   impact: string;

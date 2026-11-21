@@ -14,6 +14,17 @@ internal static class ArrClientResponse
         return response;
     }
 
+    internal static async Task<RestResponse> ExecuteOnceAsync(RestClient client, RestRequest request, CancellationToken ct)
+    {
+        using var submission = new RestClient(new RestClientOptions(client.Options.BaseUrl!)
+        {
+            FollowRedirects = false,
+            Timeout = client.Options.Timeout,
+            RemoteCertificateValidationCallback = client.Options.RemoteCertificateValidationCallback
+        });
+        return await submission.ExecuteAsync(request, ct);
+    }
+
     internal static void EnsureSuccess(RestResponse response, string operation)
     {
         if (response.ResponseStatus != ResponseStatus.Completed)

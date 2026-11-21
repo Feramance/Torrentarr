@@ -20,3 +20,37 @@ Maintenance execution failures are reported once for the selected set of clients
 Routine activity, intentional pauses, disabled features, and a full search-command queue are not issues. Existing logs retain full exception details. The Issues view contains plain-language descriptions without credentials or raw upstream responses. Issue reporting does not send external notifications or perform repairs.
 
 The read-only API is available at `/web/issues`, `/web/issues/summary`, and `/web/issues/{id}`, with matching `/api` routes. `/api` requires the existing Bearer token. Lists support `category=automation|system`, `state=active|resolved`, `severity=warning|error`, `instance`, `q`, zero-based `page`, and `page_size` (default 50, maximum 100). Details contain affected subjects and their resolution history. The shared SQLite extension table is created automatically on upgrade; no TOML changes are needed.
+
+A subject with an Arr worker has a `relatedLogStream` field that identifies the
+log stream for browsing. Use **Browse worker logs** to open it. **Copy details**
+copies the issue's ID, status, summary, impact, and remediation.
+
+## Webhook alerts
+
+In **Settings → Issue alerts**, save a webhook destination and select the issue
+types to send. Use **Send test** to check the saved destination independently of
+automatic delivery. The Host sends transitions when alerts are enabled.
+
+```toml
+[Settings]
+IssueAlertsEnabled = true
+IssueAlertsSecretUrl = "https://alerts.example.net/torrentarr"
+IssueAlertTypes = ["worker", "import", "tracker"]
+```
+
+Worker alerts require 30 seconds without recovery. Import alerts cover blocked
+or unverified imports. Tracker alerts describe potential deadline or protection
+risk. Receivers get `eventId`, `type`, `severity`, `instance`, `state`,
+`summary`, and `issueId`. Deduplicate retry attempts with the `Idempotency-Key`
+header or `eventId`. Requests time out after eight seconds and get at most four
+attempts. Redirect responses fail delivery.
+
+Delivery resumes from a saved cursor after a restart. Enabling alerts or changing
+the destination or selected types starts a new policy when the Host next checks
+the settings. Earlier issues stay in Issues. The Host retains transitions for
+30 days and keeps openings for active issues so it can associate a later
+resolution. Config reads redact the destination.
+
+`POST /web/issues/alerts/test` uses existing WebUI authentication. The Host
+also supports the token-authenticated `POST /api/issues/alerts/test` alias.
+The test sends a payload with `state: "test"` and a null `issueId`.

@@ -157,6 +157,8 @@ builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
 builder.Services.AddSingleton<OperationalIssueReporter>();
 builder.Services.AddSingleton<IOperationalIssueReporter>(sp => sp.GetRequiredService<OperationalIssueReporter>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<OperationalIssueReporter>());
+builder.Services.AddSingleton<SharedFileFilterService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SharedFileFilterService>());
 builder.Services.AddHostedService<OperationalIssueMonitor>();
 builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
 builder.Services.AddSingleton<QBittorrentConnectionManager>();
@@ -171,6 +173,13 @@ builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
 builder.Services.AddSingleton<IMaintenanceCoordinator, MaintenanceCoordinator>();
 builder.Services.AddSingleton<TorrentAutomationService>();
 builder.Services.AddScoped<ISeedingService, SeedingService>();
+builder.Services.AddSingleton<DatabaseRestartCoordinator>();
+builder.Services.AddSingleton<SearchSubmissionTiming>();
+builder.Services.AddScoped<ArrSyncService>();
+builder.Services.AddScoped<QualityProfileSwitcherService>();
+builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
+builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
+
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHttpClient("ArrOpenSkipTls").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -414,6 +423,7 @@ static bool WebUIAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
 
 app.MapOperationalIssueEndpoints("/web");
 app.MapOperationalIssueEndpoints("/api");
+app.MapIssueAlertTest("/web");
 
 // Health check endpoint
 app.MapGet("/health", () => Results.Ok(new
@@ -829,6 +839,7 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
         var renames = body?["renames"] as Newtonsoft.Json.Linq.JObject;
         InstanceRenamePersistence.Validate(config, updatedConfig, renames);
         TrackerRules.RenameReferences(config, updatedConfig, renames);
+        FailedTorrentRouting.RenameReferences(config, updatedConfig, renames);
         var savePasswordHashError = WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(config, updatedConfig);
         if (savePasswordHashError != null)
             return Results.Json(new { error = savePasswordHashError }, statusCode: 403);
@@ -919,7 +930,9 @@ static void ApplyDotPathChange(Newtonsoft.Json.Linq.JObject root, string dotPath
 static Newtonsoft.Json.Linq.JObject BuildFlatConfig(TorrentarrConfig config, bool redactSensitive)
 {
     var flat = new Newtonsoft.Json.Linq.JObject();
-    flat["Settings"] = Newtonsoft.Json.Linq.JObject.FromObject(config.Settings);
+    var settings = Newtonsoft.Json.Linq.JObject.FromObject(config.Settings);
+    if (redactSensitive) RedactFlatField(settings, "IssueAlertsSecretUrl");
+    flat["Settings"] = settings;
 
     var webuiObj = Newtonsoft.Json.Linq.JObject.FromObject(config.WebUI);
     if (redactSensitive)
@@ -1011,6 +1024,8 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
         ? settingsObj.ToObject<SettingsConfig>() ?? current.Settings
         : current.Settings;
     result.Settings.ConfigVersion = current.Settings.ConfigVersion;
+    if (result.Settings.IssueAlertsSecretUrl == "[redacted]")
+        result.Settings.IssueAlertsSecretUrl = current.Settings.IssueAlertsSecretUrl;
 
     // WebUI — restore redacted sensitive fields
     if (flat["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
@@ -1036,6 +1051,7 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
                 if (current.TorrentClients.TryGetValue(clientProp.Name, out var existing))
                 {
                     if (client.Password == "[redacted]") client.Password = existing.Password;
+                    if (client.APIKey == "[redacted]") client.APIKey = existing.APIKey;
                 }
                 result.TorrentClients[clientProp.Name] = client;
             }
@@ -1052,6 +1068,7 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
             if (current.QBitInstances.TryGetValue(prop.Name, out var existingQBit))
             {
                 if (qbit.Password == "[redacted]") qbit.Password = existingQBit.Password;
+                if (qbit.APIKey == "[redacted]") qbit.APIKey = existingQBit.APIKey;
             }
             result.QBitInstances[prop.Name] = qbit;
         }
@@ -1570,7 +1587,8 @@ app.MapGet("/web/config/full", (TorrentarrConfig config, IConfigReloader reloade
     return Results.Ok(new
     {
         configPath = reloader.ConfigPath,
-        settings = config.Settings,
+        settings = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
+            BuildFlatConfig(config, redactSensitive: true)["Settings"]!.ToString(Newtonsoft.Json.Formatting.None)),
         webui = config.WebUI,
         qbitInstances = config.GetAllTorrentClients().ToDictionary(
             kv => kv.Key,
@@ -1614,6 +1632,8 @@ app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, Torrentar
             return Results.Json(new { error = passwordHashError }, statusCode: 403);
 
         TrackerRules.NormalizeNested(updatedConfig);
+        if (updatedConfig.Settings.IssueAlertsSecretUrl == "[redacted]")
+            updatedConfig.Settings.IssueAlertsSecretUrl = config.Settings.IssueAlertsSecretUrl;
         var liveValidation = reloader.Validate(updatedConfig);
         if (!liveValidation.Ok) return Results.BadRequest(new { error = liveValidation.Error });
         await InstanceRenamePersistence.SaveAsync(config, updatedConfig, null, loader, db, reloader.ConfigPath);
@@ -1640,6 +1660,9 @@ app.MapGet("/web/config/path", (IConfigReloader reloader) =>
 app.MapStatisticsEndpoints();
 app.MapTransferHistory();
 app.MapArrActivity();
+app.MapSearchDecisions("/web");
+app.MapSharedFileFilters("/web");
+app.MapFailedTorrentDestinations("/web");
 app.MapArrCatalogEndpoints();
 
 // Meta info — matches frontend MetaResponse interface (includes auth flags)

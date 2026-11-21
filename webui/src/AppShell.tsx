@@ -229,6 +229,8 @@ function AppShell({
     id: string;
   }>();
   const [configDirty, setConfigDirty] = useState(false);
+  const [relatedLogs, setRelatedLogs] =
+    useState<NavigateTabDetail["relatedLogs"]>();
   const [configKey, setConfigKey] = useState(0);
   const { push } = useToast();
   const { setValue: setSearchValue } = useSearch();
@@ -528,6 +530,8 @@ function AppShell({
           instance: detail.issueInstance ?? "",
           category: detail.issueCategory ?? "automation",
         });
+      if (tab === "logs")
+        setRelatedLogs(detail.relatedLogs && { ...detail.relatedLogs });
       if (tab === "config") {
         const destination = detail.configDestination;
         setConfigSection(
@@ -1461,7 +1465,10 @@ function AppShell({
             ) : null}
             {visitedTabs.has("logs") ? (
               <div hidden={activeTab !== "logs"}>
-                <LogsView active={activeTab === "logs"} />
+                <LogsView
+                  active={activeTab === "logs"}
+                  relatedLogs={relatedLogs}
+                />
               </div>
             ) : null}
             {visitedTabs.has("radarr") && visibleTabIds.has("radarr") ? (

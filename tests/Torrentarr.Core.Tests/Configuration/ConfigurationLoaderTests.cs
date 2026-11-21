@@ -26,6 +26,101 @@ public class ConfigurationLoaderTests : IDisposable
 
     private void WriteToml(string content) => File.WriteAllText(_tempFilePath, content);
 
+    [Fact]
+    public void FailedTorrentDestinationsRoundTripWithExistingPolicyDefault()
+    {
+        new TorrentConfig().FailedTorrentAction.Should().Be(FailedTorrentRouting.Existing);
+        WriteToml("""
+            [Radarr-Movies.Torrent]
+            FailedTorrentAction = 'move'
+            FailedTorrentDestinations = [{Client = 'qBit', Category = 'parked/a'}, {Client = 'qBit-seedbox', Category = 'parked/b'}]
+            """);
+        var loader = new ConfigurationLoader(_tempFilePath);
+        loader.SaveConfig(loader.Load());
+        var torrent = loader.Load().ArrInstances["Radarr-Movies"].Torrent;
+        torrent.FailedTorrentAction.Should().Be(FailedTorrentRouting.Move);
+        torrent.FailedTorrentDestinations.Select(row => (row.Client, row.Category))
+            .Should().Equal(("qBit", "parked/a"), ("qBit-seedbox", "parked/b"));
+    }
+
+    [Fact]
+    public void ProactiveSearchGatesRoundTripWithDisabledDefaults()
+    {
+        var defaults = new SearchConfig();
+        defaults.IncludeTags.Should().BeEmpty();
+        defaults.RequireRadarrAvailability.Should().BeFalse();
+        defaults.QuietHoursEnabled.Should().BeFalse();
+        WriteToml("[Radarr-Movies.EntrySearch]\nUnsuccessfulSearchRestMinutes = 60\nIncludeTags = ['wanted']\nExcludeTags = ['skip']\nRequireRadarrAvailability = true\nQuietHoursEnabled = true\nQuietHoursStart = '23:30'\nQuietHoursEnd = '06:15'\nQuietHoursTimeZone = 'Europe/Malta'\n");
+        var loader = new ConfigurationLoader(_tempFilePath);
+        loader.SaveConfig(loader.Load());
+        var search = loader.Load().ArrInstances["Radarr-Movies"].Search;
+        search.UnsuccessfulSearchRestMinutes.Should().Be(60);
+        search.IncludeTags.Should().Equal("wanted");
+        search.ExcludeTags.Should().Equal("skip");
+        search.RequireRadarrAvailability.Should().BeTrue();
+        search.QuietHoursEnabled.Should().BeTrue();
+        search.QuietHoursStart.Should().Be("23:30");
+        search.QuietHoursEnd.Should().Be("06:15");
+        search.QuietHoursTimeZone.Should().Be("Europe/Malta");
+    }
+
+    [Fact]
+    public void ImportRescue_OptInRoundTripsAndDefaultsOff()
+    {
+        new TorrentConfig().RescueBlockedImports.Should().BeFalse();
+        WriteToml("[Radarr-Movies.Torrent]\nRescueBlockedImports = true\n");
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.ArrInstances["Radarr-Movies"].Torrent.RescueBlockedImports.Should().BeTrue();
+        loader.SaveConfig(config);
+        loader.Load().ArrInstances["Radarr-Movies"].Torrent.RescueBlockedImports.Should().BeTrue();
+    }
+
+    [Fact]
+    public void RootHardlinkSettings_RoundTripThroughLegacyClientSections()
+    {
+        var root = Path.TrimEndingDirectorySeparator(Path.GetTempPath());
+        WriteToml($$"""
+            [qBit.Maintenance]
+            PathMappings = [{ ClientPath = '/library', LocalPath = '{{root}}' }]
+            [qBit.Maintenance.Hardlinks]
+            CountLinksInsideRoot = true
+            LibraryRoots = ['{{root}}']
+            IgnoredRoots = []
+            MaxInspectedEntriesPerRun = 123
+            """);
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.QBitInstances["qBit"].Maintenance.Hardlinks.LibraryRoots.Should().Equal(root);
+        loader.SaveConfig(config);
+        var result = loader.Load().QBitInstances["qBit"].Maintenance.Hardlinks;
+        result.CountLinksInsideRoot.Should().BeTrue();
+        result.LibraryRoots.Should().Equal(root);
+        result.IgnoredRoots.Should().BeEmpty();
+        result.MaxInspectedEntriesPerRun.Should().Be(123);
+    }
+
+    [Fact]
+    public void SharedFileFilters_LoadAndRoundTripDefinitionsAndReferences()
+    {
+        WriteToml("""
+            [Settings]
+            SharedFileFilters = [{ Name = "reviewed", Source = "filters/reviewed.txt" }]
+            [Sonarr-TV.Torrent]
+            SharedFileFilters = ["reviewed"]
+            """);
+        var loader = new ConfigurationLoader(_tempFilePath);
+        var config = loader.Load();
+        config.Settings.SharedFileFilters.Should().ContainSingle();
+        config.Settings.SharedFileFilters[0].Source.Should().Be("filters/reviewed.txt");
+        config.ArrInstances["Sonarr-TV"].Torrent.SharedFileFilters.Should().Equal("reviewed");
+        loader.SaveConfig(config);
+        var reloaded = loader.Load();
+        reloaded.Settings.SharedFileFilters.Should().ContainSingle();
+        reloaded.Settings.SharedFileFilters[0].Name.Should().Be("reviewed");
+        reloaded.ArrInstances["Sonarr-TV"].Torrent.SharedFileFilters.Should().Equal("reviewed");
+    }
+
     [Theory]
     [InlineData("true", "series")]
     [InlineData("false", "episode")]
@@ -44,6 +139,25 @@ public class ConfigurationLoaderTests : IDisposable
         loader.SaveConfig(config);
         new ConfigurationLoader(_tempFilePath).Load().ArrInstances["Sonarr-TV"].Search.SearchBySeries.Should().Be(expected);
         File.ReadAllText(_tempFilePath).Should().Contain($"SearchBySeries = \"{expected}\"");
+    }
+
+    [Fact]
+    public void SearchPacing_RoundTripsPerInstanceAndDefaultsToDisabled()
+    {
+        WriteToml("""
+            [Radarr-Movies.EntrySearch]
+            RecentGrabCooldownMinutes = 30
+            ActiveDownloadCeiling = 4
+            [Sonarr-TV.EntrySearch]
+            SearchMissing = true
+            """);
+        var loader = new ConfigurationLoader(_tempFilePath);
+        loader.SaveConfig(loader.Load());
+        var config = loader.Load();
+        config.ArrInstances["Radarr-Movies"].Search.RecentGrabCooldownMinutes.Should().Be(30);
+        config.ArrInstances["Radarr-Movies"].Search.ActiveDownloadCeiling.Should().Be(4);
+        config.ArrInstances["Sonarr-TV"].Search.RecentGrabCooldownMinutes.Should().Be(0);
+        config.ArrInstances["Sonarr-TV"].Search.ActiveDownloadCeiling.Should().Be(0);
     }
 
     [Fact]

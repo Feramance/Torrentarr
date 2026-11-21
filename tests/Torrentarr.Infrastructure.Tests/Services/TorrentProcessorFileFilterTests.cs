@@ -1,5 +1,4 @@
 using FluentAssertions;
-using System.Reflection;
 using System.Text.RegularExpressions;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Infrastructure.Services;
@@ -8,13 +7,12 @@ using Xunit;
 namespace Torrentarr.Infrastructure.Tests.Services;
 
 /// <summary>
-/// Tests for TorrentProcessor.FileExclusionReason (§2.1 File Filtering).
-/// The method is private static — invoked via reflection.
+/// Tests for the local matcher shared by torrent processing and file-filter preview.
 /// Logic:
 ///   1. Check each folder component against FolderExclusionRegex patterns.
 ///   2. Check the filename against FileNameExclusionRegex patterns.
 ///   3. If FileExtensionAllowlist is non-empty, exclude files whose extension is absent.
-/// Returns true → file should be excluded (set to priority-0 or torrent deleted).
+/// Matches exclude a file; removal requires separate authorization.
 /// </summary>
 public class TorrentProcessorFileFilterTests
 {
@@ -24,8 +22,7 @@ public class TorrentProcessorFileFilterTests
     [InlineData("Movie/movie.exe", "Extension '.exe'")]
     public void ExclusionReason_IdentifiesTheWinningRule(string path, string expected)
     {
-        var reason = typeof(TorrentProcessor).GetMethod("FileExclusionReason", BindingFlags.NonPublic | BindingFlags.Static)!
-            .Invoke(null, [path, new TorrentConfig(), RegexOptions.IgnoreCase]);
+        var reason = FileFilterMatcher.LocalReason(path, new TorrentConfig(), RegexOptions.IgnoreCase);
         reason.Should().BeOfType<string>().Which.Should().Contain(expected);
     }
 
@@ -34,10 +31,7 @@ public class TorrentProcessorFileFilterTests
         TorrentConfig cfg,
         RegexOptions options = RegexOptions.IgnoreCase)
     {
-        var method = typeof(TorrentProcessor)
-            .GetMethod("FileExclusionReason",
-                BindingFlags.NonPublic | BindingFlags.Static);
-        return method!.Invoke(null, new object?[] { filePath, cfg, options }) != null;
+        return FileFilterMatcher.LocalReason(filePath, cfg, options) != null;
     }
 
     // ── Extension allowlist ───────────────────────────────────────────────────

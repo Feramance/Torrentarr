@@ -282,7 +282,7 @@ public partial class SonarrClient : IArrActivityClient
     /// Delete item from queue
     /// </summary>
     public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false,
-        CancellationToken ct = default, bool skipRedownload = false, bool throwOnFailure = false)
+        CancellationToken ct = default, bool skipRedownload = false, bool throwOnFailure = false, bool singleAttempt = false)
     {
         var request = await CreateRequestAsync($"queue/{id}", Method.Delete, ct);
         AddApiKeyHeader(request);
@@ -298,7 +298,8 @@ public partial class SonarrClient : IArrActivityClient
             request.AddQueryParameter("blocklistMethod", blocklist ? blocklistMethod : "doNotBlocklist");
         }
 
-        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
+        var response = singleAttempt ? await ArrClientResponse.ExecuteOnceAsync(_client, request, ct)
+            : await ArrClientResponse.ExecuteAsync(_client, request, ct);
         if (throwOnFailure) ArrClientResponse.EnsureSuccess(response, $"DELETE queue/{id} (blocklist={blocklist})");
         return response.IsSuccessful;
     }

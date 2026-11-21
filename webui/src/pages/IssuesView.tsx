@@ -7,6 +7,7 @@ import type {
   OperationalIssueGroup,
 } from "../api/types";
 import { PersistentDetails } from "../components/PersistentDetails";
+import { CopyButton } from "../components/CopyButton";
 import {
   requestNavigateTab,
   type ConfigDestination,
@@ -187,6 +188,26 @@ function IssueDetails({ group }: { group: OperationalIssueGroup }) {
             <p>
               <strong>How to fix:</strong> {item.remediation}
             </p>
+            <div className="actions">
+              {item.relatedLogStream && (
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  onClick={() =>
+                    requestNavigateTab({
+                      tab: "logs",
+                      relatedLogs: { stream: item.relatedLogStream! },
+                    })
+                  }
+                >
+                  Browse worker logs
+                </button>
+              )}
+              <CopyButton
+                label="Copy details"
+                text={`Issue ${item.id} · ${item.code}\n${item.title}\n${item.resolvedAt ? "Resolved" : "Active"} · ${item.lastObserved}\n${item.impact}\n${item.remediation}`}
+              />
+            </div>
             {target === "config" &&
               group.affected > 1 &&
               item.code === "storage.reserve" &&
@@ -234,6 +255,9 @@ export function IssuesView({
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const request = useRef(0);
+  const invalidateRequest = useCallback(() => {
+    request.current++;
+  }, []);
   useEffect(() => {
     if (!selection) return;
     setInstance(selection.instance);
@@ -279,6 +303,7 @@ export function IssuesView({
       busy = true;
       try {
         await load();
+        if (stopped) return;
         const summary = await getIssuesSummary();
         if (!stopped)
           setInstances((previous) =>
@@ -307,12 +332,12 @@ export function IssuesView({
     window.addEventListener(STATISTICS_UPDATED, visible);
     return () => {
       stopped = true;
-      request.current++;
+      invalidateRequest();
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", visible);
       window.removeEventListener(STATISTICS_UPDATED, visible);
     };
-  }, [active, load]);
+  }, [active, invalidateRequest, load]);
   const change = (set: (value: string) => void, value: string) => {
     set(value);
     setPage(0);

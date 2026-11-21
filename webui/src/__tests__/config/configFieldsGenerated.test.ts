@@ -1,10 +1,39 @@
 import { describe, expect, it } from "vitest";
+import { getArrFieldSets } from "../../pages/config/configFields";
 import {
   CONFIG_SCHEMA,
   CONFIG_SCHEMA_FIELD_COUNT,
 } from "../../config/configFields.generated";
 
 describe("generated config schema", () => {
+  it("offers import rescue only for its supported Arr adapter", () => {
+    const hasRescue = (instance: string) =>
+      getArrFieldSets(instance).torrentFields.some(
+        (field) => field.path?.join(".") === "Torrent.RescueBlockedImports",
+      );
+    expect(hasRescue("Radarr-Movies")).toBe(true);
+    expect(hasRescue("Sonarr-TV")).toBe(false);
+    expect(hasRescue("Lidarr-Music")).toBe(false);
+    expect(hasRescue("Readarr-Books")).toBe(false);
+  });
+  it("offers shared search gates and restricts availability to Radarr", () => {
+    for (const name of [
+      "Radarr-Movies",
+      "Sonarr-TV",
+      "Lidarr-Music",
+      "Readarr-Books",
+    ]) {
+      const fields = getArrFieldSets(name).entryFields.map((field) =>
+        field.path?.join("."),
+      );
+      expect(fields).toContain("EntrySearch.IncludeTags");
+      expect(fields).toContain("EntrySearch.ExcludeTags");
+      expect(fields).toContain("EntrySearch.QuietHoursTimeZone");
+      expect(fields.includes("EntrySearch.RequireRadarrAvailability")).toBe(
+        name.startsWith("Radarr"),
+      );
+    }
+  });
   it("exposes the live browser-origin allowlist", () => {
     const origins = CONFIG_SCHEMA.sections.WebUI.find(
       (field) => String(field.key) === "CorsAllowedOrigins",

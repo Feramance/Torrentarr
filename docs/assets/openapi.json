@@ -1810,6 +1810,33 @@
         ]
       }
     },
+    "/api/config/failed-torrent-destinations": {
+      "get": {
+        "description": "Returns one result per enabled qBittorrent client with its existing categories, Arr ownership and unavailable reasons.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "List existing failed torrent destination categories",
+        "tags": [
+          "Torrentarr automation"
+        ]
+      }
+    },
     "/api/config/schema": {
       "get": {
         "operationId": "api_config_schema_get",
@@ -1896,6 +1923,47 @@
         "summary": "Download update artifact (/api)",
         "tags": [
           "WebUI"
+        ]
+      }
+    },
+    "/api/file-filters/preview": {
+      "get": {
+        "description": "Returns availability, the matched reason and named list freshness for a sample path.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "instance",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid path or evaluation timed out"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Unknown integration"
+          }
+        },
+        "summary": "Preview configured file filters",
+        "tags": [
+          "Torrentarr automation"
         ]
       }
     },
@@ -2001,6 +2069,30 @@
         "summary": "List operational issues grouped by code and instance",
         "tags": [
           "Issues"
+        ]
+      }
+    },
+    "/api/issues/alerts/test": {
+      "post": {
+        "description": "Sends one test event to the saved destination. The test creates no issue transition.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "No destination configured"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "502": {
+            "description": "Delivery was rejected"
+          }
+        },
+        "summary": "Send a test issue webhook",
+        "tags": [
+          "Torrentarr automation"
         ]
       }
     },
@@ -3246,6 +3338,36 @@
         ]
       }
     },
+    "/api/processes/{instance}/search-activity": {
+      "get": {
+        "description": "The preview uses the latest usable catalog and current search observations. Null means no usable preview. History distinguishes submission, completion, grabs and confirmed no-grab windows.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Unknown integration"
+          }
+        },
+        "summary": "Preview proactive search and read decision history",
+        "tags": [
+          "Torrentarr automation"
+        ]
+      }
+    },
     "/api/qbit/categories": {
       "get": {
         "responses": {
@@ -4454,6 +4576,33 @@
         ]
       }
     },
+    "/web/config/failed-torrent-destinations": {
+      "get": {
+        "description": "Returns one result per enabled qBittorrent client with its existing categories, Arr ownership and unavailable reasons.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "List existing failed torrent destination categories",
+        "tags": [
+          "Torrentarr automation"
+        ]
+      }
+    },
     "/web/config/schema": {
       "get": {
         "operationId": "web_config_schema_get",
@@ -4540,6 +4689,47 @@
         "summary": "Download update artifact (/web)",
         "tags": [
           "WebUI"
+        ]
+      }
+    },
+    "/web/file-filters/preview": {
+      "get": {
+        "description": "Returns availability, the matched reason and named list freshness for a sample path.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "instance",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid path or evaluation timed out"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Unknown integration"
+          }
+        },
+        "summary": "Preview configured file filters",
+        "tags": [
+          "Torrentarr automation"
         ]
       }
     },
@@ -4640,6 +4830,30 @@
         "summary": "List operational issues grouped by code and instance",
         "tags": [
           "Issues"
+        ]
+      }
+    },
+    "/web/issues/alerts/test": {
+      "post": {
+        "description": "Sends one test event to the saved destination. The test creates no issue transition.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "No destination configured"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "502": {
+            "description": "Delivery was rejected"
+          }
+        },
+        "summary": "Send a test issue webhook",
+        "tags": [
+          "Torrentarr automation"
         ]
       }
     },
@@ -5897,6 +6111,36 @@
         "summary": "Restart process (/web)",
         "tags": [
           "WebUI"
+        ]
+      }
+    },
+    "/web/processes/{instance}/search-activity": {
+      "get": {
+        "description": "The preview uses the latest usable catalog and current search observations. Null means no usable preview. History distinguishes submission, completion, grabs and confirmed no-grab windows.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "instance",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "404": {
+            "description": "Unknown integration"
+          }
+        },
+        "summary": "Preview proactive search and read decision history",
+        "tags": [
+          "Torrentarr automation"
         ]
       }
     },

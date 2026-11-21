@@ -79,6 +79,8 @@ public class SeedingService : ISeedingService
 
         return new CategorySeedingConfig
         {
+            MinimumReportedSeeders = categoryOverride.MinimumReportedSeeders ?? baseConfig.MinimumReportedSeeders,
+            MinimumUploadInactivitySeconds = categoryOverride.MinimumUploadInactivitySeconds ?? baseConfig.MinimumUploadInactivitySeconds,
             DownloadRateLimitPerTorrent = categoryOverride.DownloadRateLimitPerTorrent ?? baseConfig.DownloadRateLimitPerTorrent,
             UploadRateLimitPerTorrent = categoryOverride.UploadRateLimitPerTorrent ?? baseConfig.UploadRateLimitPerTorrent,
             MaxUploadRatio = categoryOverride.MaxUploadRatio ?? baseConfig.MaxUploadRatio,
@@ -738,7 +740,7 @@ public class SeedingService : ISeedingService
             if (age < 0 || now - torrent.AddedOn < requiredAge)
                 Block("torrent.minimum-age", $"Age={now - torrent.AddedOn}s; effective IgnoreTorrentsYoungerThan={requiredAge}s; category/Arr value={age}s", "Wait until the minimum age is met or correct the effective age policy.");
             if (intent is not (TorrentRemovalIntent.SeedingLimit or TorrentRemovalIntent.StalledDownload
-                or TorrentRemovalIntent.RejectedByAllowlist or TorrentRemovalIntent.RejectedByCustomFormat))
+                or TorrentRemovalIntent.RejectedByAllowlist or TorrentRemovalIntent.RejectedByCustomFormat or TorrentRemovalIntent.OrdinaryRetirement))
             {
                 Block("removal.unsupported-intent", $"Unknown removal intent '{intent}'", "Use a supported removal intent.");
                 return new(blockers);
@@ -756,6 +758,29 @@ public class SeedingService : ISeedingService
                     Block("seeding.minimum", "The ordinary minimum seeding requirements are unmet.", "Meet the minimum seeding requirements.");
                 if (!RemovalLimitsMet(torrent, policy))
                     Block("seeding.limit", $"RemoveTorrent={policy.RemoveTorrent}; ratio={torrent.Ratio:F3}/{policy.MaxUploadRatio}; seed={torrent.SeedingTime}/{policy.MaxSeedingTime}s; state={torrent.State}", "Meet the effective ratio/time removal limits.");
+                if (intent == TorrentRemovalIntent.OrdinaryRetirement && client != null && blockers.Count == 0)
+                {
+                    var current = (await client.GetTorrentsAsync(cancellationToken: ct))
+                        .FirstOrDefault(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase));
+                    if (current == null || current.AmountLeft != 0 || !SameRemovalCandidate(torrent, current, torrent.ObservedRetirementState)
+                        || !double.IsFinite(current.Ratio) || current.Ratio < torrent.Ratio || current.SeedingTime < torrent.SeedingTime)
+                        Block("retirement.changed", "The completed torrent changed before final retirement authorization.", "Wait for a fresh evaluation.");
+                    else
+                    {
+                        current.ClientInstanceId = torrent.ClientInstanceId;
+                        current.ObservedAtUnixSeconds = _clock.GetUtcNow().ToUnixTimeSeconds();
+                        if (!RemovalLimitsMet(current, policy, torrent.State))
+                            Block("seeding.limit", "The current ratio/time evidence does not meet the retirement limits.", "Wait until the effective limits are met.");
+                        foreach (var guard in await RetirementGuard.EvaluateAsync(_dbContext, _config, current,
+                            current.ObservedAtUnixSeconds, ct))
+                            Block(guard.Code, guard.Reason, guard.Remediation);
+                    }
+                }
+                return new(blockers);
+            }
+            if (intent == TorrentRemovalIntent.OrdinaryRetirement)
+            {
+                Block("retirement.incomplete", "The torrent is incomplete.", "Allow it to finish before retirement.");
                 return new(blockers);
             }
             var metadata = torrent.State.Equals("metaDL", StringComparison.OrdinalIgnoreCase) || torrent.State.Equals("forcedMetaDL", StringComparison.OrdinalIgnoreCase);
@@ -784,9 +809,9 @@ public class SeedingService : ISeedingService
         return string.Join("; ", fields.Where(f => !Equals(f.Before, f.After)).Select(f => $"{f.Name}: '{f.Before}' -> '{f.After}'"));
     }
 
-    internal static bool SameRemovalCandidate(TorrentInfo expected, TorrentInfo current)
+    internal static bool SameRemovalCandidate(TorrentInfo expected, TorrentInfo current, string? expectedState = null)
         => expected.AddedOn == current.AddedOn && expected.Category == current.Category
-            && expected.State == current.State && expected.Progress == current.Progress && expected.LastActivity == current.LastActivity
+            && (expectedState ?? expected.State) == current.State && expected.Progress == current.Progress && expected.LastActivity == current.LastActivity
             && expected.SavePath == current.SavePath && expected.ContentPath == current.ContentPath;
 
     /// <summary>
@@ -820,18 +845,28 @@ public class SeedingService : ISeedingService
             _logger.LogDebug("Seeding removal withheld for {Hash}: state={State} is not uploading", torrent.Hash, torrent.State);
             return false;
         }
+        if (RetirementGuard.Intent(_config, torrent) == TorrentRemovalIntent.OrdinaryRetirement)
+        {
+            if (torrent.Progress < 1 || torrent.AmountLeft != 0) return false;
+            var guards = await RetirementGuard.EvaluateAsync(_dbContext, _config, torrent,
+                _clock.GetUtcNow().ToUnixTimeSeconds(), cancellationToken);
+            foreach (var guard in guards)
+                _logger.LogDebug("Retirement withheld for {Hash} on {Client}: {Reason}", torrent.Hash, torrent.ClientInstanceId, guard.Reason);
+            if (guards.Count > 0) return false;
+        }
         if (!RemovalLimitsMet(torrent, seedingConfig)) return false;
         var allowed = await HnrAllowsDeleteAsync(torrent, "seeding limit", cancellationToken);
         _logger.LogDebug("Seeding removal decision for {Hash}: limits met; HnR clearance={Allowed}", torrent.Hash, allowed);
         return allowed;
     }
 
-    private bool RemovalLimitsMet(TorrentInfo torrent, CategorySeedingConfig policy)
+    private bool RemovalLimitsMet(TorrentInfo torrent, CategorySeedingConfig policy, string? stateOverride = null)
     {
         if (!double.IsFinite(policy.MaxUploadRatio)) return false;
         var ratioMet = policy.MaxUploadRatio > 0 && torrent.Ratio >= policy.MaxUploadRatio;
+        var state = stateOverride ?? torrent.State;
         var timeMet = policy.MaxSeedingTime > 0 && (torrent.SeedingTime >= policy.MaxSeedingTime
-            || (IsStalledUploadState(torrent.State) && _stalledUploads.IdleMeets(torrent.ClientInstanceId, torrent.Hash, policy.MaxSeedingTime)));
+            || (IsStalledUploadState(state) && _stalledUploads.IdleMeets(torrent.ClientInstanceId, torrent.Hash, policy.MaxSeedingTime)));
         var met = policy.RemoveTorrent switch
         {
             1 => ratioMet,
@@ -841,7 +876,7 @@ public class SeedingService : ISeedingService
             _ => false
         };
         _logger.LogDebug("Seeding limit decision for {Hash}: mode={Mode}; ratio={Ratio:F4}/{RequiredRatio}; ratioMet={RatioMet}; seed={SeedTime}s/{RequiredTime}s; timeMet={TimeMet}; state={State}; removalLimitsMet={Met}",
-            torrent.Hash, policy.RemoveTorrent, torrent.Ratio, policy.MaxUploadRatio, ratioMet, torrent.SeedingTime, policy.MaxSeedingTime, timeMet, torrent.State, met);
+            torrent.Hash, policy.RemoveTorrent, torrent.Ratio, policy.MaxUploadRatio, ratioMet, torrent.SeedingTime, policy.MaxSeedingTime, timeMet, state, met);
         return met;
     }
 
@@ -966,14 +1001,18 @@ public class SeedingService : ISeedingService
             {
                 _logger.LogWarning(ex, "Unable to read torrent client {Instance}", instanceName);
                 result.Errors.Add($"{instanceName}: torrent enumeration failed.");
+                await RetirementGuard.ForgetAsync(_dbContext, _config, instanceName, null, null, cancellationToken);
                 continue;
             }
+            var observedAt = _clock.GetUtcNow().ToUnixTimeSeconds();
+            await RetirementGuard.ForgetAsync(_dbContext, _config, instanceName, category, torrents, cancellationToken);
             foreach (var t in torrents)
             {
                 if (t.State.Contains("up", StringComparison.OrdinalIgnoreCase) ||
                     (t.State.Contains("paused", StringComparison.OrdinalIgnoreCase) && t.Progress >= 1.0))
                 {
                     t.QBitInstanceName = instanceName;
+                    t.ObservedAtUnixSeconds = observedAt;
                     completedByInstance.Add((instanceName, client, t));
                 }
             }
@@ -1012,7 +1051,8 @@ public class SeedingService : ISeedingService
                     .FirstOrDefault(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase));
                 if (current != null) current.ClientInstanceId = instanceName;
                 var sameCandidate = imported && current != null && SameRemovalCandidate(torrent, current);
-                if (sameCandidate && await CanDeleteTorrentAsync(current!, "final seeding removal", cancellationToken))
+                if (sameCandidate && await CanDeleteTorrentForIntentAsync(current!, RetirementGuard.Intent(_config, torrent),
+                        "final seeding removal", cancellationToken))
                 {
                     _logger.LogInformation("Seeding removal requested for {Hash}: deleteFiles=false; imported=true; freshCandidate=true", torrent.Hash);
                     var deleted = await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: false, cancellationToken);
