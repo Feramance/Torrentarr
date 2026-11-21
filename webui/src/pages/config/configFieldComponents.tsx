@@ -44,7 +44,6 @@ import {
 } from "./configDocumentUtils";
 import {
   QBIT_SECTION_REGEX,
-  SERVARR_SECTION_REGEX,
   type FieldDefinition,
   type ValidationError,
 } from "./configTypes";
@@ -556,11 +555,9 @@ export function FieldGroup({
         ? `Enable or disable ${field.label}.`
         : `Set the ${field.label} value.`);
 
-    const isArrInstance =
-      (basePath.length > 0 && SERVARR_SECTION_REGEX.test(basePath[0] ?? "")) ||
-      (!!sectionName && SERVARR_SECTION_REGEX.test(sectionName));
-    const isArrApiKey =
-      isArrInstance && (field.path?.[field.path.length - 1] ?? "") === "APIKey";
+    const externalCredential =
+      pathSegments.at(-1) === "APIKey" ||
+      pathSegments.at(-1) === "IssueAlertsSecretUrl";
     const errorMessage = findFieldErrorMessage(
       validationErrors,
       pathSegments,
@@ -604,7 +601,7 @@ export function FieldGroup({
           description={description}
           value={String(rawValue ?? "")}
           placeholder={field.placeholder}
-          canRefresh={!isArrApiKey}
+          canRefresh={!externalCredential}
           onChange={(val) => onChange(path, field, val)}
           errorMessage={errorMessage}
           dataFieldPath={dataPath}

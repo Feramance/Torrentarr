@@ -251,11 +251,18 @@ pending.
 
 ## Local validation
 
+The non-live .NET suites passed locally: 494 Core, 469 Host, and 1,785
+Infrastructure tests. The focused Release regressions cover catalog observations,
+search preview, and failed torrent category recovery. The OpenAPI drift-tool
+suite passed 27 tests, and the release commit hooks checked both builds.
+
 The Docker Compose build and redeploy passed its health check with the existing
 config and database. The search preview and failed torrent destination selector
 were exercised at 390px and 1440px. Search preview returned current catalog
 evidence, and the selector listed live categories by client and disabled those
-owned by Arr. The editor was closed without saving. Destructive and
+owned by Arr. The editor was closed without saving. Browser review also checked
+the file filter preview and webhook editor at both widths. Webhook destinations
+and externally issued API keys remain editable without a token generator. Destructive and
 retention-changing paths were exercised against disposable fixtures.
 
 Keep the new automation switches off during upgrade if you want to retain

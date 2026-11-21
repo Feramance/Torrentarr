@@ -116,3 +116,40 @@ it("separates the scrollable client summary and fields from dialog actions", asy
   await userEvent.click(close);
   expect(onClose).toHaveBeenCalledOnce();
 });
+
+it("generates local tokens but keeps externally issued credentials editable without a generator", () => {
+  render(
+    <FieldGroup
+      fields={[
+        { path: ["APIKey"], label: "API key", type: "password", secure: true },
+        {
+          path: ["IssueAlertsSecretUrl"],
+          label: "Webhook destination",
+          type: "password",
+          secure: true,
+        },
+        {
+          path: ["Token"],
+          label: "Local token",
+          type: "password",
+          secure: true,
+        },
+      ]}
+      basePath={[]}
+      state={{}}
+      onChange={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByLabelText("API key")).toBeEnabled();
+  expect(screen.getByLabelText("Webhook destination")).toBeEnabled();
+  expect(
+    screen.queryByRole("button", { name: "Generate API key" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Generate Webhook destination" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Generate Local token" }),
+  ).toBeEnabled();
+});
