@@ -9,7 +9,7 @@ using Torrentarr.Infrastructure.Database;
 
 namespace Torrentarr.Infrastructure.Services;
 
-internal sealed record FailedTorrentReceipt(long AddedOn, string Server, string ClientHost, string Source,
+internal sealed record FailedTorrentReceipt(long AddedOn, string Server, string ClientHost, string OwnerCategory, string Source,
     string Destination, string SavePath, string ContentPath, string Stage, int[] QueueIds,
     bool Blocklist, bool Replace, SearchCandidate[] Candidates, int[]? AttemptedQueueIds = null)
 {
@@ -20,7 +20,7 @@ internal sealed record FailedTorrentReceipt(long AddedOn, string Server, string 
     {
         var value = JsonConvert.DeserializeObject<FailedTorrentReceipt>(raw);
         if (value == null || value.AddedOn <= 0 || string.IsNullOrEmpty(value.Server) || string.IsNullOrEmpty(value.ClientHost)
-            || string.IsNullOrEmpty(value.Source) || string.IsNullOrEmpty(value.Destination)
+            || string.IsNullOrEmpty(value.OwnerCategory) || string.IsNullOrEmpty(value.Source) || string.IsNullOrEmpty(value.Destination)
             || string.IsNullOrEmpty(value.SavePath) || string.IsNullOrEmpty(value.ContentPath)
             || value.Stage is not ("moving" or "queue" or "done") || value.QueueIds == null || value.Candidates == null)
             throw new InvalidDataException("Failed torrent routing receipt is incomplete.");
@@ -88,10 +88,11 @@ public partial class ArrImportService
             var previous = await ReadParkingReceiptAsync(key, token);
             var receipt = previous == null ? null : FailedTorrentReceipt.Parse(previous);
             var server = ArrActivityTracking.ServerKey(arr);
+            var ownerCategory = CategoryPathHelper.NormalizeCategory(arr.Category).ToUpperInvariant();
             var clientHost = ParkingClientIdentity(settings);
             if (receipt != null && receipt.AddedOn == expected.AddedOn && receipt.Stage == "done") return;
             if (receipt != null && receipt.Stage != "done" && (receipt.AddedOn != expected.AddedOn
-                || receipt.Server != server || receipt.ClientHost != clientHost || receipt.Source != expected.Category
+                || receipt.Server != server || receipt.OwnerCategory != ownerCategory || receipt.ClientHost != clientHost || receipt.Source != expected.Category
                 || receipt.Destination != destination || receipt.SavePath != current!.SavePath
                 || receipt.ContentPath != current.ContentPath))
                 throw new IOException("An earlier move has unresolved or changed evidence.");
@@ -102,7 +103,7 @@ public partial class ArrImportService
                     throw new IOException("A matching Arr queue entry could not be verified.");
                 if (replace && matches.Any(row => row.Candidates.Length == 0))
                     throw new IOException("Replacement requires verified Arr media identity.");
-                receipt = new(expected.AddedOn, server, clientHost, expected.Category, destination, current!.SavePath, current.ContentPath,
+                receipt = new(expected.AddedOn, server, clientHost, ownerCategory, expected.Category, destination, current!.SavePath, current.ContentPath,
                     "moving", matches.Select(row => row.Id).Distinct().ToArray(), blocklist, replace,
                     matches.SelectMany(row => row.Candidates).DistinctBy(candidate => candidate.ArrId).ToArray());
                 await using var claim = await _dbContext.Database.BeginTransactionAsync(token);
@@ -138,12 +139,14 @@ public partial class ArrImportService
         var instance = CategoryOwnershipHelper.FindArrSectionForCategory(_config, category);
         if (instance == null || !_config.ArrInstances.TryGetValue(instance, out var arr)) return;
         var server = ArrActivityTracking.ServerKey(arr);
-        var cursorKey = MaintenancePersistence.Key("", "", "cursor:failed-parking:" + server);
+        var ownerCategory = CategoryPathHelper.NormalizeCategory(arr.Category).ToUpperInvariant();
+        var cursorKey = MaintenancePersistence.Key("", "", $"cursor:failed-parking:{server}:{ownerCategory}");
         var cursor = MaintenancePersistence.Read<ScanCursor>(_dbContext, cursorKey);
         var rows = await _dbContext.MaintenanceState.FromSqlInterpolated($"""
             SELECT Key, Data FROM torrentarr_maintenance_state
             WHERE substr(Key, -15) = '|failed-parking'
                 AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Server') END = {server}
+                AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.OwnerCategory') END = {ownerCategory}
                 AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Stage') END IN ('moving', 'queue')
             ORDER BY CASE WHEN Key > {cursor.Position} THEN 0 ELSE 1 END, Key
             LIMIT 50
@@ -201,7 +204,8 @@ public partial class ArrImportService
         var raw = await ReadParkingReceiptAsync(key, ct) ?? throw new IOException("The move receipt disappeared.");
         var saved = FailedTorrentReceipt.Parse(raw);
         if (saved.Stage == "done") return;
-        if (saved.AddedOn != receipt.AddedOn || saved.Destination != receipt.Destination || saved.Server != receipt.Server)
+        if (saved.AddedOn != receipt.AddedOn || saved.Destination != receipt.Destination || saved.Server != receipt.Server
+            || saved.OwnerCategory != CategoryPathHelper.NormalizeCategory(arr.Category).ToUpperInvariant())
             throw new IOException("The move receipt changed.");
         receipt = saved;
         if (receipt.Stage == "moving")

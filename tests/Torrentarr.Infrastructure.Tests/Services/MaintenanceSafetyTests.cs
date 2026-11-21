@@ -47,6 +47,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
             AddedOn = torrent.AddedOn,
             SubmittedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             Server = new string('A', 64),
+            OwnerCategory = "MOVIES",
             MovieId = 10,
             Path = "/downloads/movie.mkv",
             ContentPath = torrent.ContentPath,
@@ -65,7 +66,7 @@ public sealed class MaintenanceSafetyTests : IDisposable
         ClientConfig.Maintenance.RecycleBin.Enabled = false;
         ClientConfig.CategorySeeding.HitAndRunMode = "disabled";
         torrent.Category = "parked";
-        var receipt = new FailedTorrentReceipt(torrent.AddedOn, "server", "client", "source", "parked",
+        var receipt = new FailedTorrentReceipt(torrent.AddedOn, "server", "client", "SOURCE", "source", "parked",
             torrent.SavePath, torrent.ContentPath, "done", [7], false, false, []);
         MaintenancePersistence.Write(_db, FailedTorrentReceipt.Key(torrent), receipt);
         var result = await _deletion.RemoveTorrentAsync("one", torrent.Hash, true);

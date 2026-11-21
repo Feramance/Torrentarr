@@ -1054,8 +1054,9 @@ fresh client inventory, positive matching history and no active import command;
 it never triggers a new submission. Database updates match the original download
 epoch so a re-added torrent cannot inherit success. A SQLite partial index bounds
 receipt selection to pending rescues for that Arr server.
-A pending claim tied to a changed Arr server configuration remains held until its
-original server configuration is restored and its outcome can be inspected.
+A pending claim is scoped to the original Arr server and owner category. A
+configuration change holds the claim until that scope is restored and its
+outcome can be inspected.
 Unreadable or incomplete receipts raise an Issue and preserve removal protection
 until valid database evidence is restored.
 
@@ -1081,8 +1082,8 @@ queue-only removal. Configured blocklisting uses that same queue request. A
 replacement is queued only after a fresh Arr queue read confirms clearance.
 Pending and confirmed import rescue take precedence over the move.
 
-SQLite records the original client, download epoch, Arr server, paths and queue
-identities before the category change. Catalog sync can continue the queue step
+SQLite records the original client, download epoch, Arr server and owner category,
+paths, and queue identities before the category change. Catalog sync can continue the queue step
 after a restart, including after the policy is disabled. It reviews up to 50
 pending receipts per batch with a 30-second budget. An ambiguous blocklist response
 holds the operation if the row is still present. A move never falls back to a

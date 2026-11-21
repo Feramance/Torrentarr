@@ -16,9 +16,9 @@ The logo is true vector artwork with transparent negative space, traced and shad
 
 ## Arr activity
 
-Expand **Search activity** on an Arr worker row for the ordered candidates
-remaining from its most recent proactive planning pass and the worker's recent
-decisions. Refresh to plan against the latest usable synced catalog with the
+Expand **Search activity** on an Arr worker row for ordered proactive candidates
+and the worker's recent decisions. Refresh to plan against the latest usable
+synced catalog with the
 worker's eligibility, ordering and search scopes. The timestamp and age refer to
 the most recent completed catalog sync. Preview also evaluates the configured
 search gates with current observations. An incomplete catalog sync or changed

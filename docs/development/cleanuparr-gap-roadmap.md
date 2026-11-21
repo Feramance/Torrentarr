@@ -196,7 +196,9 @@ Use a fresh client snapshot and validate the effective save path and automatic t
 - [ ] Confirmed import rescue wins over parking. Failed queue removal or a restart between steps resumes reconciliation without repeating a confirmed move, blocklisting twice or falling back to deletion.
 - [ ] **Ready to ship.** Evidence: [failed torrent action](../configuration/torrents.md#failed-torrent-action),
   per-client destination settings and editor, disposable queue and restart fixtures,
-  and retained-torrent protection tests. Release-commit and layout verification are pending.
+  and retained-torrent protection tests. Both config APIs preserve destinations
+  through partial saves and client rename. Browser checks covered the selector at
+  390px and 1440px.
 
 ## 11. Seeder-count and inactivity retirement guards
 
@@ -252,8 +254,10 @@ pending.
 ## Local validation
 
 The non-live .NET suites passed locally: 494 Core, 469 Host, and 1,785
-Infrastructure tests. The focused Release regressions cover catalog observations,
-search preview, and failed torrent category recovery. The OpenAPI drift-tool
+Infrastructure tests. Focused Release reruns cover catalog observations, search
+preview, and failed torrent category recovery. Subsequent ownership isolation
+checks passed 276 Infrastructure tests and all three destination API tests.
+The full WebUI suite passed 516 tests. The OpenAPI drift-tool
 suite passed 27 tests, and the release commit hooks checked both builds.
 
 The Docker Compose build and redeploy passed its health check with the existing
@@ -262,7 +266,9 @@ were exercised at 390px and 1440px. Search preview returned current catalog
 evidence, and the selector listed live categories by client and disabled those
 owned by Arr. The editor was closed without saving. Browser review also checked
 the file filter preview and webhook editor at both widths. Webhook destinations
-and externally issued API keys remain editable without a token generator. Destructive and
+and externally issued API keys remain editable without a token generator.
+Browser review also verified the retirement and hardlink settings and opened
+matching logs from a search decision. Destructive and
 retention-changing paths were exercised against disposable fixtures.
 
 Keep the new automation switches off during upgrade if you want to retain

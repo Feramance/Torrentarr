@@ -16,6 +16,7 @@ internal sealed class ImportRescueReceipt
 {
     public long AddedOn { get; set; }
     public string Server { get; set; } = "";
+    public string OwnerCategory { get; set; } = "";
     public int MovieId { get; set; }
     public string Path { get; set; } = "";
     public string ContentPath { get; set; } = "";
@@ -29,7 +30,7 @@ internal sealed class ImportRescueReceipt
         if (receipt == null || receipt.Stage is not ("pending" or "confirmed" or "unconfirmed" or "clear")
             || receipt.AddedOn <= 0 || receipt.MovieId <= 0 || receipt.SubmittedAt is <= 0 or > 253402300799
             || string.IsNullOrWhiteSpace(receipt.Server) || receipt.Server.Length != 64 || !receipt.Server.All(Uri.IsHexDigit)
-            || string.IsNullOrWhiteSpace(receipt.Path) || string.IsNullOrWhiteSpace(receipt.ContentPath)
+            || string.IsNullOrWhiteSpace(receipt.OwnerCategory) || string.IsNullOrWhiteSpace(receipt.Path) || string.IsNullOrWhiteSpace(receipt.ContentPath)
             || string.IsNullOrWhiteSpace(receipt.SavePath))
             throw new InvalidDataException("Stored import rescue evidence is incomplete; preserving its claim.");
         return receipt;
@@ -70,13 +71,15 @@ public partial class ArrImportService
         if (instance == null || !_config.ArrInstances.TryGetValue(instance, out var arr)
             || !arr.Type.Equals("radarr", StringComparison.OrdinalIgnoreCase)) return;
         var server = ArrActivityTracking.ServerKey(arr);
-        var cursorKey = MaintenancePersistence.Key("", "", "cursor:import-rescue:" + server);
+        var ownerCategory = CategoryPathHelper.NormalizeCategory(arr.Category).ToUpperInvariant();
+        var cursorKey = MaintenancePersistence.Key("", "", $"cursor:import-rescue:{server}:{ownerCategory}");
         var cursor = MaintenancePersistence.Read<ScanCursor>(_dbContext, cursorKey);
         var rows = await _dbContext.MaintenanceState.FromSqlInterpolated($"""
             SELECT Key, Data FROM torrentarr_maintenance_state
             WHERE substr(Key, -14) = '|import-rescue'
                 AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Stage') END = 'pending'
                 AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Server') END = {server}
+                AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.OwnerCategory') END = {ownerCategory}
             ORDER BY CASE WHEN Key > {cursor.Position} THEN 0 ELSE 1 END, Key
             LIMIT 100
             """).AsNoTracking().ToListAsync(ct);
@@ -164,8 +167,9 @@ public partial class ArrImportService
             { Impact = "Stored import rescue evidence is incomplete or unreadable. Its claim is preserved; restore valid database evidence before automatic removal." }, ct);
             return ImportRescueOutcome.Pending;
         }
+        var ownerCategory = CategoryPathHelper.NormalizeCategory(arr.Category).ToUpperInvariant();
         var sameEpoch = arr.Type.Equals("radarr", StringComparison.OrdinalIgnoreCase)
-            && receipt.AddedOn == torrent.AddedOn && receipt.Server == ArrActivityTracking.ServerKey(arr);
+            && receipt.OwnerCategory == ownerCategory && receipt.AddedOn == torrent.AddedOn && receipt.Server == ArrActivityTracking.ServerKey(arr);
         var sameDownload = sameEpoch && ClientPathKey(receipt.ContentPath) == ClientPathKey(torrent.ContentPath)
             && ClientPathKey(receipt.SavePath) == ClientPathKey(torrent.SavePath);
         if (sameDownload && receipt.Stage == "confirmed") return ImportRescueOutcome.Confirmed;
@@ -179,9 +183,9 @@ public partial class ArrImportService
         try
         {
             if (receipt.Stage == "pending" && (receipt.Server != ArrActivityTracking.ServerKey(arr)
-                || !arr.Type.Equals("radarr", StringComparison.OrdinalIgnoreCase)))
+                || receipt.OwnerCategory != ownerCategory || !arr.Type.Equals("radarr", StringComparison.OrdinalIgnoreCase)))
             {
-                if (_issues != null) await _issues.ReportAsync(issue with { Impact = "The pending rescue belongs to a previous Arr server configuration. Restore that server configuration to reconcile its import outcome." }, token);
+                if (_issues != null) await _issues.ReportAsync(issue with { Impact = "The pending rescue belongs to a previous Arr server or category configuration. Restore that configuration to reconcile its import outcome." }, token);
                 return ImportRescueOutcome.Pending;
             }
             using var client = new RadarrClient(arr.URI, arr.APIKey, arr.SkipTLSVerify);
@@ -265,6 +269,7 @@ public partial class ArrImportService
             {
                 AddedOn = torrent.AddedOn,
                 Server = ArrActivityTracking.ServerKey(arr),
+                OwnerCategory = ownerCategory,
                 MovieId = matching[0].MovieId!.Value,
                 Path = prepared.File["path"]!.Value<string>()!,
                 ContentPath = torrent.ContentPath,

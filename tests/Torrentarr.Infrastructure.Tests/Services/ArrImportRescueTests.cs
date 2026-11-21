@@ -187,6 +187,9 @@ public sealed class ArrImportRescueTests : IAsyncDisposable
             .ReturnsAsync(() => readded ? [new TorrentInfo { Hash = _torrent.Hash, AddedOn = 2 }] : []);
         _config.ArrInstances["Radarr-Movies"].Torrent.RescueBlockedImports = false;
 
+        AddArrSharingServer();
+        await service.ReconcileImportRescuesAsync("other");
+        HasPendingReceipt(_db).Should().BeTrue();
         await service.ReconcileImportRescuesAsync("movies");
 
         _db.ChangeTracker.Clear();
@@ -385,6 +388,14 @@ public sealed class ArrImportRescueTests : IAsyncDisposable
         File.Exists(Path.Combine(_directory, "Movie", "extra.exe")).Should().BeTrue();
     }
 
+    private void AddArrSharingServer() => _config.ArrInstances["Radarr-Other"] = new()
+    {
+        URI = _config.ArrInstances["Radarr-Movies"].URI,
+        APIKey = "fixture-secret",
+        Type = "radarr",
+        Category = "other"
+    };
+
     private void EnableParking()
     {
         var settings = _config.ArrInstances["Radarr-Movies"].Torrent;
@@ -414,6 +425,10 @@ public sealed class ArrImportRescueTests : IAsyncDisposable
         using var restartedDb = OpenDb();
         _queueDeleteStatus = 200;
         _config.ArrInstances["Radarr-Movies"].Torrent.FailedTorrentAction = FailedTorrentRouting.Existing;
+        AddArrSharingServer();
+        await Service(restartedDb).ReconcileFailedTorrentMovesAsync("other");
+        _queueDeletes.Should().ContainSingle();
+        (await restartedDb.SonarrSearchRetries.CountAsync()).Should().Be(0);
         await Service(restartedDb).ReconcileFailedTorrentMovesAsync("movies");
         await Service(restartedDb).ReconcileFailedTorrentMovesAsync("movies");
         _client.Verify(client => client.SetCategoryAsync(It.IsAny<List<string>>(), "parked", It.IsAny<CancellationToken>()), Times.Once);
