@@ -63,6 +63,9 @@ Scheduled previews also reconcile older alerts for the operations they inspect; 
 
 ## Library-aware hardlink auditing
 
+Open **Maintenance → Storage → Hardlink audit** for the selected client. The
+library-entry budget is under **Advanced**.
+
 Enable `Maintenance.Hardlinks.CountLinksInsideRoot` to distinguish a library link
 from copies linked only inside download or cross-seed folders. List local library
 and ignored roots explicitly. Each root must match a `Maintenance.PathMappings`

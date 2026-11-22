@@ -27,9 +27,10 @@ copies the issue's ID, status, summary, impact, and remediation.
 
 ## Webhook alerts
 
-In **Settings → Issue alerts**, save a webhook destination and select the issue
+In **Settings → General → Issue alerts**, save a webhook destination and select the issue
 types to send. Use **Send test** to check the saved destination independently of
-automatic delivery. The Host sends transitions when alerts are enabled.
+automatic delivery. The Host sends selected transitions when alerts are enabled.
+An empty selection sends no automatic alerts.
 
 ```toml
 [Settings]

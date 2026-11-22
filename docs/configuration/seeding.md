@@ -195,7 +195,8 @@ payload counter. A fresh unchanged counter must span the configured window. [qBi
 Uploads, counter resets, identity changes, and missing observations restart the
 window. A gap longer than twice the client scan interval breaks continuity.
 
-Use the same keys in `TorrentClient.<id>.CategorySeeding`. Category overrides
+Open **Settings → Torrent Clients**, edit the client, and find both controls in
+**Seeding and Hit & Run**. Use the same keys in `TorrentClient.<id>.CategorySeeding`. Category overrides
 inherit the client defaults when blank. Enter zero in an override to disable
 that guard for the category. The client editor shows the resulting requirements.
 The Host retains inactive observation rows for up to seven days. Disabling the

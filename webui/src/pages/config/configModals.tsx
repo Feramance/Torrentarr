@@ -1,6 +1,12 @@
 import type { SimpleConfigSection } from "../../config/settingsSections";
 import { requestNavigateTab } from "../../utils/navigateTab";
-import { clientGroups, arrGeneralGroups, simpleGroups } from "./configGroups";
+import {
+  clientGroups,
+  arrGeneralGroups,
+  arrSearchGroups,
+  arrTorrentGroups,
+  simpleGroups,
+} from "./configGroups";
 import React, { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
@@ -375,17 +381,20 @@ export function ArrInstanceModal({
                 )}
               </FieldGroup>
             ))}
-            <FieldGroup
-              title="Entry Search"
-              fields={entryFields}
-              state={state}
-              basePath={[]}
-              onChange={(path, def, value) =>
-                onChange([keyName, ...path], def, value)
-              }
-              sectionKey={keyName}
-              validationErrors={validationErrors}
-            />
+            {arrSearchGroups(entryFields).map((group) => (
+              <FieldGroup
+                key={group.title}
+                title={group.title}
+                fields={group.fields}
+                state={state}
+                basePath={[]}
+                onChange={(path, def, value) =>
+                  onChange([keyName, ...path], def, value)
+                }
+                sectionKey={keyName}
+                validationErrors={validationErrors}
+              />
+            ))}
             <FieldGroup
               title="Quality profiles"
               fields={qualityFields}
@@ -435,17 +444,20 @@ export function ArrInstanceModal({
                 validationErrors={validationErrors}
               />
             )}
-            <FieldGroup
-              title="Torrent Handling"
-              fields={torrentFields}
-              state={state}
-              basePath={[]}
-              onChange={(path, def, value) =>
-                onChange([keyName, ...path], def, value)
-              }
-              sectionKey={keyName}
-              validationErrors={validationErrors}
-            />
+            {arrTorrentGroups(torrentFields).map((group) => (
+              <FieldGroup
+                key={group.title}
+                title={group.title}
+                fields={group.fields}
+                state={state}
+                basePath={[]}
+                onChange={(path, def, value) =>
+                  onChange([keyName, ...path], def, value)
+                }
+                sectionKey={keyName}
+                validationErrors={validationErrors}
+              />
+            ))}
             <FieldGroup
               title="Seeding"
               fields={seedingFields}

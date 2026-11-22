@@ -28,9 +28,12 @@ Torrent settings control:
 
 ### Shared file filter lists
 
-Define reviewed lists under general Settings and reference their case-sensitive
-names from each Arr's Torrent settings. The WebUI collection editor and per-Arr
-list-name editor save the same fields.
+Define reviewed lists under **Settings → General → Shared file filters**. In
+**Settings → Integrations**, edit an Arr instance and enter the case-sensitive
+list names under **File filtering**.
+
+Each definition pairs a unique `Name` with its `Source`. Use a path relative to
+Torrentarr's data directory or a public HTTPS URL as the source.
 
 ```toml
 [Settings]
@@ -467,7 +470,7 @@ StalledDelay = -1
 
 ### qBittorrent stall safeguards
 
-These opt-in settings are available in the Arr integration's torrent settings.
+These opt-in settings are under **Stall safeguards** in the Arr integration editor.
 Each defaults to `0` or `false`.
 
 | Setting | Behavior |
@@ -1000,7 +1003,8 @@ Configured file inclusion/exclusion rules determine import eligibility. If allow
 ## Rescue supported blocked imports
 
 `RescueBlockedImports` defaults to `false` and is available for Radarr instances.
-Enable it in the Arr torrent settings or the instance's Torrent section.
+Enable it under **Failed torrents and import rescue** in the Radarr editor or in
+the instance's `Torrent` section.
 
 ```toml
 [Radarr-Movies.Torrent]
@@ -1063,7 +1067,7 @@ until valid database evidence is restored.
 
 ### Failed torrent action
 
-In Torrent Handling, each Arr integration can **Use existing policy** (the
+Under **Failed torrents and import rescue**, each Arr integration can **Use existing policy** (the
 default) or **Move to a category and keep files**. For the move policy, select an
 existing category on every configured, enabled qBittorrent client. The editor
 shows categories on their own clients and identifies destinations managed by Arr.
@@ -1072,7 +1076,9 @@ failed and recheck categories, and destinations owned by an Arr are unavailable.
 
 Set `FailedTorrentAction = 'move'` and configure a separate
 `FailedTorrentDestinations = [{ Client = 'qBit', Category = 'parked' }]` entry per
-client in the Arr's Torrent section when using TOML. Torrentarr requires a
+client in the Arr's Torrent section when using TOML. `Client` is the configured
+qBittorrent client ID and `Category` is an existing category on that client.
+Torrentarr requires a
 fresh, unambiguous torrent identity and manual torrent management with known
 absolute save and content paths. It holds automatic or unknown torrent management
 because a category change can relocate data.

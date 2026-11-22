@@ -471,7 +471,12 @@ export const CONFIG_SCHEMA = {
         "uiExpose": true,
         "applyLive": true,
         "requiresRestart": false,
-        "description": "Supported values are worker, import, and tracker."
+        "options": [
+          "worker",
+          "import",
+          "tracker"
+        ],
+        "description": "Choose the issues that trigger notifications. Leave empty to send no automatic alerts."
       }
     ],
     "WebUI": [

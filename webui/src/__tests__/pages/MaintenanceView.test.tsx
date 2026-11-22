@@ -221,6 +221,29 @@ it("shows the selected category without scanning or mutating", async () => {
   expect(api.updateConfig).not.toHaveBeenCalled();
   expect(api.maintenanceCommand).not.toHaveBeenCalled();
 });
+
+it("shows library and ignored roots together in the hardlink audit", async () => {
+  show();
+  await loaded();
+  const tool = openTool("Hardlink audit");
+  const audit = within(tool);
+  const advanced = audit
+    .getByRole("heading", { name: "Advanced" })
+    .closest("section")!;
+  const library = audit.getByRole("textbox", { name: "Library roots" });
+  const ignored = audit.getByRole("textbox", {
+    name: "Ignored hardlink roots",
+  });
+  expect(library).toBeVisible();
+  expect(ignored).toBeVisible();
+  expect(advanced).not.toContainElement(library);
+  expect(advanced).not.toContainElement(ignored);
+  expect(
+    within(advanced).getByRole("textbox", {
+      name: "Maximum library entries per audit",
+    }),
+  ).toBeVisible();
+});
 it("shows multiple tools and their advanced fields together", async () => {
   show();
   await loaded();

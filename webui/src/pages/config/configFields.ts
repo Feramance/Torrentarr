@@ -85,6 +85,42 @@ function fields(
             : undefined;
         if (webError) return webError;
         if (
+          f.key === "EntrySearch.QuietHoursStart" ||
+          f.key === "EntrySearch.QuietHoursEnd"
+        ) {
+          const time = value === undefined ? f.default : value;
+          if (
+            typeof time !== "string" ||
+            !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)
+          )
+            return "Enter a time in HH:mm format.";
+          const entrySearch = context.section?.EntrySearch as
+            | Record<string, unknown>
+            | undefined;
+          if (
+            f.key === "EntrySearch.QuietHoursEnd" &&
+            time === (entrySearch?.QuietHoursStart ?? "22:00")
+          )
+            return "Quiet hours start and end must differ.";
+        }
+        if (
+          f.key === "EntrySearch.QuietHoursTimeZone" &&
+          value !== undefined &&
+          (typeof value !== "string" || !value.trim())
+        )
+          return "Enter an IANA timezone, such as Etc/UTC.";
+        if (
+          (f.key === "EntrySearch.IncludeTags" ||
+            f.key === "EntrySearch.ExcludeTags") &&
+          Array.isArray(value) &&
+          (value.length > 100 ||
+            value.some(
+              (tag) =>
+                typeof tag === "string" && (!tag.trim() || tag.length > 100),
+            ))
+        )
+          return "Use up to 100 nonempty tag labels of at most 100 characters each.";
+        if (
           (f.key === "Maintenance.Schedule" ||
             (f.key.startsWith("Maintenance.Operations.") &&
               f.key.endsWith(".Schedule") &&

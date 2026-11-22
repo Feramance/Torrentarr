@@ -74,11 +74,15 @@ export function basicValidation(
       return undefined;
     }
     case "tags":
-      return value != null &&
-        (!Array.isArray(value) ||
-          value.some((item) => typeof item !== "string"))
-        ? `${label} must be a list of strings.`
-        : undefined;
+      if (value == null) return undefined;
+      if (
+        !Array.isArray(value) ||
+        value.some((item) => typeof item !== "string")
+      )
+        return `${label} must be a list of strings.`;
+      if (def.options && value.some((item) => !def.options!.includes(item)))
+        return `${label} must use these choices: ${def.options.join(", ")}.`;
+      return undefined;
     default:
       return undefined;
   }

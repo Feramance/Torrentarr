@@ -116,6 +116,7 @@ export const maintenanceOperations: {
       "Hardlinks.Tag",
       "Hardlinks.CountLinksInsideRoot",
       "Hardlinks.LibraryRoots",
+      "Hardlinks.IgnoredRoots",
     ],
   },
   {

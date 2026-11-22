@@ -65,6 +65,10 @@ Torrentarr's configuration is organized into several sections:
 
 The `[Settings]` section contains global configuration that applies to all Torrentarr operations.
 
+Use `SharedFileFilters` for [named file filter sources](torrents.md#shared-file-filter-lists).
+Use `IssueAlertsEnabled`, `IssueAlertsSecretUrl`, and `IssueAlertTypes` to configure
+[issue webhook delivery](../webui/issues.md#webhook-alerts).
+
 ### Complete Settings Example
 
 ```toml
@@ -897,7 +901,12 @@ UserName = "admin"
 Password = "adminpass"
 ```
 
-For detailed qBittorrent configuration, see the [qBittorrent Configuration Guide](qbittorrent.md).
+Both `[qBit]` and `[TorrentClient.<id>]` support `AuthMode` and `APIKey`.
+The default authentication mode is `legacy`. [API key authentication](qbittorrent.md#api-key-authentication)
+
+See [retirement guards](seeding.md#retirement-guards) for client seeding defaults
+and category overrides, and [library-aware hardlink auditing](maintenance.md#library-aware-hardlink-auditing)
+for root-based storage settings.
 
 ---
 
@@ -912,9 +921,9 @@ Arr sections follow the naming pattern `[<Type>-<Name>]`:
 
 Each Arr instance has its own section with subsections for:
 
-- `[<Type>-<Name>.Search]` - Automated searching
-- `[<Type>-<Name>.Overseerr]` - Request integration (Radarr/Sonarr only)
-- `[<Type>-<Name>.Torrent]` - Torrent management
+- `[<Type>-<Name>.EntrySearch]` - Automated searching, including [pacing, library gates, and quiet hours](search/index.md#proactive-search-pacing)
+- `[<Type>-<Name>.EntrySearch.Overseerr]` - Request integration (Radarr/Sonarr only)
+- `[<Type>-<Name>.Torrent]` - Torrent management, including [shared filters](torrents.md#shared-file-filter-lists), [stall safeguards](torrents.md#qbittorrent-stall-safeguards), and [failed torrent handling](torrents.md#import-rejection-and-deferred-removal)
 - `[<Type>-<Name>.Torrent.SeedingMode]` - Seeding configuration
 - `[[Trackers]]` with `ArrInstances` - Per-integration tracker rules
 

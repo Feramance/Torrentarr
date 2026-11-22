@@ -3,6 +3,8 @@ import {
   clientGroups,
   maintenanceGroups,
   arrGeneralGroups,
+  arrSearchGroups,
+  arrTorrentGroups,
   simpleGroups,
 } from "../../pages/config/configGroups";
 import {
@@ -76,6 +78,8 @@ describe("configuration groups", () => {
     ]) {
       const arr = getArrFieldSets(name);
       check(arr.generalFields, arrGeneralGroups(arr.generalFields));
+      check(arr.entryFields, arrSearchGroups(arr.entryFields));
+      check(arr.torrentFields, arrTorrentGroups(arr.torrentFields));
       expect(
         arrGeneralGroups(arr.generalFields)
           .find((g) => g.title === "Connection")!
@@ -95,6 +99,21 @@ describe("configuration groups", () => {
           arr.entryOverseerrFields.length,
       );
     }
+  });
+  it("validates quiet hours using the same boundaries as the Host", () => {
+    const fields = getArrFieldSets("Radarr-test").entryFields;
+    const validate = (key: string, value: unknown) =>
+      fields
+        .find((field) => field.path?.[1] === key)
+        ?.validate?.(value, {
+          root: {},
+          section: { EntrySearch: { QuietHoursStart: "22:00" } },
+        });
+    expect(validate("QuietHoursStart", "7:00")).toMatch(/HH:mm/);
+    expect(validate("QuietHoursEnd", "24:00")).toMatch(/HH:mm/);
+    expect(validate("QuietHoursEnd", "22:00")).toMatch(/must differ/);
+    expect(validate("QuietHoursEnd", "07:00")).toBeUndefined();
+    expect(validate("QuietHoursTimeZone", "")).toMatch(/IANA timezone/);
   });
   it.each(["*/15 * * * *", "0 0 29 2 *", "0,30 1-5/2 * * 0,7"])(
     "accepts cron %s",

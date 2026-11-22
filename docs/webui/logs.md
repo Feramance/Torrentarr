@@ -25,10 +25,17 @@ Multiline exception causes and appended operation/cycle/client/torrent context a
 preserved. A request accepted by Arr is a submission result; check later observation
 messages for completed work.
 
-In **Manage → Recent Runs**, **View related logs** searches the aggregate stream
-by the maintenance run ID. **Return to log browsing** closes the run search.
+## Related logs and support details
+
+In **Maintenance → Recent Runs**, **View related logs** searches the aggregate
+stream by maintenance run ID. In **Processes → Search activity**, the same action
+opens logs for the decision's recorded worker and submission cycle. Related log
+searches include retained rotations. If no matching records remain, use
+**Return to log browsing** to return to the ordinary stream view.
+
 In **Issues**, **Browse worker logs** opens the known worker stream when
-available. **Copy details** copies a support summary from either view.
+available. **Copy details** copies a redacted support summary from an issue,
+maintenance run, or search decision.
 
 ## Detail and retention
 

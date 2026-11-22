@@ -853,14 +853,31 @@ export function FieldGroup({
           <label htmlFor={dataPath} title={tooltip}>
             {field.label}
           </label>
-          <TagInput
-            ariaLabel={field.label}
-            value={tags}
-            onChange={(newTags) => {
-              onChange(path, field, newTags);
-            }}
-            placeholder={field.placeholder}
-          />
+          {field.options?.length ? (
+            <Select
+              isMulti
+              inputId={dataPath}
+              aria-label={field.label}
+              aria-invalid={errorMessage ? true : undefined}
+              options={field.options.map((value) => ({ label: value, value }))}
+              value={tags.map((value) => ({ label: value, value }))}
+              onChange={(selection) =>
+                onChange(
+                  path,
+                  field,
+                  selection.map(({ value }) => value),
+                )
+              }
+              styles={selectStyles}
+            />
+          ) : (
+            <TagInput
+              ariaLabel={field.label}
+              value={tags}
+              onChange={(newTags) => onChange(path, field, newTags)}
+              placeholder={field.placeholder}
+            />
+          )}
           {description && (
             <div className="field-description">{description}</div>
           )}

@@ -147,6 +147,60 @@ async function openSection(name: string): Promise<void> {
   await userEvent.click(button);
 }
 
+it("groups the new Arr fields with the settings they control", async () => {
+  server.use(
+    http.get("/web/config", () => HttpResponse.json(configWithInstances)),
+  );
+  renderConfig();
+  await openSection("Radarr-1080");
+
+  const group = (name: string) =>
+    within(
+      screen.getByRole("heading", { name, exact: true }).closest("section")!,
+    );
+  expect(
+    group("Proactive search controls").getByRole("textbox", {
+      name: "Active-download ceiling",
+    }),
+  ).toBeVisible();
+  expect(
+    group("Quiet hours").getByRole("textbox", { name: "Quiet hours timezone" }),
+  ).toBeVisible();
+  expect(
+    group("Failed torrents and import rescue").getByRole("checkbox", {
+      name: "Rescue supported blocked imports",
+    }),
+  ).toBeVisible();
+  expect(
+    group("Stall safeguards").getByRole("checkbox", {
+      name: "Reset stalled grace on download progress",
+    }),
+  ).toBeVisible();
+  expect(
+    group("File filtering").getByRole("textbox", {
+      name: "Shared file filter lists",
+    }),
+  ).toBeVisible();
+});
+
+it("offers the supported issue alert types in the General editor", async () => {
+  server.use(
+    http.get("/web/config", () => HttpResponse.json(configWithInstances)),
+  );
+  renderConfig();
+  const issueTypes = await screen.findByRole("combobox", {
+    name: "Issue types",
+  });
+  await userEvent.click(issueTypes);
+  expect(
+    within(screen.getByRole("listbox"))
+      .getAllByRole("option")
+      .map((option) => option.textContent),
+  ).toEqual(["worker", "import", "tracker"]);
+  await userEvent.click(screen.getByRole("option", { name: "tracker" }));
+  expect(screen.getByRole("button", { name: "Remove tracker" })).toBeVisible();
+});
+
 it("saves the explicit choice to keep protection off for an unchanged monitor list", async () => {
   const config = {
     ...configQbitOnly,
