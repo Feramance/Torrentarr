@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "@mantine/core": "^9.8.0",
+    "@mantine/core": "^9.8.1",
     "@mantine/hooks": "^9.8.0",
     "@melloware/react-logviewer": "^6.6.0",
     "@tanstack/react-table": "^9.3.1",
