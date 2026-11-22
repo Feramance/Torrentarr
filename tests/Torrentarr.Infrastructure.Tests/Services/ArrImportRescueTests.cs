@@ -20,7 +20,8 @@ namespace Torrentarr.Infrastructure.Tests.Services;
 
 public sealed class ArrImportRescueTests : IAsyncDisposable
 {
-    private readonly string _directory = Path.Combine(Path.GetTempPath(), "rescue-" + Guid.NewGuid().ToString("N"));
+    // macOS can expose the system temporary directory through a symlink.
+    private readonly string _directory = Path.Combine(AppContext.BaseDirectory, "rescue-" + Guid.NewGuid().ToString("N"));
     private readonly HttpListener _listener = new();
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _server;
@@ -386,6 +387,19 @@ public sealed class ArrImportRescueTests : IAsyncDisposable
         (await Service(filters: filters).TryRescueImportAsync(_torrent, "movies")).Should().Be(ImportRescueOutcome.Pending);
         _commands.Single()["files"]!.Should().HaveCount(1);
         File.Exists(Path.Combine(_directory, "Movie", "extra.exe")).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SymlinkedLocalMappingCannotAuthorizeRescue()
+    {
+        if (OperatingSystem.IsWindows()) return; // Symlink creation requires extra privileges on Windows.
+        var alias = Path.Combine(_directory, "alias");
+        Directory.CreateSymbolicLink(alias, _directory);
+        _config.TorrentClients["fixture"].Maintenance.PathMappings[0].LocalPath = alias;
+
+        (await Service().TryRescueImportAsync(_torrent, "movies")).Should().Be(ImportRescueOutcome.NotApplicable);
+        _commands.Should().BeEmpty();
+        HasPendingReceipt(_db).Should().BeFalse();
     }
 
     private void AddArrSharingServer() => _config.ArrInstances["Radarr-Other"] = new()

@@ -1021,7 +1021,8 @@ fresh queue and client observations, unique client ownership, a stable download
 identity, and explicit client-to-local path mappings. The Arr output path must
 match the client content path or its explicitly mapped local path. Each selected file must be
 owned by the torrent, accessible through its mapping, and match its reported
-size. Current local exclusions, extension rules and shared filter snapshots all
+size. Use the physical local path for mappings, including when macOS exposes
+the directory under a symlinked alias. Current local exclusions, extension rules and shared filter snapshots all
 apply. Excluded extras stay outside the submitted import.
 
 Torrentarr submits one `ManualImport` command in Copy mode, preserving the client
