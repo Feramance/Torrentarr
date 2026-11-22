@@ -146,7 +146,10 @@ public class ArrMediaService : IArrMediaService
         if (version != await SearchCatalogState.ReadAsync(_dbContext, catalogKey, ct)
             || year != await SearchCatalogState.ReadAsync(_dbContext, SearchCatalogState.YearKey(name), ct)
             || _config.Revision != _config.LatestRevision) return null;
-        return (version.At, plans.Count, plans.Take(SearchDecisionHistory.MaxPreview).Select(SearchDecisionHistory.Describe).ToArray());
+        // A successful submission in the first pass normally clears the same candidate from the upgrade pass.
+        var items = plans.Select(SearchDecisionHistory.Describe)
+            .DistinctBy(item => (item.Id, item.Type, item.SeriesId, item.Season, item.ArtistId, item.AuthorId, item.Scope)).ToArray();
+        return (version.At, items.Length, items.Take(SearchDecisionHistory.MaxPreview).ToArray());
 
         async Task AddPlansAsync(List<SearchCandidate> candidates)
         {

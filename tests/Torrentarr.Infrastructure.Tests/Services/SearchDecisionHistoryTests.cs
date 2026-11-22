@@ -6,6 +6,7 @@ using Newtonsoft.Json.Linq;
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database;
+using Torrentarr.Infrastructure.Database.Models;
 using Torrentarr.Infrastructure.Endpoints;
 using Torrentarr.Infrastructure.Services;
 using Xunit;
@@ -35,6 +36,32 @@ public sealed class SearchDecisionHistoryTests
     }
 
     [Fact]
+    public async Task RecordingPrunesOldAndExcessDecisionsForOnlyTheCurrentInstance()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var now = TimeProvider.System.GetUtcNow().ToUnixTimeSeconds();
+        db.SearchDecisions.AddRange(Enumerable.Range(1, SearchDecisionHistory.MaxHistory).Select(age =>
+            new SearchDecision { Instance = "Radarr", Key = $"fresh:{age}", ObservedAt = now - age }));
+        db.SearchDecisions.AddRange(
+            new() { Instance = "Radarr", Key = "expired", ObservedAt = now - SearchDecisionHistory.RetentionSeconds - 1 },
+            new() { Instance = "Other", Key = "untouched", ObservedAt = now - SearchDecisionHistory.RetentionSeconds - 1 });
+        await db.SaveChangesAsync();
+
+        var history = new SearchDecisionHistory(db, NullLogger.Instance, "Radarr", new() { URI = "http://fixture" }, TimeProvider.System);
+        var candidate = new SearchCandidate { ArrId = 1000, Type = "Movie", Reason = "Missing" };
+        await history.RecordAsync(new(candidate, "", [candidate], 1, 1), "command limit", "cycle", default);
+
+        var retained = await db.SearchDecisions.AsNoTracking().Where(row => row.Instance == "Radarr").ToListAsync();
+        Assert.Equal(SearchDecisionHistory.MaxHistory, retained.Count);
+        Assert.DoesNotContain(retained, row => row.Key == "expired" || row.Key == $"fresh:{SearchDecisionHistory.MaxHistory}");
+        Assert.Contains(retained, row => row.Key.StartsWith("decision:"));
+        Assert.True(await db.SearchDecisions.AsNoTracking().AnyAsync(row => row.Instance == "Other" && row.Key == "untouched"));
+    }
+
+    [Fact]
     public async Task PreviewReadsCurrentCatalogAndDoesNotMutateHistory()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -56,6 +83,7 @@ public sealed class SearchDecisionHistoryTests
         config.ArrInstances["Radarr"] = arr;
         arr.Category = "movies";
         arr.Search.SearchByYear = false;
+        arr.Search.QualityUnmetSearch = true;
         var restart = new DatabaseRestartCoordinator();
         var executor = new SearchExecutor(NullLogger<SearchExecutor>.Instance, config, db,
             new QualityProfileSwitcherService(NullLogger<QualityProfileSwitcherService>.Instance, db, restart), restart);
@@ -65,7 +93,17 @@ public sealed class SearchDecisionHistoryTests
             new SearchCatalogState(ArrActivityTracking.ServerKey(arr), arr.Category, clock.GetUtcNow().ToUnixTimeSeconds(), true, "fixture"));
         db.Movies.AddRange(
             new() { ArrInstance = "Radarr", ArrId = 1, Monitored = true, Reason = "Missing", Year = 2000 },
-            new() { ArrInstance = "Radarr", ArrId = 2, Monitored = true, Reason = "Missing", Year = 2010 });
+            new()
+            {
+                ArrInstance = "Radarr",
+                ArrId = 2,
+                Monitored = true,
+                HasFile = true,
+                QualityMet = false,
+                CustomFormatMet = true,
+                Reason = "Quality",
+                Year = 2010
+            });
         await db.SaveChangesAsync();
         await history.RecordAsync(upgrade, "command limit", "skip-a", default);
         await history.RecordAsync(upgrade, "command limit", "skip-b", default);
@@ -79,6 +117,8 @@ public sealed class SearchDecisionHistoryTests
         var snapshot = await ReadAsync();
         Assert.Equal(new[] { 1, 2 }, snapshot.GetProperty("preview").GetProperty("items").EnumerateArray()
             .Select(item => item.GetProperty("id").GetInt32()));
+        Assert.Equal(2, snapshot.GetProperty("preview").GetProperty("candidateCount").GetInt32());
+        Assert.Equal("Quality", snapshot.GetProperty("preview").GetProperty("items")[1].GetProperty("reason").GetString());
         var skip = Assert.Single(snapshot.GetProperty("history").EnumerateArray());
         Assert.Equal(2, skip.GetProperty("occurrences").GetInt32());
         Assert.Equal("Upgrade", skip.GetProperty("item").GetProperty("reason").GetString());

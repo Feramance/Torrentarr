@@ -25,7 +25,9 @@ search gates with current observations. An incomplete catalog sync or changed
 Arr server can make the preview unavailable. An eligible candidate can change
 before execution. Preview reads do not submit commands or change Arr state.
 
-The preview displays up to 50 planned candidates. The worker keeps up to 200
+The preview displays up to 50 planned candidates. When the same item and search
+scope appear in both a missing pass and its additive upgrade pass, the first
+entry supplies the displayed reason. The worker keeps up to 200
 recent decisions per instance in Torrentarr's SQLite extension. Decisions expire
 after seven days.
 Repeated deferrals for the same item, reason and outcome share an observation
