@@ -729,8 +729,10 @@ public class SeedingService : ISeedingService
                 }
             }
             var tags = torrent.Tags.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-            foreach (var tag in tags.Where(t => t == IgnoredTag || t == FreeSpacePausedTag))
-                Block("torrent.protected-tag", $"Blocking tag '{tag}' is present", "Resolve the owning ignore/free-space policy before removing its tag.");
+            if (tags.Contains(IgnoredTag))
+                Block("torrent.protected-tag", $"Blocking tag '{IgnoredTag}' is present", "Review the ignore policy before removing its tag.");
+            if (tags.Contains(FreeSpacePausedTag))
+                Block("torrent.free-space-paused", $"Blocking tag '{FreeSpacePausedTag}' is present", "Wait for the free-space policy to resume the torrent.");
             if (torrent.SuperSeeding || torrent.State.Equals("forcedUP", StringComparison.OrdinalIgnoreCase))
                 Block("torrent.protected-state", $"SuperSeeding={torrent.SuperSeeding}; state={torrent.State}", "Disable forced/super-seeding intentionally before removal.");
             var arr = _config.ArrInstances.Values.FirstOrDefault(a => CategoryOwnershipHelper.ArrOwnsTorrent(_config, a, torrent));

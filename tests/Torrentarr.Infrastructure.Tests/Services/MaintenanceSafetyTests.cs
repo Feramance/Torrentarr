@@ -210,6 +210,28 @@ public sealed class MaintenanceSafetyTests : IDisposable
         MaintenanceCoordinator.CanResolvePreviewIssue("maintenance.preview.orphan-prerequisite", "one", preview).Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("blocked", 1, 0, false, true)]
+    [InlineData("partial", 1, 0, false, true)]
+    [InlineData("blocked", 0, 0, false, false)]
+    [InlineData("partial", 1, 1, false, false)]
+    [InlineData("blocked", 1, 0, true, false)]
+    public void MissingFileIssue_RecoversWhenInspectionSucceededDespiteBlockedActions(
+        string state, int blockedActions, int uninspectable, bool stillObserved, bool resolved)
+    {
+        var preview = new MaintenancePlan
+        {
+            OperationResults = [
+                new() { ClientInstanceId = "one", Operation = MaintenanceOperation.OrphanScan, State = "ready" },
+                new() { ClientInstanceId = "one", Operation = MaintenanceOperation.UnregisteredCleanup,
+                    State = state, BlockedActions = blockedActions, Uninspectable = uninspectable }
+            ]
+        };
+        if (stillObserved) preview.Diagnostics.Add(new() { ClientInstanceId = "one", Code = "missing-file" });
+
+        MaintenanceCoordinator.CanResolvePreviewIssue("maintenance.preview.missing-file", "one", preview).Should().Be(resolved);
+    }
+
     public MaintenanceSafetyTests(ITestOutputHelper output)
     {
         _output = output;

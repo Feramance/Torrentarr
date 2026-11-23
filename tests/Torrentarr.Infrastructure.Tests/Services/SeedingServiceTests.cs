@@ -359,6 +359,31 @@ public class SeedingServiceTests
         decision.Reason.Should().Contain("Locally observed seed=0s").And.Contain("deadline risk=unachievable");
     }
 
+    [Theory]
+    [InlineData("qBitrr-free_space_paused", "torrent.free-space-paused", true)]
+    [InlineData("qBitrr-ignored", "torrent.protected-tag", false)]
+    public async Task ProtectedTags_BlockRemovalAndDistinguishFreeSpaceDeferral(string tag, string code, bool expected)
+    {
+        var config = new TorrentarrConfig();
+        config.TorrentClients["client"] = new();
+        var torrent = new TorrentInfo
+        {
+            Hash = "hash",
+            ClientInstanceId = "client",
+            Tags = tag,
+            State = "stoppedDL",
+            IsPrivate = false,
+            Progress = 0.5,
+            AmountLeft = 100,
+            AddedOn = DateTimeOffset.UtcNow.AddDays(-1).ToUnixTimeSeconds()
+        };
+        var decision = await CreateService(config).EvaluateRemovalAsync(torrent, TorrentRemovalIntent.SeedingLimit);
+
+        decision.Allowed.Should().BeFalse();
+        decision.Blockers.Should().Contain(b => b.Code == code);
+        decision.IsExpectedPolicyDeferral().Should().Be(expected, "the blockers were {0}", decision.Reason);
+    }
+
     [Fact]
     public void CategoryOverride_ReplacesOnlyExplicitValues()
     {

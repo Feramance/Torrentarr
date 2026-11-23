@@ -1450,6 +1450,9 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         var results = preview.OperationResults.Where(r => r.ClientInstanceId == client && (operations == null || operations.Contains(r.Operation))).ToList();
         if (code == "maintenance.preview.orphan-prerequisite")
             return results.Any(r => r.Operation == MaintenanceOperation.OrphanScan && r.State is "ready" or "partial");
+        if (code == "maintenance.preview.missing-file")
+            return results.Count > 0 && results.All(r => r.State == "ready"
+                || ((r.State is "partial" or "blocked") && r.Uninspectable == 0 && r.BlockedActions > 0));
         return results.Count > 0 && results.All(r => r.State == "ready");
     }
 }
