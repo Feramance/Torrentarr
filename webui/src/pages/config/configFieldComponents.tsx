@@ -2,7 +2,7 @@ import { FailedTorrentDestinations } from "./FailedTorrentDestinations";
 import { useContext } from "react";
 import { ConfigFieldSearch } from "./ConfigFieldSearch";
 import { SharedFileFilterPreview } from "../../components/SharedFileFilterPreview";
-import { PathMappingsEditor } from "./PathMappingsEditor";
+import { ConfigCollectionEditor } from "./ConfigCollectionEditor";
 import React, {
   useCallback,
   useEffect,
@@ -582,6 +582,7 @@ export function FieldGroup({
       return (
         <FailedTorrentDestinations
           key={key}
+          dataPath={dataPath}
           category={String(
             getValue(state as ConfigDocument, [...basePath, "Category"]) ?? "",
           )}
@@ -817,7 +818,7 @@ export function FieldGroup({
     }
     if (field.type === "collection") {
       return (
-        <PathMappingsEditor
+        <ConfigCollectionEditor
           key={key}
           field={field}
           value={rawValue}
@@ -871,6 +872,8 @@ export function FieldGroup({
             />
           ) : (
             <TagInput
+              id={dataPath}
+              invalid={Boolean(errorMessage)}
               ariaLabel={field.label}
               value={tags}
               onChange={(newTags) => onChange(path, field, newTags)}

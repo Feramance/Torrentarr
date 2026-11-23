@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import { getFailedTorrentDestinations } from "../../api/client";
 import { FailedTorrentDestinations } from "../../pages/config/FailedTorrentDestinations";
@@ -25,14 +26,17 @@ it("offers independent destinations and identifies Arr-managed categories", asyn
       onChange={onChange}
     />,
   );
+  const user = userEvent.setup();
+  await user.click(await screen.findByText("seedbox → other"));
+  expect(
+    screen.getByRole("combobox", { name: "Destination on seedbox" }),
+  ).toBeDisabled();
+  await user.click(screen.getByText("local → No destination"));
   const local = await screen.findByRole("combobox", {
     name: "Destination on local",
   });
   expect(
     screen.getByRole("option", { name: "tv — Arr managed by Sonarr" }),
-  ).toBeDisabled();
-  expect(
-    screen.getByRole("combobox", { name: "Destination on seedbox" }),
   ).toBeDisabled();
   fireEvent.change(local, { target: { value: "parked" } });
   expect(onChange).toHaveBeenCalledWith([

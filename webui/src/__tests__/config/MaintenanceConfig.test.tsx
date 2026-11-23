@@ -3,8 +3,9 @@ import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ConfigDocument } from "../../api/types";
-import { PathMappingsEditor } from "../../pages/config/PathMappingsEditor";
+import { ConfigCollectionEditor } from "../../pages/config/ConfigCollectionEditor";
 import { getClientFields } from "../../pages/config/configFields";
+import { focusFirstValidationError } from "../../pages/config/configDocumentUtils";
 import { validateFieldGroup } from "../../pages/config/configValidation";
 import type { ValidationError } from "../../pages/config/configTypes";
 
@@ -27,7 +28,7 @@ function Editor({ initial = [] }: { initial?: ConfigDocument[] }) {
   );
   return (
     <>
-      <PathMappingsEditor
+      <ConfigCollectionEditor
         field={field}
         value={rows}
         dataPath="qBit.Maintenance.PathMappings"
@@ -49,6 +50,7 @@ describe("path mapping forms", () => {
         initial={[{ ClientPath: "/downloads", LocalPath: "/data", Future: 42 }]}
       />,
     );
+    await user.click(screen.getByText("/downloads → /data", { exact: true }));
     fireEvent.change(screen.getByRole("textbox", { name: "Torrentarr path" }), {
       target: { value: "/data/downloads" },
     });
@@ -64,18 +66,34 @@ describe("path mapping forms", () => {
     await user.click(screen.getByRole("button", { name: "Add path mapping" }));
     expect(result()).toHaveLength(2);
     await user.click(
-      screen.getAllByRole("button", { name: "Remove path mapping" })[1],
+      within(screen.getByRole("group", { name: "Path mapping 2" })).getByRole(
+        "button",
+        { name: "Remove path mapping" },
+      ),
     );
     expect(result()).toHaveLength(1);
   });
 
-  it("shows invalid mappings and keeps their fields visible after correction", () => {
+  it("opens a collapsed invalid mapping and focuses the affected field", () => {
     render(
       <Editor
         initial={[{ ClientPath: "relative", LocalPath: "/data", Future: 42 }]}
       />,
     );
     const row = screen.getByRole("group", { name: "Path mapping 1" });
+    expect(within(row).getByText("Needs attention")).toBeVisible();
+    expect(
+      within(row).getByRole("textbox", { name: "Torrent client path" }),
+    ).not.toBeVisible();
+    focusFirstValidationError([
+      {
+        path: ["qBit", "Maintenance", "PathMappings", "0", "ClientPath"],
+        message: "",
+      },
+    ]);
+    expect(
+      within(row).getByRole("textbox", { name: "Torrent client path" }),
+    ).toHaveFocus();
     expect(
       within(row).getByRole("textbox", { name: "Torrent client path" }),
     ).toHaveAttribute("aria-invalid", "true");
@@ -84,6 +102,24 @@ describe("path mapping forms", () => {
       { target: { value: "/downloads" } },
     );
     expect(result()[0].Future).toBe(42);
+  });
+
+  it("defers required messages on a fresh row until blur or Done", async () => {
+    const user = userEvent.setup();
+    render(<Editor />);
+    await user.click(screen.getByRole("button", { name: "Add path mapping" }));
+    const clientPath = screen.getByRole("textbox", {
+      name: "Torrent client path",
+    });
+    const localPath = screen.getByRole("textbox", { name: "Torrentarr path" });
+    expect(clientPath).toHaveFocus();
+    expect(clientPath).not.toHaveAttribute("aria-invalid");
+    await user.tab();
+    expect(clientPath).toHaveAttribute("aria-invalid", "true");
+    expect(localPath).not.toHaveAttribute("aria-invalid");
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    await user.click(screen.getByText("Path mapping 1", { exact: true }));
+    expect(localPath).toHaveAttribute("aria-invalid", "true");
   });
 
   it("reports indexed field paths for duplicate mappings", () => {

@@ -1124,6 +1124,7 @@ it.each([false, true])(
       );
     };
     await open();
+    await user.click(screen.getByText("/downloads → /data", { exact: true }));
     fireEvent.change(
       screen.getByRole("textbox", { name: "Torrentarr path", exact: true }),
       { target: { value: "/edited" } },
@@ -1138,19 +1139,21 @@ it.each([false, true])(
     ).toHaveValue("/edited");
     expect(mappings).toEqual(initial);
     fail = false;
+    await user.click(screen.getByRole("button", { name: "Done" }));
     await user.click(screen.getByRole("button", { name: "Add path mapping" }));
+    const second = screen.getByRole("group", { name: "Path mapping 2" });
     fireEvent.change(
-      screen.getAllByRole("textbox", {
+      within(second).getByRole("textbox", {
         name: "Torrent client path",
         exact: true,
-      })[1],
+      }),
       { target: { value: "D:\\Downloads\\TV" } },
     );
     fireEvent.change(
-      screen.getAllByRole("textbox", {
+      within(second).getByRole("textbox", {
         name: "Torrentarr path",
         exact: true,
-      })[1],
+      }),
       { target: { value: "/tv files" } },
     );
     await save();
@@ -1171,17 +1174,19 @@ it.each([false, true])(
     ).toBeInTheDocument();
     await open();
     expect(
-      screen.getAllByRole("textbox", {
-        name: "Torrentarr path",
-        exact: true,
-      })[0],
-    ).toHaveValue("/edited");
+      screen.getByText("/downloads → /edited", { exact: true }),
+    ).toBeVisible();
+    const savedSecond = screen.getByRole("group", { name: "Path mapping 2" });
+    if (!savedSecond.hasAttribute("open")) {
+      await user.click(savedSecond.querySelector("summary")!);
+    }
     await user.click(
-      screen.getAllByRole("button", { name: "Remove path mapping" })[1],
+      within(savedSecond).getByRole("button", { name: "Remove path mapping" }),
     );
     await save();
     expect(mappings).toHaveLength(1);
     await open();
+    await user.click(screen.getByText("/downloads → /edited", { exact: true }));
     await user.click(
       screen.getByRole("button", { name: "Remove path mapping" }),
     );

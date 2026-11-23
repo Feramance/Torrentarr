@@ -249,6 +249,16 @@ export function fieldErrorDataPath(
   return fieldPath.join(".");
 }
 
+export function revealConfigTarget(target: HTMLElement): void {
+  const containers: HTMLDetailsElement[] = [];
+  let details = target.closest("details");
+  while (details) {
+    containers.unshift(details);
+    details = details.parentElement?.closest("details") ?? null;
+  }
+  for (const container of containers) container.open = true;
+}
+
 export function focusFirstValidationError(errors: ValidationError[]): void {
   if (!errors.length || typeof document === "undefined") {
     return;
@@ -257,10 +267,17 @@ export function focusFirstValidationError(errors: ValidationError[]): void {
   const el = document.querySelector<HTMLElement>(
     `[data-field-path="${CSS.escape(path)}"]`,
   );
+  if (el) revealConfigTarget(el);
   el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
-  const focusable = el?.querySelector<HTMLElement>(
-    "input, select, textarea, button",
-  );
+  const focusable =
+    el?.querySelector<HTMLElement>(
+      '[aria-invalid="true"]:is(input, select, textarea)',
+    ) ??
+    el?.querySelector<HTMLElement>(
+      "input:not([type=hidden]), select, textarea",
+    ) ??
+    el?.querySelector<HTMLElement>("summary, button:not([hidden])");
+
   focusable?.focus({ preventScroll: true });
 }
 
