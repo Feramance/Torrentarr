@@ -400,6 +400,23 @@ public class MultiQBitPlaceholderWebApplicationFactory : TorrentarrWebApplicatio
         UserName = "CHANGE_ME"
         Password = "CHANGE_ME"
         ManagedCategories = []
+
+        [Radarr-legacy]
+        URI = "http://radarr.example:7878"
+        APIKey = "radarr-key"
+        Category = "legacy-movies"
+        Managed = false
+
+        [Radarr-legacy.EntrySearch]
+        SearchMissing = true
+
+        [Radarr-legacy.EntrySearch.Overseerr]
+        SearchOverseerrRequests = true
+        OverseerrURI = "https://overseerr.example/proxy"
+        OverseerrAPIKey = "legacy-request-key"
+        ApprovedOnly = false
+        SkipTLSVerify = true
+        Is4K = true
         """;
 }
 

@@ -6,6 +6,23 @@ import {
 } from "../../config/configFields.generated";
 
 describe("generated config schema", () => {
+  it("labels Seerr while editing legacy Overseerr config paths", () => {
+    for (const name of ["Radarr-Movies", "Sonarr-TV"]) {
+      const fields = getArrFieldSets(name).entryOverseerrFields;
+      expect(fields).toHaveLength(6);
+      expect(fields.every((field) => field.path?.[1] === "Overseerr")).toBe(
+        true,
+      );
+      expect(fields).toContainEqual(
+        expect.objectContaining({
+          label: "Seerr API Key",
+          path: ["EntrySearch", "Overseerr", "OverseerrAPIKey"],
+        }),
+      );
+    }
+    expect(getArrFieldSets("Lidarr-Music").entryOverseerrFields).toEqual([]);
+  });
+
   it("offers import rescue only for its supported Arr adapter", () => {
     const hasRescue = (instance: string) =>
       getArrFieldSets(instance).torrentFields.some(

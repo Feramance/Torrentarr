@@ -478,7 +478,16 @@ export function getArrFieldSets(arrKey: string) {
         f.path[1] !== "QualityProfileMappings",
     ),
     entryOmbiFields: integrationFields(arr, "Ombi"),
-    entryOverseerrFields: integrationFields(arr, "Overseerr"),
+    entryOverseerrFields: integrationFields(arr, "Overseerr").map((field) => ({
+      ...field,
+      label: field.label.replaceAll("Overseerr", "Seerr"),
+      description: field.description
+        ?.replaceAll("Overseerr", "Seerr")
+        .replace(
+          "If this and Ombi are both enable, Ombi will be ignored",
+          "Requests are combined when Ombi is also enabled.",
+        ),
+    })),
     torrentFields: arr.filter(
       (f) => f.path?.[0] === "Torrent" && f.path[1] !== "SeedingMode",
     ),

@@ -433,7 +433,8 @@ export function ArrInstanceModal({
             )}
             {entryOverseerrFields.length > 0 && (
               <FieldGroup
-                title="Overseerr Integration"
+                title="Seerr Integration"
+                description="Supports the legacy Overseerr API and existing Overseerr configuration."
                 fields={entryOverseerrFields}
                 state={state}
                 basePath={[]}

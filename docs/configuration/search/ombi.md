@@ -54,12 +54,12 @@ URI = "http://localhost:7878"
 APIKey = "your-radarr-api-key"
 Category = "radarr-movies"
 
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true  # Must be enabled for request integration
 SearchLimit = 5
-SearchRequestsEvery = 3  # Check requests every 3 loops
+SearchRequestsEvery = 300  # Seconds between request checks
 
-[Radarr-Movies.Search.Ombi]
+[Radarr-Movies.EntrySearch.Ombi]
 SearchOmbiRequests = true
 OmbiURI = "http://localhost:3579"
 OmbiAPIKey = "your-ombi-api-key"
@@ -75,12 +75,12 @@ URI = "http://localhost:8989"
 APIKey = "your-sonarr-api-key"
 Category = "sonarr-series"
 
-[Sonarr-Series.Search]
+[Sonarr-Series.EntrySearch]
 SearchMissing = true
 SearchLimit = 5
-SearchRequestsEvery = 3
+SearchRequestsEvery = 300  # Seconds between request checks
 
-[Sonarr-Series.Search.Ombi]
+[Sonarr-Series.EntrySearch.Ombi]
 SearchOmbiRequests = true
 OmbiURI = "http://localhost:3579"
 OmbiAPIKey = "your-ombi-api-key"
@@ -110,9 +110,9 @@ ApprovedOnly = true
 Ombi integration **requires** these parent settings to be enabled:
 
 ```toml
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true  # REQUIRED: Enables search functionality
-SearchRequestsEvery = 3  # Optional: How often to check (in loop iterations)
+SearchRequestsEvery = 300  # Seconds between request checks
 SearchLimit = 5  # Optional: Max concurrent searches
 ```
 
@@ -139,10 +139,10 @@ Ensure Ombi is properly configured:
 
 ### 3. Configure Torrentarr
 
-Add the `[Search.Ombi]` section to each Arr instance that should process Ombi requests:
+Add the `[EntrySearch.Ombi]` section to each Arr instance that should process Ombi requests:
 
 ```toml
-[Radarr-Movies.Search.Ombi]
+[Radarr-Movies.EntrySearch.Ombi]
 SearchOmbiRequests = true
 OmbiURI = "http://localhost:3579"
 OmbiAPIKey = "abc123def456"
@@ -212,7 +212,7 @@ Torrentarr will search for **any** requests that are:
 - ❌ **Available** → Ignored (already in library)
 
 !!! warning "Automatic Approval"
-    Setting `ApprovedOnly = false` effectively **auto-approves all requests**, as Torrentarr will search for them immediately. Use with caution, especially on public instances.
+    Setting `ApprovedOnly = false` lets Torrentarr prioritize eligible pending requests during a missing-search pass. Approval status in the provider stays as set by its users.
 
 ---
 
@@ -223,15 +223,15 @@ Torrentarr will search for **any** requests that are:
 For public Plex servers where admins review all requests:
 
 ```toml
-[Radarr-Movies.Search.Ombi]
+[Radarr-Movies.EntrySearch.Ombi]
 SearchOmbiRequests = true
 OmbiURI = "http://localhost:3579"
 OmbiAPIKey = "your-api-key"
 ApprovedOnly = true  # Admins must approve first
 
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true
-SearchRequestsEvery = 5  # Check every 5 loops (slower polling)
+SearchRequestsEvery = 600  # Seconds between request checks
 SearchLimit = 3  # Limit concurrent searches
 ```
 
@@ -240,15 +240,15 @@ SearchLimit = 3  # Limit concurrent searches
 For family/friends servers where all requests are trusted:
 
 ```toml
-[Radarr-Movies.Search.Ombi]
+[Radarr-Movies.EntrySearch.Ombi]
 SearchOmbiRequests = true
 OmbiURI = "http://localhost:3579"
 OmbiAPIKey = "your-api-key"
 ApprovedOnly = false  # Auto-approve all requests
 
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true
-SearchRequestsEvery = 2  # Check every 2 loops (faster polling)
+SearchRequestsEvery = 60  # Seconds between request checks
 SearchLimit = 10  # Higher concurrent search limit
 ```
 
@@ -264,11 +264,11 @@ URI = "http://localhost:7878"
 APIKey = "radarr-api-key"
 Category = "radarr-movies"
 
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true
-SearchRequestsEvery = 3
+SearchRequestsEvery = 300  # Seconds between request checks
 
-[Radarr-Movies.Search.Ombi]
+[Radarr-Movies.EntrySearch.Ombi]
 SearchOmbiRequests = true
 OmbiURI = "http://localhost:3579"
 OmbiAPIKey = "ombi-api-key"
@@ -281,11 +281,11 @@ URI = "http://localhost:8989"
 APIKey = "sonarr-api-key"
 Category = "sonarr-series"
 
-[Sonarr-Series.Search]
+[Sonarr-Series.EntrySearch]
 SearchMissing = true
-SearchRequestsEvery = 3
+SearchRequestsEvery = 300  # Seconds between request checks
 
-[Sonarr-Series.Search.Ombi]
+[Sonarr-Series.EntrySearch.Ombi]
 SearchOmbiRequests = true
 OmbiURI = "http://localhost:3579"  # Same Ombi instance
 OmbiAPIKey = "ombi-api-key"  # Same API key
@@ -403,9 +403,9 @@ Ombi has **no built-in rate limiting**, but Torrentarr implements efficient poll
 
 | Instance Size | `SearchRequestsEvery` | Effective Check Interval |
 |---------------|------------------------|--------------------------|
-| Small (<10 requests/day) | 5 | ~1-2 minutes |
-| Medium (10-50 requests/day) | 3 | ~30-60 seconds |
-| Large (50+ requests/day) | 2 | ~20-40 seconds |
+| Small (<10 requests/day) | 600 | 10 minutes |
+| Medium (10-50 requests/day) | 300 | 5 minutes |
+| Large (50+ requests/day) | 60 | 1 minute |
 
 !!! tip "Optimize Performance"
     Higher `SearchRequestsEvery` values reduce API calls but increase latency for request processing. Balance based on your request volume and user expectations.
@@ -419,11 +419,11 @@ Ombi has **no built-in rate limiting**, but Torrentarr implements efficient poll
 Ombi requests work **alongside** regular missing content searches:
 
 ```toml
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true  # Search monitored missing content
 SearchLimit = 10  # Total concurrent searches
 
-[Radarr-Movies.Search.Ombi]
+[Radarr-Movies.EntrySearch.Ombi]
 SearchOmbiRequests = true  # Also search Ombi requests
 ApprovedOnly = true
 ```
@@ -440,18 +440,17 @@ Torrentarr will:
 Combine Ombi requests with quality upgrades:
 
 ```toml
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true
-DoUpgradeSearch = true  # Enable quality upgrades
 QualityUnmetSearch = true  # Search for unmet quality profiles
 
-[Radarr-Movies.Search.Ombi]
+[Radarr-Movies.EntrySearch.Ombi]
 SearchOmbiRequests = true
 ApprovedOnly = true
 ```
 
 This ensures:
-- New Ombi requests are searched immediately
+- Eligible Ombi requests take priority during the next missing-search pass
 - Existing content is upgraded when better releases appear
 
 ---
@@ -461,12 +460,12 @@ This ensures:
 Enforce custom format scores for Ombi requests:
 
 ```toml
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true
 CustomFormatUnmetSearch = true  # Search for CF score improvements
 ForceMinimumCustomFormat = true  # Block releases below CF threshold
 
-[Radarr-Movies.Search.Ombi]
+[Radarr-Movies.EntrySearch.Ombi]
 SearchOmbiRequests = true
 ApprovedOnly = true
 ```
@@ -531,7 +530,7 @@ services:
     restart: unless-stopped
 ```
 
-Configure Ombi in `config.toml` under `[Radarr-Movies.Search.Ombi]` (or your Arr instance name): `SearchOmbiQuests`, `OmbiURI`, `OmbiAPIKey`, `ApprovedOnly`.
+Configure Ombi in `config.toml` under `[Radarr-Movies.EntrySearch.Ombi]` (or your Arr instance name): `SearchOmbiQuests`, `OmbiURI`, `OmbiAPIKey`, `ApprovedOnly`.
 
 ---
 
@@ -606,7 +605,7 @@ If migrating from Overseerr to Ombi (or vice versa), update your config:
 
 ```toml
 # Before (Overseerr)
-[Radarr-Movies.Search.Overseerr]
+[Radarr-Movies.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "overseerr-key"
@@ -614,7 +613,7 @@ ApprovedOnly = true
 Is4K = false
 
 # After (Ombi)
-[Radarr-Movies.Search.Ombi]
+[Radarr-Movies.EntrySearch.Ombi]
 SearchOmbiRequests = true
 OmbiURI = "http://localhost:3579"
 OmbiAPIKey = "ombi-key"

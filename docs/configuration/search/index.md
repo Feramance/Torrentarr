@@ -141,7 +141,7 @@ broader command cannot bypass a held episode.
 
 | System | Type | Torrentarr Support |
 |--------|------|----------------|
-| [Overseerr](overseerr.md) | Full request management | ✅ Native API polling |
+| [Seerr](overseerr.md) | Full request management | ✅ Native API polling |
 | [Ombi](ombi.md) | Full request management | ✅ Native API polling |
 | [Requestrr](requestrr.md) | Discord chatbot | ✅ Via Overseerr or Ombi |
 

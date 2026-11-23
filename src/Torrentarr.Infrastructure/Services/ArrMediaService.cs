@@ -389,7 +389,7 @@ public class ArrMediaService : IArrMediaService
                             Title = movie.Title,
                             Type = "Movie",
                             Reason = movie.Reason ?? "Missing",
-                            Priority = priority,
+                            Priority = movie.IsRequest && priority == ReasonPriority["Missing"] ? 0 : priority,
                             Year = movie.Year
                         });
                     }

@@ -50,7 +50,7 @@ internal static class SonarrSearchScope
                 Title = $"{episode.SeriesTitle} S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}",
                 Type = "Episode",
                 Reason = reason,
-                Priority = reason switch { "Missing" => 1, "CustomFormat" => 2, "Quality" => 3, _ => 4 },
+                Priority = reason switch { "Missing" when episode.IsRequest => 0, "Missing" => 1, "CustomFormat" => 2, "Quality" => 3, _ => 4 },
                 SeriesId = episode.ArrSeriesId > 0 ? episode.ArrSeriesId : null,
                 SeasonNumber = episode.SeasonNumber,
                 EpisodeNumber = episode.EpisodeNumber,

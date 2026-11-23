@@ -1,17 +1,17 @@
-# Overseerr Integration
+# Seerr Integration
 
 !!! tip "Requestrr Integration"
-    Want Discord-based requests? Configure Requestrr to use Overseerr as its backend,
+    Want Discord-based requests? You can use Requestrr with an Overseerr backend,
     then Torrentarr will automatically process those requests.
     [**→ Requestrr Integration Guide**](requestrr.md)
 
-Overseerr is a request management and media discovery tool. Torrentarr can integrate with Overseerr to automatically search for user-requested content, ensuring your users get their requests fulfilled as quickly as possible.
+Seerr is a request management and media discovery tool. Torrentarr polls Seerr for movie and TV requests and prioritizes eligible missing items in Radarr and Sonarr. The legacy Overseerr API is also supported. Both servers use the existing `EntrySearch.Overseerr` table and `Overseerr` keys. Keep those settings as-is to continue using Overseerr. If you migrate to Seerr, update `OverseerrURI` or `OverseerrAPIKey` only if the address or key changes.
 
 ## Overview
 
-When Overseerr integration is enabled, Torrentarr will:
+When Seerr integration is enabled, Torrentarr will:
 
-- **Monitor Overseerr Requests**: Periodically check for new requests (movies/TV shows)
+- **Monitor Seerr Requests**: Periodically check for new requests (movies/TV shows)
 - **Trigger Automated Searches**: Tell Radarr/Sonarr to search for requested content
 - **Respect Request Status**: Only process requests based on their approval/availability status
 - **Support 4K Instances**: Separate handling for standard and 4K Radarr/Sonarr instances
@@ -25,14 +25,14 @@ When Overseerr integration is enabled, Torrentarr will:
 
 ```mermaid
 graph LR
-    A[User Makes Request in Overseerr] --> B[Overseerr Marks as Approved/Pending]
-    B --> C[Torrentarr Polls Overseerr API]
+    A[User Makes Request in Seerr] --> B[Seerr Marks as Approved/Pending]
+    B --> C[Torrentarr Polls Seerr API]
     C --> D[Torrentarr Filters by Status & Release Date]
     D --> E[Torrentarr Triggers Search in Arr]
     E --> F[Arr Searches Indexers]
     F --> G[Torrent Downloaded to qBittorrent]
     G --> H[Torrentarr Monitors & Imports]
-    H --> I[Overseerr Marks as Available]
+    H --> I[Seerr Marks as Available]
 ```
 
 ### Key Features
@@ -56,18 +56,18 @@ URI = "http://localhost:7878"
 APIKey = "your-radarr-api-key"
 Category = "radarr-movies"
 
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true  # Must be enabled for request integration
 SearchLimit = 5
-SearchRequestsEvery = 3  # Check requests every 3 loops
+SearchRequestsEvery = 300  # Seconds between request checks
 
-[Radarr-Movies.Search.Overseerr]
+[Radarr-Movies.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
 ApprovedOnly = true  # Only search approved requests
 Is4K = false  # Standard quality instance
-SkipTLSVerify = false  # Overseerr HTTPS only; independent of Arr SkipTLSVerify
+SkipTLSVerify = false  # Seerr HTTPS only; independent of Arr SkipTLSVerify
 ```
 
 ### Basic Setup (TV Shows)
@@ -79,12 +79,12 @@ URI = "http://localhost:8989"
 APIKey = "your-sonarr-api-key"
 Category = "sonarr-series"
 
-[Sonarr-Series.Search]
+[Sonarr-Series.EntrySearch]
 SearchMissing = true
 SearchLimit = 5
-SearchRequestsEvery = 3
+SearchRequestsEvery = 300  # Seconds between request checks
 
-[Sonarr-Series.Search.Overseerr]
+[Sonarr-Series.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
@@ -103,13 +103,12 @@ URI = "http://localhost:7879"  # Different port for 4K instance
 APIKey = "your-4k-radarr-api-key"
 Category = "radarr-4k"
 
-[Radarr-4K.Search]
+[Radarr-4K.EntrySearch]
 SearchMissing = true
 SearchLimit = 3  # Lower limit for 4K (fewer releases)
-DoUpgradeSearch = true  # Enable quality upgrades
 CustomFormatUnmetSearch = true  # Enforce custom format requirements
 
-[Radarr-4K.Search.Overseerr]
+[Radarr-4K.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-overseerr-api-key"
@@ -125,9 +124,9 @@ Is4K = true  # IMPORTANT: Set to true for 4K instances
 
 | Setting | Type | Required | Description |
 |---------|------|----------|-------------|
-| `SearchOverseerrRequests` | Boolean | Yes | Enable Overseerr integration |
-| `OverseerrURI` | String | Yes | Full URL to Overseerr (e.g., `http://localhost:5055`) |
-| `OverseerrAPIKey` | String | Yes | API key from Overseerr settings |
+| `SearchOverseerrRequests` | Boolean | Yes | Enable Seerr integration |
+| `OverseerrURI` | String | Yes | Full URL to Seerr (e.g., `http://localhost:5055`) |
+| `OverseerrAPIKey` | String | Yes | API key from Seerr settings |
 
 ### Optional Settings
 
@@ -138,12 +137,12 @@ Is4K = true  # IMPORTANT: Set to true for 4K instances
 
 ### Parent Settings (Required)
 
-Overseerr integration **requires** these parent settings to be enabled:
+Seerr integration **requires** these parent settings to be enabled:
 
 ```toml
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true  # REQUIRED: Enables search functionality
-SearchRequestsEvery = 3  # Optional: How often to check (in loop iterations)
+SearchRequestsEvery = 300  # Seconds between request checks
 SearchLimit = 5  # Optional: Max concurrent searches
 ```
 
@@ -151,29 +150,29 @@ SearchLimit = 5  # Optional: Max concurrent searches
 
 ## Setup Instructions
 
-### 1. Generate Overseerr API Key
+### 1. Generate Seerr API Key
 
-1. Open Overseerr web interface (e.g., `http://localhost:5055`)
+1. Open Seerr web interface (e.g., `http://localhost:5055`)
 2. Navigate to **Settings** → **General**
 3. Scroll down to **API Key** section
 4. Copy the API key (or generate a new one)
 5. Paste it into your Torrentarr config as `OverseerrAPIKey`
 
-### 2. Verify Overseerr Configuration
+### 2. Verify Seerr Configuration
 
-Ensure Overseerr is properly configured:
+Ensure Seerr is properly configured:
 
-- **Radarr/Sonarr Integration**: Overseerr must be connected to your Arr instances
+- **Radarr/Sonarr Integration**: Seerr must be connected to your Arr instances
 - **Quality Profiles**: Set default quality profiles for requests
 - **Root Folders**: Configure root folders for Radarr/Sonarr
 - **User Permissions**: Users should have permission to request content
 
 ### 3. Configure Torrentarr
 
-Add the `[Search.Overseerr]` section to each Arr instance that should process Overseerr requests:
+Add the `[EntrySearch.Overseerr]` section to each Arr instance that should process Seerr requests:
 
 ```toml
-[Radarr-Movies.Search.Overseerr]
+[Radarr-Movies.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "abc123def456"
@@ -196,22 +195,22 @@ sudo systemctl restart torrentarr
 
 ### 5. Verify Integration
 
-Check logs for Overseerr activity:
+Check logs for Seerr activity:
 
 ```bash
 # Docker
-docker logs -f torrentarr 2>&1 | grep -i overseerr
+docker logs -f torrentarr 2>&1 | grep -i seerr
 
 # Native
-tail -f ~/logs/Radarr-Movies.log | grep -i overseerr
+tail -f ~/logs/Radarr-Movies.log | grep -i seerr
 ```
 
 Expected log entries:
 ```
-INFO - Overseerr requests: 5 pending, 2 approved
-INFO - Triggering search for Overseerr request: Movie Title (2024)
-DEBUG - Overseerr URI: http://localhost:5055
-DEBUG - Overseerr API Key: ***
+INFO - Seerr requests: 5 pending, 2 approved
+INFO - Triggering search for Seerr request: Movie Title (2024)
+DEBUG - Seerr URI: http://localhost:5055
+DEBUG - Seerr API Key: ***
 ```
 
 ---
@@ -221,7 +220,7 @@ DEBUG - Overseerr API Key: ***
 ### Approved-Only Mode (`ApprovedOnly = true`)
 
 Torrentarr will **only** search for requests that have been:
-- Approved by an admin in Overseerr
+- Approved by an admin in Seerr
 - Not already available in your library
 - Released (not scheduled for future release)
 
@@ -244,7 +243,7 @@ Torrentarr will search for **any** requests that are:
 - ❌ **Declined** → Ignored
 
 !!! warning "Automatic Approval"
-    Setting `ApprovedOnly = false` effectively **auto-approves all requests**, as Torrentarr will search for them immediately. Use with caution, especially on public instances.
+    Setting `ApprovedOnly = false` lets Torrentarr prioritize eligible pending requests during a missing-search pass. Approval status in the provider stays as set by its users.
 
 ---
 
@@ -257,9 +256,9 @@ Use separate 4K instances if:
 - You have different quality profiles for 4K content
 - You want to control 4K access separately (e.g., Plex/Emby user restrictions)
 
-### Overseerr 4K Setup
+### Seerr 4K Setup
 
-In Overseerr, configure separate Radarr/Sonarr instances for 4K:
+In Seerr, configure separate Radarr/Sonarr instances for 4K:
 
 1. **Settings** → **Radarr/Sonarr**
 2. Add a new instance for 4K content
@@ -278,7 +277,7 @@ URI = "http://localhost:7878"
 APIKey = "standard-api-key"
 Category = "radarr-movies"
 
-[Radarr-Movies.Search.Overseerr]
+[Radarr-Movies.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "overseerr-api-key"
@@ -291,7 +290,7 @@ URI = "http://localhost:7879"
 APIKey = "4k-api-key"
 Category = "radarr-4k"
 
-[Radarr-4K.Search.Overseerr]
+[Radarr-4K.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "overseerr-api-key"
@@ -299,7 +298,7 @@ Is4K = true  # 4K quality
 ```
 
 !!! tip "API Key Reuse"
-    Both instances can use the **same Overseerr API key**. Torrentarr filters requests based on the `Is4K` flag.
+    Both instances can use the **same Seerr API key**. Torrentarr filters requests based on the `Is4K` flag.
 
 ---
 
@@ -310,16 +309,16 @@ Is4K = true  # 4K quality
 For public Plex servers where admins review all requests:
 
 ```toml
-[Radarr-Movies.Search.Overseerr]
+[Radarr-Movies.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-api-key"
 ApprovedOnly = true  # Admins must approve first
 Is4K = false
 
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true
-SearchRequestsEvery = 5  # Check every 5 loops (slower polling)
+SearchRequestsEvery = 600  # Seconds between request checks
 SearchLimit = 3  # Limit concurrent searches
 ```
 
@@ -328,16 +327,16 @@ SearchLimit = 3  # Limit concurrent searches
 For family/friends servers where all requests are trusted:
 
 ```toml
-[Radarr-Movies.Search.Overseerr]
+[Radarr-Movies.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "your-api-key"
 ApprovedOnly = false  # Auto-approve all requests
 Is4K = false
 
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true
-SearchRequestsEvery = 2  # Check every 2 loops (faster polling)
+SearchRequestsEvery = 60  # Seconds between request checks
 SearchLimit = 10  # Higher concurrent search limit
 ```
 
@@ -353,11 +352,11 @@ URI = "http://localhost:7878"
 APIKey = "standard-api-key"
 Category = "radarr-movies"
 
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true
-SearchRequestsEvery = 3
+SearchRequestsEvery = 300  # Seconds between request checks
 
-[Radarr-Movies.Search.Overseerr]
+[Radarr-Movies.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "shared-api-key"
@@ -371,12 +370,12 @@ URI = "http://localhost:7879"
 APIKey = "4k-api-key"
 Category = "radarr-4k"
 
-[Radarr-4K.Search]
+[Radarr-4K.EntrySearch]
 SearchMissing = true
-SearchRequestsEvery = 5  # Slower polling for 4K
+SearchRequestsEvery = 600  # Seconds between request checks
 SearchLimit = 2  # Fewer concurrent searches
 
-[Radarr-4K.Search.Overseerr]
+[Radarr-4K.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 OverseerrURI = "http://localhost:5055"
 OverseerrAPIKey = "shared-api-key"
@@ -390,7 +389,7 @@ Is4K = true  # Separate 4K flag
 
 ### Requests Not Being Searched
 
-**Symptoms:** Overseerr requests remain "Requested" or "Approved" but aren't searched
+**Symptoms:** Seerr requests remain "Requested" or "Approved" but aren't searched
 
 **Solutions:**
 
@@ -401,9 +400,9 @@ Is4K = true  # Separate 4K flag
    ```bash
    curl -H "X-Api-Key: your-api-key" http://localhost:5055/api/v1/request
    ```
-5. ✅ Check Torrentarr logs for Overseerr errors:
+5. ✅ Check Torrentarr logs for Seerr errors:
    ```bash
-   tail -f ~/logs/Radarr-Movies.log | grep -i overseerr
+   tail -f ~/logs/Radarr-Movies.log | grep -i seerr
    ```
 6. ✅ Verify content has been **released** (not scheduled for future date)
 
@@ -411,20 +410,20 @@ Is4K = true  # Separate 4K flag
 
 ### Connection Errors
 
-**Symptoms:** "Couldn't connect to Overseerr" in logs
+**Symptoms:** "Couldn't connect to Seerr" in logs
 
 **Solutions:**
 
-1. ✅ Verify Overseerr is running:
+1. ✅ Verify Seerr is running:
    ```bash
    curl http://localhost:5055
    ```
 2. ✅ Check `OverseerrURI` uses correct protocol (`http://` vs `https://`)
 3. ✅ Ensure no trailing slashes in URI (`http://localhost:5055`, not `http://localhost:5055/`)
-4. ✅ Verify firewall rules if Overseerr is on a different machine
+4. ✅ Verify firewall rules if Seerr is on a different machine
 5. ✅ Check Docker network connectivity (if using containers):
    ```bash
-   docker exec torrentarr ping overseerr
+   docker exec torrentarr ping seerr
    ```
 
 ---
@@ -438,8 +437,8 @@ Is4K = true  # Separate 4K flag
 1. ✅ Verify `Is4K` setting matches your Radarr/Sonarr instance type:
    - Standard instance: `Is4K = false`
    - 4K instance: `Is4K = true`
-2. ✅ Check Overseerr has separate 4K instances configured
-3. ✅ Ensure Overseerr requests are marked correctly (4K flag set)
+2. ✅ Check Seerr has separate 4K instances configured
+3. ✅ Ensure Seerr requests are marked correctly (4K flag set)
 4. ✅ Review Torrentarr logs for request filtering:
    ```bash
    tail -f ~/logs/Radarr-4K.log | grep -i "4k\|is4k"
@@ -451,11 +450,11 @@ Is4K = true  # Separate 4K flag
 
 **Symptoms:** Torrentarr ignores requests for content not yet released
 
-**Explanation:** Torrentarr caches release dates from TMDB/TVDB via Overseerr API to avoid searching for unreleased content.
+**Explanation:** Torrentarr caches release dates from TMDB/TVDB via Seerr API to avoid searching for unreleased content.
 
 **Solutions:**
 
-1. ✅ Verify release date in Overseerr matches actual release
+1. ✅ Verify release date in Seerr matches actual release
 2. ✅ Wait until release date passes
 3. ✅ Restart Torrentarr to clear cache:
    ```bash
@@ -471,24 +470,24 @@ Is4K = true  # Separate 4K flag
 
 ### Approved Requests Not Triggering
 
-**Symptoms:** Requests approved in Overseerr, but Torrentarr doesn't search
+**Symptoms:** Requests approved in Seerr, but Torrentarr doesn't search
 
 **Solutions:**
 
 1. ✅ Verify `ApprovedOnly = true` in config
-2. ✅ Check request status in Overseerr (must be "Approved", not "Pending")
-3. ✅ Ensure content is not already marked "Available" in Overseerr
+2. ✅ Check request status in Seerr (must be "Approved", not "Pending")
+3. ✅ Ensure content is not already marked "Available" in Seerr
 4. ✅ Check Radarr/Sonarr has the content as "Monitored"
 5. ✅ Review Torrentarr search logs:
    ```bash
-   tail -f ~/logs/Radarr-Movies.log | grep -i "search\|overseerr"
+   tail -f ~/logs/Radarr-Movies.log | grep -i "search\|seerr"
    ```
 
 ---
 
 ## API Rate Limiting
 
-Overseerr has **no built-in rate limiting**, but Torrentarr implements efficient polling:
+Torrentarr uses these polling settings:
 
 - **Batch Requests**: Fetches all requests in paginated batches (100 per page)
 - **Release Date Cache**: Avoids redundant API calls for release date lookups
@@ -498,9 +497,9 @@ Overseerr has **no built-in rate limiting**, but Torrentarr implements efficient
 
 | Instance Size | `SearchRequestsEvery` | Effective Check Interval |
 |---------------|------------------------|--------------------------|
-| Small (<10 requests/day) | 5 | ~1-2 minutes |
-| Medium (10-50 requests/day) | 3 | ~30-60 seconds |
-| Large (50+ requests/day) | 2 | ~20-40 seconds |
+| Small (<10 requests/day) | 600 | 10 minutes |
+| Medium (10-50 requests/day) | 300 | 5 minutes |
+| Large (50+ requests/day) | 60 | 1 minute |
 
 !!! tip "Optimize Performance"
     Higher `SearchRequestsEvery` values reduce API calls but increase latency for request processing. Balance based on your request volume and user expectations.
@@ -511,62 +510,61 @@ Overseerr has **no built-in rate limiting**, but Torrentarr implements efficient
 
 ### Combined with Missing Search
 
-Overseerr requests work **alongside** regular missing content searches:
+Seerr requests work **alongside** regular missing content searches:
 
 ```toml
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true  # Search monitored missing content
 SearchLimit = 10  # Total concurrent searches
 
-[Radarr-Movies.Search.Overseerr]
-SearchOverseerrRequests = true  # Also search Overseerr requests
+[Radarr-Movies.EntrySearch.Overseerr]
+SearchOverseerrRequests = true  # Also search Seerr requests
 ApprovedOnly = true
 ```
 
 Torrentarr will:
-1. Search for monitored missing content in Radarr
-2. Search for approved Overseerr requests
-3. Respect total `SearchLimit` across both sources
+1. Prioritize eligible requested content in Radarr
+2. Search for other eligible missing content
+3. Apply `SearchLimit` across both groups
 
 ---
 
-### Quality Upgrades with Overseerr
+### Quality Upgrades with Seerr
 
-Combine Overseerr requests with quality upgrades:
+Combine Seerr requests with quality upgrades:
 
 ```toml
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true
-DoUpgradeSearch = true  # Enable quality upgrades
 QualityUnmetSearch = true  # Search for unmet quality profiles
 
-[Radarr-Movies.Search.Overseerr]
+[Radarr-Movies.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 ApprovedOnly = true
 ```
 
 This ensures:
-- New Overseerr requests are searched immediately
+- New Seerr requests are prioritized during the next missing-search pass
 - Existing content is upgraded when better releases appear
 
 ---
 
-### Custom Formats with Overseerr
+### Custom Formats with Seerr
 
-Enforce custom format scores for Overseerr requests:
+Enforce custom format scores for Seerr requests:
 
 ```toml
-[Radarr-Movies.Search]
+[Radarr-Movies.EntrySearch]
 SearchMissing = true
 CustomFormatUnmetSearch = true  # Search for CF score improvements
 ForceMinimumCustomFormat = true  # Block releases below CF threshold
 
-[Radarr-Movies.Search.Overseerr]
+[Radarr-Movies.EntrySearch.Overseerr]
 SearchOverseerrRequests = true
 ApprovedOnly = true
 ```
 
-This ensures Overseerr requests respect your custom format requirements (e.g., no hardcoded subs, proper codecs).
+This ensures Seerr requests respect your custom format requirements (e.g., no hardcoded subs, proper codecs).
 
 ---
 
@@ -575,9 +573,9 @@ This ensures Overseerr requests respect your custom format requirements (e.g., n
 ### Security
 
 - **Protect API Keys**: Never commit `OverseerrAPIKey` to public repositories
-- **Config file**: Store Overseerr settings (including API key) in `config.toml` with restricted permissions, or use the WebUI Config Editor. Torrentarr does not support per-setting environment variable overrides.
-- **HTTPS**: Use HTTPS for Overseerr if exposed to the internet
-- **Reverse Proxy**: Place Overseerr behind a reverse proxy (Nginx, Caddy, Traefik)
+- **Config file**: Store Seerr settings (including API key) in `config.toml` with restricted permissions, or use the WebUI Config Editor. Torrentarr does not support per-setting environment variable overrides.
+- **HTTPS**: Use HTTPS for Seerr if exposed to the internet
+- **Reverse Proxy**: Place Seerr behind a reverse proxy (Nginx, Caddy, Traefik)
 
 ### Performance
 
@@ -589,27 +587,27 @@ This ensures Overseerr requests respect your custom format requirements (e.g., n
 
 - **Approval Workflow**: Use `ApprovedOnly = true` for public servers to control content
 - **Auto-Approval**: Use `ApprovedOnly = false` for trusted users/family
-- **Request Notifications**: Configure Overseerr notifications to alert users when content is available
+- **Request Notifications**: Configure Seerr notifications to alert users when content is available
 
 ---
 
 ## Docker Compose Example
 
-Complete Docker Compose setup with Overseerr integration:
+Complete Docker Compose setup with Seerr integration:
 
 ```yaml
 version: '3.8'
 services:
-  overseerr:
-    image: sctx/overseerr:latest
-    container_name: overseerr
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
     environment:
       - LOG_LEVEL=info
       - TZ=America/New_York
     ports:
       - "5055:5055"
     volumes:
-      - /path/to/overseerr/config:/app/config
+      - /path/to/seerr/config:/app/config
     restart: unless-stopped
 
   torrentarr:
@@ -621,17 +619,17 @@ services:
     volumes:
       - /path/to/torrentarr/config:/config
     depends_on:
-      - overseerr
+      - seerr
     restart: unless-stopped
 ```
 
-Configure Overseerr in `config.toml` under `[Radarr-Movies.Search.Overseerr]`: `SearchOverseerrRequests`, `OverseerrURI`, `OverseerrAPIKey`, `ApprovedOnly`, `Is4K`.
+For this Compose example, set `OverseerrURI = "http://seerr:5055"`. Configure Seerr in `config.toml` under `[Radarr-Movies.EntrySearch.Overseerr]`: `SearchOverseerrRequests`, `OverseerrURI`, `OverseerrAPIKey`, `ApprovedOnly`, `Is4K`.
 
 ---
 
-## Comparison: Overseerr vs Ombi
+## Comparison: Seerr vs Ombi
 
-| Feature | Overseerr | Ombi |
+| Feature | Seerr | Ombi |
 |---------|-----------|------|
 | **User Interface** | Modern, React-based | Older, Angular-based |
 | **Media Discovery** | Advanced (TMDB integration) | Basic |
@@ -639,9 +637,7 @@ Configure Overseerr in `config.toml` under `[Radarr-Movies.Search.Overseerr]`: `
 | **4K Support** | Native | Limited |
 | **User Permissions** | Granular (per-user quotas, limits) | Basic roles |
 | **Performance** | Fast, lightweight | Can be slow with many users |
-| **Torrentarr Support** | Full support (approved/unavailable modes, 4K) | Full support (approved mode only) |
-
-**Recommendation:** Use **Overseerr** for new setups (better UX, modern codebase, active development). Ombi is suitable for existing setups or simpler use cases.
+| **Torrentarr Support** | Full support (approved/unavailable modes, 4K) | Approved and pending requests |
 
 ---
 
