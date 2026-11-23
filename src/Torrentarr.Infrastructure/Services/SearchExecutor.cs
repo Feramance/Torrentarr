@@ -154,8 +154,10 @@ public class SearchExecutor : ISearchExecutor
             || arrConfig.Search.QuietHoursEnabled || SearchLibraryGates.Enabled(arrConfig.Search)
             || arrConfig.Search.UnsuccessfulSearchRestMinutes > 0;
         string? PacingReason(SearchPacingObservation observation, SonarrSearchPlan plan) =>
-            plan.Covered.Select(c => observation.Hold(c.ArrId, c.SeriesId ?? c.ArtistId ?? c.AuthorId, arrConfig, Clock.GetUtcNow().ToUnixTimeSeconds(), plan.Command.Length == 0 ? c.Type : plan.Command))
-                .FirstOrDefault(reason => reason != null);
+            observation.Hold(plan, arrConfig, Clock.GetUtcNow().ToUnixTimeSeconds());
+        bool ExcludedByTags(SearchPacingObservation observation, SonarrSearchPlan plan) =>
+            plan.Covered.Any(c => SearchLibraryGates.IsTagExclusion(
+                observation.Library?.Hold(c.ArrId, c.SeriesId ?? c.ArtistId ?? c.AuthorId, arrConfig)));
 
         async Task RecordPacingHoldAsync(SonarrSearchPlan plan, string reason, string cycle)
         {
@@ -182,7 +184,7 @@ public class SearchExecutor : ISearchExecutor
                 if (reason == null) eligible.Add(plan);
                 else
                 {
-                    pacingDeferred = true;
+                    pacingDeferred |= !ExcludedByTags(observation, plan);
                     if (recorded++ < SearchDecisionHistory.MaxPreview)
                         await RecordPacingHoldAsync(plan, reason, Guid.NewGuid().ToString("N"));
                 }
@@ -246,6 +248,7 @@ public class SearchExecutor : ISearchExecutor
                         if (PacingReason(observation, plan) is { } reason)
                         {
                             await RecordPacingHoldAsync(plan, reason, cycle);
+                            if (ExcludedByTags(observation, plan)) continue;
                             drained = false; submissionStopped = true;
                             if (observation.DownloadHold(arrConfig.Search.ActiveDownloadCeiling) != null) break;
                             continue;

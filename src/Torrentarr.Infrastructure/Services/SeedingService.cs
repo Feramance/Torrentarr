@@ -1053,8 +1053,10 @@ public class SeedingService : ISeedingService
                     .FirstOrDefault(t => t.Hash.Equals(torrent.Hash, StringComparison.OrdinalIgnoreCase));
                 if (current != null) current.ClientInstanceId = instanceName;
                 var sameCandidate = imported && current != null && SameRemovalCandidate(torrent, current);
-                if (sameCandidate && await CanDeleteTorrentForIntentAsync(current!, RetirementGuard.Intent(_config, torrent),
-                        "final seeding removal", cancellationToken))
+                var intent = RetirementGuard.Intent(_config, torrent);
+                if (sameCandidate && await CanDeleteTorrentForIntentAsync(current!, intent, "final seeding removal", cancellationToken)
+                    && !FailedTorrentReceipt.BlocksRemoval(_dbContext, current!)
+                    && !ImportRescueReceipt.BlocksRemoval(_dbContext, current!, intent))
                 {
                     _logger.LogInformation("Seeding removal requested for {Hash}: deleteFiles=false; imported=true; freshCandidate=true", torrent.Hash);
                     var deleted = await client.DeleteTorrentsAsync(new List<string> { torrent.Hash }, deleteFiles: false, cancellationToken);

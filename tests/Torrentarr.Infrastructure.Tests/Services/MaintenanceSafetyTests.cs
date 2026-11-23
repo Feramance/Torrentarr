@@ -75,6 +75,47 @@ public sealed class MaintenanceSafetyTests : IDisposable
         _client.Verify(client => client.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("parking")]
+    [InlineData("rescue")]
+    public async Task CompletionCleanupHonorsDurableRetention(string? claim)
+    {
+        var torrent = AddTorrent();
+        torrent.State = "uploading";
+        ClientConfig.CategorySeeding.HitAndRunMode = "disabled";
+        _db.TorrentLibrary.Add(new() { Hash = torrent.Hash, QbitInstance = "one", Imported = true });
+        await _db.SaveChangesAsync();
+
+        if (claim == "parking")
+        {
+            MaintenancePersistence.Write(_db, FailedTorrentReceipt.Key(torrent),
+                new FailedTorrentReceipt(torrent.AddedOn, "server", "client", "MOVIES", "movies", "parked",
+                    torrent.SavePath, torrent.ContentPath, "moving", [7], false, false, []));
+        }
+        if (claim == "rescue")
+        {
+            MaintenancePersistence.Write(_db, ImportRescueReceipt.Key(torrent), new ImportRescueReceipt
+            {
+                Stage = "pending",
+                AddedOn = torrent.AddedOn,
+                SubmittedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                Server = new string('A', 64),
+                OwnerCategory = "MOVIES",
+                MovieId = 10,
+                Path = torrent.ContentPath,
+                ContentPath = torrent.ContentPath,
+                SavePath = torrent.SavePath
+            });
+        }
+
+        var result = await _seeding.RemoveCompletedTorrentsAsync("movies");
+
+        result.Errors.Should().BeEmpty();
+        result.TorrentsRemoved.Should().Be(claim == null ? 1 : 0);
+        result.TorrentsProtected.Should().Be(claim == null ? 0 : 1);
+    }
+
     [Fact]
     public async Task RootHardlinkAudit_ApplySharesOneScanBudgetAcrossActions()
     {

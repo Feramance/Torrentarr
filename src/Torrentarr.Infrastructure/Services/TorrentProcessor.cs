@@ -844,10 +844,17 @@ public class TorrentProcessor : ITorrentProcessor
                 reSearchStalled: arrCfg?.Torrent.ReSearchStalled == true,
                 metadataStall: metadata, requireObservation: continuousStall);
         }
+        // Shared rules refresh every scan. Successful refreshes can continue through the remaining checks.
+        else if (IsActiveDownloadingState(state) && state != TorrentState.MetadataDownloading
+            && arrCfg?.Torrent.SharedFileFilters.Count > 0
+            && await SharedFilterBlocksProcessingAsync(arrCfg))
+        {
+            return;
+        }
         // Branch 9: Downloading + not yet file-filtered → file filter (qBitrr line 6141-6147)
         else if (IsActiveDownloadingState(state)
             && state != TorrentState.MetadataDownloading
-            && (!_cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash) || arrCfg?.Torrent.SharedFileFilters.Count > 0))
+            && !_cache.AreFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash))
         {
             if (arrCfg != null)
             {
@@ -1033,6 +1040,14 @@ public class TorrentProcessor : ITorrentProcessor
                 _logger.LogInformation("Import deferred for [{Name}]: completion grace period has not elapsed (completion={Completion})", torrent.Name, torrent.CompletionOn);
             _logger.LogInformation("Unprocessed torrent: [{Name}] | State[{State}] | Progress[{Progress:P1}]",
                 torrent.Name, state, torrent.Progress);
+        }
+
+        async Task<bool> SharedFilterBlocksProcessingAsync(ArrInstanceConfig arr)
+        {
+            var result = await ApplyFileFilterAsync(torrent, arr, client, completed: false, ct);
+            if (result.Ready)
+                _cache.MarkFilePrioritiesApplied(torrent.QBitInstanceName, torrent.Hash);
+            return !result.Ready || result.Deleted;
         }
     }
 

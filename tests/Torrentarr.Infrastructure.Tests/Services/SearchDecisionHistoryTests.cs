@@ -36,7 +36,7 @@ public sealed class SearchDecisionHistoryTests
     }
 
     [Fact]
-    public async Task RecordingPrunesOldAndExcessDecisionsForOnlyTheCurrentInstance()
+    public async Task RecordingPrunesOldAndExcessDecisionsExceptUnreconciledSubmissions()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -46,19 +46,48 @@ public sealed class SearchDecisionHistoryTests
         db.SearchDecisions.AddRange(Enumerable.Range(1, SearchDecisionHistory.MaxHistory).Select(age =>
             new SearchDecision { Instance = "Radarr", Key = $"fresh:{age}", ObservedAt = now - age }));
         db.SearchDecisions.AddRange(
+            new() { Instance = "Radarr", Key = "submitted:pending", ObservedAt = now - 3600 },
+            new() { Instance = "Radarr", Key = "submitted:reconciled", ObservedAt = now - 3600, NoGrabAt = now - 1800 },
             new() { Instance = "Radarr", Key = "expired", ObservedAt = now - SearchDecisionHistory.RetentionSeconds - 1 },
             new() { Instance = "Other", Key = "untouched", ObservedAt = now - SearchDecisionHistory.RetentionSeconds - 1 });
         await db.SaveChangesAsync();
 
-        var history = new SearchDecisionHistory(db, NullLogger.Instance, "Radarr", new() { URI = "http://fixture" }, TimeProvider.System);
+        var history = new SearchDecisionHistory(db, NullLogger.Instance, "Radarr", new() { URI = "http://fixture", Search = { UnsuccessfulSearchRestMinutes = 60 } }, TimeProvider.System);
         var candidate = new SearchCandidate { ArrId = 1000, Type = "Movie", Reason = "Missing" };
         await history.RecordAsync(new(candidate, "", [candidate], 1, 1), "command limit", "cycle", default);
 
         var retained = await db.SearchDecisions.AsNoTracking().Where(row => row.Instance == "Radarr").ToListAsync();
-        Assert.Equal(SearchDecisionHistory.MaxHistory, retained.Count);
-        Assert.DoesNotContain(retained, row => row.Key == "expired" || row.Key == $"fresh:{SearchDecisionHistory.MaxHistory}");
+        Assert.Equal(SearchDecisionHistory.MaxHistory + 1, retained.Count);
+        Assert.DoesNotContain(retained, row => row.Key is "expired" or "submitted:reconciled" || row.Key == $"fresh:{SearchDecisionHistory.MaxHistory}");
+        Assert.Contains(retained, row => row.Key == "submitted:pending");
         Assert.Contains(retained, row => row.Key.StartsWith("decision:"));
         Assert.True(await db.SearchDecisions.AsNoTracking().AnyAsync(row => row.Instance == "Other" && row.Key == "untouched"));
+    }
+
+    [Fact]
+    public async Task PreviewDefersSeasonSearchWhenAnyCoveredEpisodeIsOnCooldown()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        await using var db = new TorrentarrDbContext(new DbContextOptionsBuilder<TorrentarrDbContext>().UseSqlite(connection).Options);
+        await db.Database.EnsureCreatedAsync();
+        var arr = new ArrInstanceConfig { Type = "sonarr", Search = { RecentGrabCooldownMinutes = 30 } };
+        var now = TimeProvider.System.GetUtcNow().ToUnixTimeSeconds();
+        var trigger = new SearchCandidate { ArrId = 1, Type = "Episode", SeriesId = 4, SeasonNumber = 1 };
+        var covered = new SearchCandidate { ArrId = 2, Type = "Episode", SeriesId = 4, SeasonNumber = 1 };
+        var plan = new SonarrSearchPlan(trigger, "SeasonSearch", [trigger, covered], 2, 2);
+
+        var response = JsonSerializer.SerializeToElement(await SearchDecisionEndpoints.ReadAsync(
+            "Sonarr", arr, db, TimeProvider.System, default,
+            _ => Task.FromResult(new SearchPacingObservation(null, new Dictionary<int, long> { [2] = now })),
+            _ => Task.FromResult<(long, int, SonarrSearchPlan[])?>((now, 1, [plan]))),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        var preview = response.GetProperty("preview");
+        Assert.Empty(preview.GetProperty("items").EnumerateArray());
+        var deferred = Assert.Single(preview.GetProperty("deferred").EnumerateArray());
+        Assert.StartsWith("Recent grab cooldown", deferred.GetProperty("reason").GetString());
+        Assert.Equal(1, deferred.GetProperty("item").GetProperty("id").GetInt32());
     }
 
     [Fact]

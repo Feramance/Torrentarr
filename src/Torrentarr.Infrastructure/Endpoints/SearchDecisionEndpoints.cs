@@ -25,12 +25,12 @@ public static class SearchDecisionEndpoints
                 token => SearchPacing.ObserveAsync(config, arr, registry, TimeProvider.System, token, db, name),
                 token => media is ArrMediaService planner
                     ? planner.PreviewCurrentAsync(name, arr, token)
-                    : Task.FromResult<(long At, int Count, SearchDecisionHistory.Item[] Items)?>(null)));
+                    : Task.FromResult<(long At, int Count, SonarrSearchPlan[] Plans)?>(null)));
         });
 
     internal static async Task<object> ReadAsync(string instance, ArrInstanceConfig arr, TorrentarrDbContext db, TimeProvider clock,
         CancellationToken ct, Func<CancellationToken, Task<SearchPacingObservation>>? observe = null,
-        Func<CancellationToken, Task<(long At, int Count, SearchDecisionHistory.Item[] Items)?>>? plan = null)
+        Func<CancellationToken, Task<(long At, int Count, SonarrSearchPlan[] Plans)?>>? plan = null)
     {
         var now = clock.GetUtcNow();
         var server = ArrActivityTracking.ServerKey(arr);
@@ -48,7 +48,7 @@ public static class SearchDecisionEndpoints
         var operations = await db.ArrActivityOperations.AsNoTracking()
             .Where(o => o.Instance == instance && o.Server == server && ids.Contains(o.CommandId))
             .ToDictionaryAsync(o => o.CommandId, ct);
-        SearchDecisionHistory.Item[] items = [];
+        SonarrSearchPlan[] plans = [];
         long? plannedAt = null;
         var candidateCount = 0;
         if (plan != null)
@@ -61,19 +61,23 @@ public static class SearchDecisionEndpoints
                 {
                     plannedAt = fresh.At;
                     candidateCount = fresh.Count;
-                    items = fresh.Items;
+                    plans = fresh.Plans;
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (Exception) { /* Unusable catalog evidence leaves the preview unavailable. */ }
         }
-        var evidence = items.Length > 0 && observe != null &&
+        var evidence = plans.Length > 0 && observe != null &&
             (arr.Search.ActiveDownloadCeiling > 0 || arr.Search.RecentGrabCooldownMinutes > 0
                 || arr.Search.QuietHoursEnabled || SearchLibraryGates.Enabled(arr.Search)
                 || arr.Search.UnsuccessfulSearchRestMinutes > 0)
                 ? await observe(ct) : new SearchPacingObservation(null, null);
         var evaluatedAt = clock.GetUtcNow();
-        var evaluated = items.Select(item => new { item, reason = evidence.Hold(item.Id, item.SeriesId ?? item.ArtistId ?? item.AuthorId, arr, evaluatedAt.ToUnixTimeSeconds(), item.Scope) }).ToArray();
+        var evaluated = plans.Select(search => new
+        {
+            item = SearchDecisionHistory.Describe(search),
+            reason = evidence.Hold(search, arr, evaluatedAt.ToUnixTimeSeconds())
+        }).ToArray();
         return new
         {
             preview = plannedAt is long at ? new

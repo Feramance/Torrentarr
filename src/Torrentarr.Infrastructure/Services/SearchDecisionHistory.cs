@@ -60,7 +60,8 @@ internal sealed class SearchDecisionHistory(TorrentarrDbContext db, ILogger logg
                             SELECT Key FROM torrentarr_search_decisions
                             WHERE Instance = {instance} AND Key NOT LIKE 'preview:%'
                             ORDER BY ObservedAt DESC, Key DESC LIMIT -1 OFFSET {MaxHistory}
-                        ))
+                        ) AND NOT (Key LIKE 'submitted:%' AND GrabbedAt IS NULL AND NoGrabAt IS NULL
+                            AND ObservedAt >= {now - (config.Search.UnsuccessfulSearchRestMinutes > 0 ? RetentionSeconds : SearchItemRest.ConfirmationSeconds)}))
                     """, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }

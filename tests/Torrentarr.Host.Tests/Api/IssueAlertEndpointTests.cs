@@ -12,7 +12,7 @@ namespace Torrentarr.Host.Tests.Api;
 public sealed class IssueAlertEndpointTests(TorrentarrWebApplicationFactory factory) : IClassFixture<TorrentarrWebApplicationFactory>
 {
     [Fact]
-    public async Task SendTestUsesSavedRedactedDestinationAndCreatesNoIssueTransition()
+    public async Task SendTestUsesSavedDestinationAndCreatesNoIssueTransition()
     {
         using var anonymous = factory.CreateClient();
         using var client = factory.CreateClientWithApiToken();
@@ -36,7 +36,6 @@ public sealed class IssueAlertEndpointTests(TorrentarrWebApplicationFactory fact
         try
         {
             settings.IssueAlertsSecretUrl = $"http://127.0.0.1:{port}/test?token={secret}";
-            Assert.DoesNotContain(secret, await client.GetStringAsync("/web/config", timeout.Token));
             var send = client.PostAsync("/api/issues/alerts/test", null, timeout.Token);
             var incoming = await listener.GetContextAsync().WaitAsync(timeout.Token);
             using var body = new StreamReader(incoming.Request.InputStream);

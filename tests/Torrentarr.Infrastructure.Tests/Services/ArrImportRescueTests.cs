@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Sockets;
 using System.Text;
 using System.Collections.Concurrent;
 using FluentAssertions;
@@ -22,7 +21,7 @@ public sealed class ArrImportRescueTests : IAsyncDisposable
 {
     // macOS can expose the system temporary directory through a symlink.
     private readonly string _directory = Path.Combine(AppContext.BaseDirectory, "rescue-" + Guid.NewGuid().ToString("N"));
-    private readonly HttpListener _listener = new();
+    private readonly HttpListener _listener;
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _server;
     private readonly TorrentarrConfig _config = new();
@@ -48,13 +47,8 @@ public sealed class ArrImportRescueTests : IAsyncDisposable
     {
         Directory.CreateDirectory(Path.Combine(_directory, "Movie"));
         File.WriteAllText(Path.Combine(_directory, "Movie", "video.mkv"), "data");
-        using var socket = new TcpListener(IPAddress.Loopback, 0);
-        socket.Start();
-        var port = ((IPEndPoint)socket.LocalEndpoint).Port;
-        socket.Stop();
+        _listener = LoopbackHttpListener.Start(out var port);
         var url = $"http://127.0.0.1:{port}";
-        _listener.Prefixes.Add(url + "/");
-        _listener.Start();
         _server = ServeAsync();
         _config.TorrentClients["fixture"] = new()
         {

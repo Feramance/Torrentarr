@@ -7,6 +7,9 @@ internal sealed record SearchLibraryEvidence(string[]? Tags, bool? Available);
 
 internal sealed class SearchLibraryGates(IReadOnlyDictionary<int, SearchLibraryEvidence>? entries)
 {
+    internal static bool IsTagExclusion(string? reason) =>
+        reason is "Owning-library tag excluded" or "No included owning-library tag";
+
     internal string? Hold(int itemId, int? ownerId, ArrInstanceConfig arr)
     {
         var settings = arr.Search;

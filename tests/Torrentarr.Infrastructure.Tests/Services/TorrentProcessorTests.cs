@@ -128,6 +128,68 @@ public sealed class TorrentProcessorTests : IDisposable
     }
 
     [Fact]
+    public async Task SuccessfulSharedFilterRefreshAllowsSlowDownloadChecks()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(directory, "reviewed.txt"), "# no exclusions");
+            var config = new TorrentarrConfig();
+            config.Settings.Tagless = true;
+            config.Settings.SharedFileFilters = [new() { Name = "reviewed", Source = "reviewed.txt" }];
+            config.ArrInstances["Radarr-Movies"] = new()
+            {
+                Category = "movies",
+                Torrent = new()
+                {
+                    SharedFileFilters = ["reviewed"],
+                    FolderExclusionRegex = [],
+                    FileNameExclusionRegex = [],
+                    FileExtensionAllowlist = [],
+                    MaximumETA = 60,
+                    DoNotRemoveSlow = false,
+                    StalledDelay = -1
+                }
+            };
+            using var lists = new SharedFileFilterService(config, Mock.Of<IOperationalIssueReporter>(),
+                NullLogger<SharedFileFilterService>.Instance);
+            await lists.RefreshAsync(default, directory);
+            var torrent = new TorrentInfo
+            {
+                Hash = "slow",
+                ClientInstanceId = "qBit",
+                Category = "movies",
+                State = "downloading",
+                AddedOn = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds(),
+                LastActivity = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                Eta = 120,
+                Progress = .5,
+                AmountLeft = 100,
+                Availability = 1
+            };
+            var client = new Mock<ITorrentClient>();
+            client.Setup(c => c.GetTorrentsAsync(It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync([torrent]);
+            client.Setup(c => c.GetTorrentFilesAsync(torrent.Hash, It.IsAny<CancellationToken>()))
+                .ReturnsAsync([new() { Name = "video.mkv", Size = 100, Priority = 1 }]);
+            var registry = new Mock<ITorrentClientRegistry>();
+            registry.Setup(r => r.GetClient("qBit")).Returns(client.Object);
+            registry.Setup(r => r.GetAllClients()).Returns(new Dictionary<string, ITorrentClient> { ["qBit"] = client.Object });
+            var seeding = new Mock<ISeedingService>();
+            var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, registry.Object, _db, config,
+                new TorrentCacheService(NullLogger<TorrentCacheService>.Instance), new(), seedingService: seeding.Object, sharedFilters: lists);
+            await processor.ProcessTorrentAsync(torrent.Hash);
+            await processor.ProcessTorrentAsync(torrent.Hash);
+
+            client.Verify(c => c.GetTorrentFilesAsync(torrent.Hash, It.IsAny<CancellationToken>()), Times.Exactly(2));
+            seeding.Verify(s => s.HnrAllowsDeleteAsync(It.IsAny<TorrentInfo>(), "slow torrent deletion", It.IsAny<CancellationToken>()),
+                Times.AtLeastOnce);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact]
     public async Task SharedExclusions_CannotAuthorizeTorrentDeletionAndRestoreOwnedPrioritiesAfterRefresh()
     {
         var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));

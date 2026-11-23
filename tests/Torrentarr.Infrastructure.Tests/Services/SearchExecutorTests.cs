@@ -118,6 +118,29 @@ public class SearchExecutorTests
         result.SearchedIds.Should().Equal(1);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TagExclusionDoesNotHoldTheSearchYear(bool changesBeforeSubmission)
+    {
+        var config = CreateConfigWithRadarr();
+        var arr = config.ArrInstances["Radarr-test"];
+        arr.Search.SearchByYear = true;
+        arr.Search.ExcludeTags = ["skip"];
+        var service = CreateTestService(config);
+        var observed = 0;
+        service.Pacing = () => new(null, null, new(new Dictionary<int, SearchLibraryEvidence>
+        {
+            [1] = new(changesBeforeSubmission && ++observed == 1 ? [] : ["skip"], null)
+        }));
+
+        var result = await service.ExecuteSearchesAsync("Radarr-test",
+            [new() { ArrId = 1, Type = "Movie", Reason = "Missing", Year = 2020 }]);
+
+        result.LoopCompleted.Should().BeTrue();
+        service.TriggeredCandidates.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task PacingChecksFreshEvidenceAndKeepsReplacementSearchesIndependent()
     {

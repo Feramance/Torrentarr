@@ -127,7 +127,7 @@ public class ArrMediaService : IArrMediaService
             : _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken));
     }
 
-    internal async Task<(long At, int Count, SearchDecisionHistory.Item[] Items)?> PreviewCurrentAsync(
+    internal async Task<(long At, int Count, SonarrSearchPlan[] Plans)?> PreviewCurrentAsync(
         string name, ArrInstanceConfig arr, CancellationToken ct)
     {
         if (!arr.Managed || arr.ProcessingOnly || !_dbContext.Database.IsSqlite() || _searchExecutor is not SearchExecutor executor)
@@ -147,9 +147,12 @@ public class ArrMediaService : IArrMediaService
             || year != await SearchCatalogState.ReadAsync(_dbContext, SearchCatalogState.YearKey(name), ct)
             || _config.Revision != _config.LatestRevision) return null;
         // A successful submission in the first pass normally clears the same candidate from the upgrade pass.
-        var items = plans.Select(SearchDecisionHistory.Describe)
-            .DistinctBy(item => (item.Id, item.Type, item.SeriesId, item.Season, item.ArtistId, item.AuthorId, item.Scope)).ToArray();
-        return (version.At, items.Length, items.Take(SearchDecisionHistory.MaxPreview).ToArray());
+        var unique = plans.DistinctBy(plan =>
+        {
+            var item = SearchDecisionHistory.Describe(plan);
+            return (item.Id, item.Type, item.SeriesId, item.Season, item.ArtistId, item.AuthorId, item.Scope);
+        }).ToArray();
+        return (version.At, unique.Length, unique.Take(SearchDecisionHistory.MaxPreview).ToArray());
 
         async Task AddPlansAsync(List<SearchCandidate> candidates)
         {

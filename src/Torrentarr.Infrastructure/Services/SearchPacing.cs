@@ -27,6 +27,11 @@ internal sealed record SearchPacingObservation(int? ActiveDownloads, IReadOnlyDi
     internal string? Hold(int itemId, SearchConfig settings, long now) =>
         DownloadHold(settings.ActiveDownloadCeiling) ?? GrabHold(itemId, settings.RecentGrabCooldownMinutes, now);
 
+    internal string? Hold(SonarrSearchPlan plan, ArrInstanceConfig arr, long now) =>
+        plan.Covered.Select(item => Hold(item.ArrId, item.SeriesId ?? item.ArtistId ?? item.AuthorId,
+                arr, now, plan.Command.Length == 0 ? item.Type : plan.Command))
+            .FirstOrDefault(reason => reason != null);
+
     internal string? Hold(int itemId, int? ownerId, ArrInstanceConfig arr, long now, string scope = "") =>
         SearchQuietHours.NextEligible(arr.Search, DateTimeOffset.FromUnixTimeSeconds(now)) is { } next
             ? $"Quiet hours until {next:O}"
