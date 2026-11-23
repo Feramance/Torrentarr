@@ -984,53 +984,69 @@ it.each(["Interface & Access", "Radarr-1080"])(
   },
 );
 
-it("uses the shared client dialog and saves only the selected torrent client", async () => {
-  let changes: Record<string, unknown> = {};
-  server.use(
-    http.get("/web/config", () =>
-      HttpResponse.json({
-        ...configQbitOnly,
-        TorrentClient: {
-          seedbox: {
-            Type: "transmission",
-            Host: "old-host",
-            Port: 9091,
-            Password: "[redacted]",
-            Maintenance: {
-              PathMappings: [
-                { ClientPath: "/old", LocalPath: "/new", FutureProperty: true },
-              ],
+it.each([false, true])(
+  "saves only edited torrent-client fields (replace password=%s)",
+  async (replacePassword) => {
+    let changes: Record<string, unknown> = {};
+    server.use(
+      http.get("/web/config", () =>
+        HttpResponse.json({
+          ...configQbitOnly,
+          TorrentClient: {
+            seedbox: {
+              Type: "transmission",
+              Host: "old-host",
+              Port: 9091,
+              Password: "[redacted]",
+              Maintenance: {
+                PathMappings: [
+                  {
+                    ClientPath: "/old",
+                    LocalPath: "/new",
+                    FutureProperty: true,
+                  },
+                ],
+              },
             },
           },
-        },
+        }),
+      ),
+      http.post("/web/config", async ({ request }) => {
+        changes = (
+          (await request.json()) as { changes: Record<string, unknown> }
+        ).changes;
+        return HttpResponse.json(okUpdateResponse);
       }),
-    ),
-    http.post("/web/config", async ({ request }) => {
-      changes = ((await request.json()) as { changes: Record<string, unknown> })
-        .changes;
-      return HttpResponse.json(okUpdateResponse);
-    }),
-  );
-  const user = userEvent.setup();
-  renderConfig();
-  await openSection("seedbox");
-  expect(
-    screen.getByRole("textbox", { name: "Client Type", exact: true }),
-  ).toHaveValue("transmission");
-  expect(
-    screen.getByText("Path mappings", { selector: "h4" }),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByRole("button", { name: "Open Shared Settings" }),
-  ).toBeEnabled();
-  const host = screen.getByRole("textbox", { name: "Host", exact: true });
-  await user.clear(host);
-  await user.type(host, "new-host");
-  await user.click(screen.getByRole("button", { name: "Save", exact: true }));
-  await waitFor(() =>
-    expect(changes).toEqual({ "TorrentClient.seedbox.Host": "new-host" }),
-  );
-});
+    );
+    const user = userEvent.setup();
+    renderConfig();
+    await openSection("seedbox");
+    expect(
+      screen.getByRole("textbox", { name: "Client Type", exact: true }),
+    ).toHaveValue("transmission");
+    expect(
+      screen.getByText("Path mappings", { selector: "h4" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open Shared Settings" }),
+    ).toBeEnabled();
+    const password = screen.getByLabelText("Password", { exact: true });
+    expect(password).toHaveValue("");
+    if (replacePassword) await user.type(password, "replacement-password");
+    const host = screen.getByRole("textbox", { name: "Host", exact: true });
+    await user.clear(host);
+    await user.type(host, "new-host");
+    await user.click(screen.getByRole("button", { name: "Save", exact: true }));
+    await waitFor(() =>
+      expect(changes).toEqual({
+        "TorrentClient.seedbox.Host": "new-host",
+        ...(replacePassword
+          ? { "TorrentClient.seedbox.Password": "replacement-password" }
+          : {}),
+      }),
+    );
+  },
+);
 
 it.each([false, true])(
   "saves mapping add/edit/remove/clear and retains a failed draft (canonical=%s)",
@@ -1953,6 +1969,8 @@ it("focuses the affected free-space monitor and preserves edits on fallback", as
 });
 
 it("edits General using the existing Settings keys", async () => {
+  const originalWebhook = "https://alerts.example/original";
+  const newWebhook = "https://alerts.example/replacement";
   let changes: Record<string, unknown> = {};
   server.use(
     http.get("/web/config", () =>
@@ -1963,6 +1981,7 @@ it("edits General using the existing Settings keys", async () => {
           ConsoleLevel: "INFO",
           AutoUpdateCron: "0 3 * * 0",
           AutoUpdateChannel: "latest",
+          IssueAlertsSecretUrl: originalWebhook,
         },
       }),
     ),
@@ -1979,11 +1998,19 @@ it("edits General using the existing Settings keys", async () => {
   });
   expect(category).toHaveValue("failed");
   fireEvent.change(category, { target: { value: "failed-updated" } });
+  const webhook = within(general).getByRole("textbox", {
+    name: "Webhook destination",
+  });
+  expect(webhook).toHaveValue(originalWebhook);
+  fireEvent.change(webhook, { target: { value: newWebhook } });
   await userEvent.click(
     within(general).getByRole("button", { name: "Save", exact: true }),
   );
   await waitFor(() =>
-    expect(changes).toEqual({ "Settings.FailedCategory": "failed-updated" }),
+    expect(changes).toEqual({
+      "Settings.FailedCategory": "failed-updated",
+      "Settings.IssueAlertsSecretUrl": newWebhook,
+    }),
   );
 });
 

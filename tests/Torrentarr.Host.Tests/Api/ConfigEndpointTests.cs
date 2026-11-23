@@ -17,6 +17,28 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Theory]
     [InlineData("/web/config")]
     [InlineData("/api/config")]
+    public async Task ConfigReadsExposeTheSavedWebhookDestination(string endpoint)
+    {
+        using var client = _factory.CreateClientWithApiToken();
+        var settings = _factory.Services.GetRequiredService<TorrentarrConfig>().Settings;
+        var original = settings.IssueAlertsSecretUrl;
+        const string webhook = "https://alerts.example/webhook?token=delivery-key";
+        try
+        {
+            settings.IssueAlertsSecretUrl = webhook;
+            using var document = JsonDocument.Parse(await client.GetStringAsync(endpoint));
+            document.RootElement.GetProperty("Settings").GetProperty("IssueAlertsSecretUrl")
+                .GetString().Should().Be(webhook);
+        }
+        finally
+        {
+            settings.IssueAlertsSecretUrl = original;
+        }
+    }
+
+    [Theory]
+    [InlineData("/web/config")]
+    [InlineData("/api/config")]
     public async Task ScopedTrackerRulesArePublishedAndReferencesFollowRenames(string endpoint)
     {
         using var client = _factory.CreateClientWithApiToken();

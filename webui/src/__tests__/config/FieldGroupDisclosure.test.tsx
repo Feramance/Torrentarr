@@ -117,39 +117,62 @@ it("separates the scrollable client summary and fields from dialog actions", asy
   expect(onClose).toHaveBeenCalledOnce();
 });
 
-it("generates local tokens but keeps externally issued credentials editable without a generator", () => {
+it("only reveals and generates the Web API token", () => {
+  const webhook = "https://alerts.example/webhook";
   render(
     <FieldGroup
       fields={[
-        { path: ["APIKey"], label: "API key", type: "password", secure: true },
         {
-          path: ["IssueAlertsSecretUrl"],
-          label: "Webhook destination",
+          path: ["TorrentClient", "seedbox", "Password"],
+          label: "Client password",
           type: "password",
           secure: true,
         },
         {
-          path: ["Token"],
-          label: "Local token",
+          path: ["Radarr", "APIKey"],
+          label: "API key",
+          type: "password",
+          secure: true,
+        },
+        {
+          path: ["Integration", "Token"],
+          label: "Integration token",
+          type: "password",
+          secure: true,
+        },
+        {
+          path: ["Settings", "IssueAlertsSecretUrl"],
+          label: "Webhook destination",
+          type: "text",
+        },
+        {
+          path: ["WebUI", "Token"],
+          label: "Web API token",
           type: "password",
           secure: true,
         },
       ]}
       basePath={[]}
-      state={{}}
+      state={{
+        TorrentClient: { seedbox: { Password: "[redacted]" } },
+        Settings: { IssueAlertsSecretUrl: webhook },
+      }}
       onChange={vi.fn()}
     />,
   );
 
-  expect(screen.getByLabelText("API key")).toBeEnabled();
-  expect(screen.getByLabelText("Webhook destination")).toBeEnabled();
+  expect(screen.getByLabelText("Client password")).toHaveValue("");
+  expect(screen.getByLabelText("Client password")).toHaveAttribute(
+    "type",
+    "password",
+  );
   expect(
-    screen.queryByRole("button", { name: "Generate API key" }),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("button", { name: "Generate Webhook destination" }),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.getByRole("button", { name: "Generate Local token" }),
-  ).toBeEnabled();
+    screen.getByRole("textbox", { name: "Webhook destination" }),
+  ).toHaveValue(webhook);
+  expect(screen.getAllByRole("button", { name: /^Show / })).toEqual([
+    screen.getByRole("button", { name: "Show Web API token" }),
+  ]);
+  expect(screen.getAllByRole("button", { name: /^Generate / })).toEqual([
+    screen.getByRole("button", { name: "Generate Web API token" }),
+  ]);
 });

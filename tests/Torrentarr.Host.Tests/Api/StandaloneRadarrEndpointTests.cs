@@ -432,6 +432,33 @@ public class StandaloneRadarrEndpointTests
         File.Exists(factory.ConfigPath + ".rename.json").Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("/web/config")]
+    [InlineData("/web/config/full")]
+    public async Task ConfigReadsExposeWebhookDestinationAndRedactCredentials(string endpoint)
+    {
+        await using var factory = new StandaloneFactory();
+        using var client = factory.CreateClient();
+        var config = factory.Services.GetRequiredService<TorrentarrConfig>();
+        const string webhook = "https://alerts.example/webhook?token=delivery-key";
+        config.Settings.IssueAlertsSecretUrl = webhook;
+        config.WebUI.OIDC = new OIDCConfig { ClientSecret = "oidc-fixture-key" };
+        var arr = config.ArrInstances.Values.Single();
+        arr.APIKey = "arr-fixture-key";
+        arr.Search.Ombi = new OmbiConfig { OmbiAPIKey = "ombi-fixture-key" };
+        arr.Search.Overseerr = new OverseerrConfig { OverseerrAPIKey = "overseerr-fixture-key" };
+        config.TorrentClients["seedbox"] = new QBitConfig { Password = "client-fixture-password" };
+
+        using var document = JsonDocument.Parse(await client.GetStringAsync(endpoint));
+        var settingsKey = endpoint.EndsWith("/full") ? "settings" : "Settings";
+        document.RootElement.GetProperty(settingsKey).GetProperty("IssueAlertsSecretUrl")
+            .GetString().Should().Be(webhook);
+        var payload = document.RootElement.GetRawText();
+        foreach (var secret in new[] { "standalone-test", "oidc-fixture-key", "arr-fixture-key",
+                     "ombi-fixture-key", "overseerr-fixture-key", "client-fixture-password" })
+            payload.Should().NotContain(secret);
+    }
+
     private sealed class StandaloneFactory : WebApplicationFactory<Standalone::Program>
     {
         private readonly string _directory = Path.Combine(Path.GetTempPath(), "standalone-radarr-" + Guid.NewGuid());

@@ -2101,6 +2101,9 @@ svg[height] {
 .secure-field__input-group input {
   flex: 1;
 }
+.secure-field__input-group input::-ms-reveal {
+  display: none;
+}
 .secure-field__controls {
   display: flex;
   gap: 6px;

@@ -438,6 +438,7 @@ app.MapGet("/web/token", (TorrentarrConfig cfg, HttpContext ctx) =>
     var isAuthenticated = ctx.User?.Identity?.IsAuthenticated == true;
     if (!isAuthenticated && WebUIAuthRequired(cfg))
         return Results.Json(new { token = "" }, statusCode: 401);
+    ctx.Response.Headers.CacheControl = "no-store";
     return Results.Ok(new { token = cfg.WebUI.Token });
 });
 
@@ -931,28 +932,18 @@ static Newtonsoft.Json.Linq.JObject BuildFlatConfig(TorrentarrConfig config, boo
 {
     var flat = new Newtonsoft.Json.Linq.JObject();
     var settings = Newtonsoft.Json.Linq.JObject.FromObject(config.Settings);
-    if (redactSensitive) RedactFlatField(settings, "IssueAlertsSecretUrl");
     flat["Settings"] = settings;
 
     var webuiObj = Newtonsoft.Json.Linq.JObject.FromObject(config.WebUI);
-    if (redactSensitive)
-    {
-        RedactFlatField(webuiObj, "Token");
-        RedactFlatField(webuiObj, "PasswordHash");
-    }
     flat["WebUI"] = webuiObj;
 
     foreach (var (name, qbit) in config.QBitInstances)
     {
         var qbitObj = Newtonsoft.Json.Linq.JObject.FromObject(qbit);
-        if (redactSensitive) RedactSensitiveFields(qbitObj);
         flat[name] = qbitObj;
     }
 
     var canonical = Newtonsoft.Json.Linq.JObject.FromObject(config.TorrentClients);
-    if (redactSensitive)
-        foreach (var property in canonical.Properties().OfType<Newtonsoft.Json.Linq.JProperty>())
-            if (property.Value is Newtonsoft.Json.Linq.JObject clientObj) RedactSensitiveFields(clientObj);
     flat["TorrentClient"] = canonical;
     flat["Trackers"] = Newtonsoft.Json.Linq.JArray.FromObject(config.Trackers);
 
@@ -967,50 +958,10 @@ static Newtonsoft.Json.Linq.JObject BuildFlatConfig(TorrentarrConfig config, boo
             arrObj["EntrySearch"] = searchProp.Value;
             searchProp.Remove();
         }
-        if (redactSensitive) RedactFlatField(arrObj, "APIKey");
         flat[name] = arrObj;
     }
 
-    return flat;
-}
-
-static void RedactFlatField(Newtonsoft.Json.Linq.JObject obj, string key)
-{
-    var prop = obj.Properties()
-        .FirstOrDefault(p => p.Name.Equals(key, StringComparison.OrdinalIgnoreCase));
-    if (prop != null
-        && prop.Value.Type == Newtonsoft.Json.Linq.JTokenType.String
-        && !string.IsNullOrWhiteSpace(prop.Value.ToString())
-        && prop.Value.ToString().Trim() != "CHANGE_ME")
-    {
-        prop.Value = "[redacted]";
-    }
-}
-
-static void RedactSensitiveFields(Newtonsoft.Json.Linq.JToken token)
-{
-    if (token is Newtonsoft.Json.Linq.JObject obj)
-    {
-        foreach (var property in obj.Properties().ToList())
-        {
-            if (property.Value.Type == Newtonsoft.Json.Linq.JTokenType.String
-                && (property.Name.Equals("Password", StringComparison.OrdinalIgnoreCase)
-                    || property.Name.Equals("Token", StringComparison.OrdinalIgnoreCase)
-                    || property.Name.Equals("APIKey", StringComparison.OrdinalIgnoreCase)))
-            {
-                if (!string.IsNullOrWhiteSpace(property.Value.ToString()) && property.Value.ToString() != "CHANGE_ME")
-                    property.Value = "[redacted]";
-            }
-            else
-            {
-                RedactSensitiveFields(property.Value);
-            }
-        }
-    }
-    else if (token is Newtonsoft.Json.Linq.JArray array)
-    {
-        foreach (var item in array) RedactSensitiveFields(item);
-    }
+    return redactSensitive ? WebUIAuthHelpers.RedactConfigResponse(flat, redactEmptyValues: false) : flat;
 }
 
 // Helper: convert a flat config JObject back to TorrentarrConfig.
@@ -1582,13 +1533,14 @@ app.MapGet("/web/qbit/categories", async (TorrentarrConfig config, ITorrentClien
     return Results.Ok(new { categories, ready = true, observations = snapshots.Describe(config, registry) });
 });
 
-app.MapGet("/web/config/full", (TorrentarrConfig config, IConfigReloader reloader) =>
+app.MapGet("/web/config/full", (TorrentarrConfig config, IConfigReloader reloader,
+    Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions> jsonOptions) =>
 {
-    return Results.Ok(new
+    var response = new
     {
         configPath = reloader.ConfigPath,
         settings = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
-            BuildFlatConfig(config, redactSensitive: true)["Settings"]!.ToString(Newtonsoft.Json.Formatting.None)),
+            Newtonsoft.Json.Linq.JObject.FromObject(config.Settings).ToString(Newtonsoft.Json.Formatting.None)),
         webui = config.WebUI,
         qbitInstances = config.GetAllTorrentClients().ToDictionary(
             kv => kv.Key,
@@ -1612,7 +1564,14 @@ app.MapGet("/web/config/full", (TorrentarrConfig config, IConfigReloader reloade
                 kv.Value.ProcessingOnly,
                 kv.Value.Search
             })
-    });
+    };
+    var json = System.Text.Json.JsonSerializer.Serialize(response, jsonOptions.Value.SerializerOptions);
+    using var reader = new Newtonsoft.Json.JsonTextReader(new StringReader(json))
+    {
+        DateParseHandling = Newtonsoft.Json.DateParseHandling.None
+    };
+    var redacted = WebUIAuthHelpers.RedactConfigResponse(Newtonsoft.Json.Linq.JObject.Load(reader), redactEmptyValues: false);
+    return Results.Content(redacted.ToString(Newtonsoft.Json.Formatting.None), "application/json");
 });
 
 app.MapPost("/web/config/reload", (IConfigReloader reloader) =>
@@ -1724,9 +1683,8 @@ Log.Information("Torrentarr WebUI starting on {Host}:{Port}",
 
 static bool IsSensitiveDottedKey(string dottedKey)
 {
-    const string pattern = @"(apikey|api_key|token|password|secret|passkey|credential)";
     var lastPart = dottedKey.Contains('.') ? dottedKey[(dottedKey.LastIndexOf('.') + 1)..] : dottedKey;
-    return System.Text.RegularExpressions.Regex.IsMatch(lastPart, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    return System.Text.RegularExpressions.Regex.IsMatch(lastPart, WebUIAuthHelpers.SensitiveKeyPattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 }
 
 app.Run();

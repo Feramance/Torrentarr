@@ -23,7 +23,7 @@ public static class ConfigSchemaBuilder
                     Item("Name", "Name", "Unique case-sensitive list name.", "reviewed"),
                     Item("Source", "Source", "Relative file path or public HTTPS URL.", "filters/reviewed.txt")] },
                 RuntimeField(Field("IssueAlertsEnabled", "checkbox", "Issue webhook alerts", false)) with { section = "Settings", description = "Send selected operational issue transitions from the Host." },
-                RuntimeField(Field("IssueAlertsSecretUrl", "password", "Webhook destination", "", secure: true)) with { section = "Settings", description = "HTTP or HTTPS destination. Use HTTPS over untrusted networks." },
+                RuntimeField(Field("IssueAlertsSecretUrl", "text", "Webhook destination", "")) with { section = "Settings", description = "HTTP or HTTPS destination. Use HTTPS over untrusted networks." },
                 RuntimeField(Field("IssueAlertTypes", "tags", "Issue types", Array.Empty<string>(), options: ["worker", "import", "tracker"])) with
                 { section = "Settings", description = "Choose the issues that trigger notifications. Leave empty to send no automatic alerts." }],
             ["WebUI"] = [.. Qbitrr5146ConfigSchema.WebUI.Select(RuntimeField).Select(f => f.key == "Theme" ? f with

@@ -98,7 +98,6 @@ Directory.CreateDirectory(logsPath);
 
 // Config web: placeholder for redacted secrets; must be in scope before any handler that uses it
 const string REDACTED_PLACEHOLDER = "[redacted]";
-const string SensitiveKeyPatternRegex = @"(apikey|api_key|token|password|secret|passkey|credential)";
 
 // Mutable level switch — lets /web/loglevel and /api/loglevel change the level at runtime
 var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
@@ -1160,7 +1159,7 @@ try
         };
         // Serialize then redact sensitive keys (API keys, passwords, tokens) before sending to frontend
         var jObj = Newtonsoft.Json.Linq.JObject.FromObject(flat, Newtonsoft.Json.JsonSerializer.Create(jsonSettings));
-        var redacted = StripSensitiveKeys(jObj);
+        var redacted = WebUIAuthHelpers.RedactConfigResponse(jObj);
 
         // Config version mismatch warning (qBitrr parity): return { config, warning } so frontend can show toast
         var validation = ConfigurationLoader.ValidateConfigVersion(cfg);
@@ -1276,6 +1275,7 @@ try
         var isAuthenticated = ctx.User?.Identity?.IsAuthenticated == true;
         if (!isAuthenticated && IsAuthRequired(cfg))
             return Results.Json(new { token = "" }, statusCode: 401);
+        ctx.Response.Headers.CacheControl = "no-store";
         return Results.Ok(new { token = cfg.WebUI.Token });
     });
 
@@ -1789,7 +1789,7 @@ try
     app.MapGet("/api/config", (TorrentarrConfig cfg) =>
     {
         var token = Newtonsoft.Json.Linq.JObject.FromObject(cfg);
-        return Results.Content(StripSensitiveKeys(token).ToString(Newtonsoft.Json.Formatting.None), "application/json");
+        return Results.Content(WebUIAuthHelpers.RedactConfigResponse(token).ToString(Newtonsoft.Json.Formatting.None), "application/json");
     });
 
     app.MapPost("/api/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr, ITorrentClientRegistry registry, TorrentarrDbContext db, IServiceProvider services) =>
@@ -2244,41 +2244,13 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
 }
 
 /// <summary>
-/// Recursively redact string values whose keys match <see cref="SensitiveKeyPatternRegex"/>.
-/// Returns a new JToken with sensitive values replaced by <see cref="REDACTED_PLACEHOLDER"/>.
-/// </summary>
-static Newtonsoft.Json.Linq.JToken StripSensitiveKeys(Newtonsoft.Json.Linq.JToken token)
-{
-    if (token is Newtonsoft.Json.Linq.JObject obj)
-    {
-        var result = new Newtonsoft.Json.Linq.JObject();
-        foreach (var prop in obj.Properties())
-        {
-            if (prop.Value.Type == Newtonsoft.Json.Linq.JTokenType.String && System.Text.RegularExpressions.Regex.IsMatch(prop.Name, SensitiveKeyPatternRegex, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-                result[prop.Name] = REDACTED_PLACEHOLDER;
-            else
-                result[prop.Name] = StripSensitiveKeys(prop.Value);
-        }
-        return result;
-    }
-    if (token is Newtonsoft.Json.Linq.JArray arr)
-    {
-        var result = new Newtonsoft.Json.Linq.JArray();
-        foreach (var item in arr)
-            result.Add(StripSensitiveKeys(item));
-        return result;
-    }
-    return token.DeepClone();
-}
-
-/// <summary>
 /// Returns true if a dotted config key refers to a sensitive value (e.g. "Radarr-1080.APIKey").
 /// </summary>
 static bool IsSensitiveDottedKey(string dottedKey)
 {
     if (string.IsNullOrEmpty(dottedKey) || !dottedKey.Contains('.')) return false;
     var lastPart = dottedKey[(dottedKey.LastIndexOf('.') + 1)..];
-    return System.Text.RegularExpressions.Regex.IsMatch(lastPart, SensitiveKeyPatternRegex, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    return System.Text.RegularExpressions.Regex.IsMatch(lastPart, WebUIAuthHelpers.SensitiveKeyPattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 }
 
 /// <summary>
