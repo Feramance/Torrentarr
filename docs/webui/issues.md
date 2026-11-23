@@ -5,7 +5,7 @@ The **Issues** view groups problems by cause and instance. Its badge counts acti
 - **Automation & safety** contains skipped searches, profile recovery, unresolved import ownership, tracker problems, and repair diagnostics.
 - **System & services** contains worker failures, connectivity, download storage reserves, synchronization, configuration, database health, and update failures.
 
-Expand a group to see its impact, corrective action, affected subjects, and links to existing settings or logs. Filter by instance, severity, status, or text. Errors appear before warnings. The view refreshes every five seconds while visible; its navigation count refreshes every 15 seconds.
+Expand a group to see what happened, what to check, and how to verify recovery. Use the available actions to open the relevant settings, Manage view, or logs. The affected items list shows examples immediately. **Show all affected items** opens additional pages when available. **View resolved items** opens matching recovered records and their recovery reasons. Maintenance file examples are grouped by torrent. Expand a filename to compare the client path with the path Torrentarr checked. Filter by instance, severity, status, or text. Errors appear before warnings. The view refreshes every five seconds while visible. Its navigation count refreshes every 15 seconds.
 
 An issue appears in Active after it has stayed open for 30 seconds. Recovery clears it on the next refresh. Repeated reports of the same failure keep the original grace period, and a recurrence starts a new one. Resolved issues remain available for 30 days. Removing or disabling an instance closes its issues. Renames preserve issue ownership and history. Config actions open the affected instance and setting when Torrentarr can identify them. Missing artwork uses the normal placeholder.
 
@@ -19,11 +19,11 @@ Maintenance execution failures are reported once for the selected set of clients
 
 Routine activity, intentional pauses, disabled features, and a full search-command queue are not issues. Existing logs retain full exception details. The Issues view contains plain-language descriptions without credentials or raw upstream responses. Issue reporting does not send external notifications or perform repairs.
 
-The read-only API is available at `/web/issues`, `/web/issues/summary`, and `/web/issues/{id}`, with matching `/api` routes. `/api` requires the existing Bearer token. Lists support `category=automation|system`, `state=active|resolved`, `severity=warning|error`, `instance`, `q`, zero-based `page`, and `page_size` (default 50, maximum 100). Details contain affected subjects and their resolution history. The shared SQLite extension table is created automatically on upgrade; no TOML changes are needed.
+The read-only API is available at `/web/issues`, `/web/issues/summary`, and `/web/issues/{id}`, with matching `/api` routes. `/api` requires the existing Bearer token. Lists support `category=automation|system`, `state=active|resolved`, `severity=warning|error`, `instance`, `q`, zero-based `page`, and `page_size` (default 50, maximum 100). Details contain affected items and available recovered records and accept the same state and list filters. Records represent the latest state of each issue identity. The shared SQLite extension table is created automatically on upgrade; no TOML changes are needed.
 
 A subject with an Arr worker has a `relatedLogStream` field that identifies the
 log stream for browsing. Use **Browse worker logs** to open it. **Copy details**
-copies the issue's ID, status, summary, impact, and remediation.
+is available under **Technical details** and copies the issue ID, status, and available evidence.
 
 ## Webhook alerts
 

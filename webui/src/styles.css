@@ -5341,20 +5341,58 @@ section.maintenance-workspace {
   color: var(--muted);
   font-size: 12px;
 }
-.issue-row summary {
+.issue-row > summary {
   cursor: pointer;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.65rem;
 }
-.issue-row summary time {
+.issue-row > summary time {
   margin-left: auto;
   font-size: 0.85em;
 }
 .issue-details {
   padding: 0.5rem 0.25rem;
   overflow-wrap: anywhere;
+  max-width: 76ch;
+}
+.issue-details h4 {
+  margin: 1rem 0 0.35rem;
+}
+.issue-details p {
+  margin: 0.35rem 0 0.65rem;
+}
+.issue-details ol,
+.issue-file-examples ul {
+  padding-inline-start: 1.5rem;
+}
+.issue-details li + li {
+  margin-top: 0.35rem;
+}
+.issue-item-list {
+  list-style: none;
+  padding: 0;
+}
+.issue-item-list > li {
+  border-top: 1px solid var(--border);
+  padding: 0.75rem 0;
+}
+.issue-details summary {
+  cursor: pointer;
+}
+.issue-actions {
+  flex-wrap: wrap;
+}
+.issue-technical,
+.issue-file-examples {
+  margin: 0.65rem 0;
+}
+.issue-paths dt {
+  font-weight: 600;
+}
+.issue-paths dd {
+  margin: 0 0 0.5rem;
 }
 .issue-severity,
 .issue-count {
@@ -5384,7 +5422,7 @@ section.maintenance-workspace {
   background: color-mix(in srgb, var(--accent) 8%, var(--surface));
   font-weight: 600;
 }
-.issue-row summary::before {
+.issue-row > summary::before {
   content: "▸";
 }
 .issue-row[open] summary::before {

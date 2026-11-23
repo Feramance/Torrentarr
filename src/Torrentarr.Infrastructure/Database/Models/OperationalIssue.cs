@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Torrentarr.Core.Services;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
@@ -20,6 +22,10 @@ public sealed class OperationalIssue
     public string Title { get; set; } = "";
     public string Impact { get; set; } = "";
     public string Remediation { get; set; } = "";
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? EvidenceJson { get; set; }
+    [NotMapped]
+    public IssueEvidence? Evidence => EvidenceJson == null ? null : JsonSerializer.Deserialize<IssueEvidence>(EvidenceJson);
     public string Target { get; set; } = "logs";
     public DateTime FirstObserved { get; set; }
     public DateTime LastObserved { get; set; }

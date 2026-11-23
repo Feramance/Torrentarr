@@ -23,6 +23,8 @@ public static class ManualSqliteMigrations
             );
             """);
         db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS idx_operational_issues_state ON torrentarr_operational_issues (ResolvedAt, Category, LastObserved)");
+        AddColumnIfMissing(db, "torrentarr_operational_issues", "EvidenceJson", "TEXT");
+        db.Database.ExecuteSqlRaw("UPDATE torrentarr_operational_issues SET Category = 'system' WHERE Code = 'shared-file-filter' AND Category = 'configuration'");
         ApplyIssueAlertTriggers(db);
         CreateTableIfMissing(db, "torrentarr_retirement_upload", """
             CREATE TABLE IF NOT EXISTS torrentarr_retirement_upload (

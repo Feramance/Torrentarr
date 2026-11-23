@@ -43,6 +43,18 @@ public static class OperationalIssueEndpoints
         return query;
     }
 
+    private static IQueryable<OperationalIssue> ApplyFilters(IQueryable<OperationalIssue> query,
+        string? category, string? severity, string? instance, string? q)
+    {
+        if (category != null) query = query.Where(i => i.Category == category);
+        if (severity != null) query = query.Where(i => i.Severity == severity);
+        if (!string.IsNullOrWhiteSpace(instance)) query = query.Where(i => i.ArrInstance == instance || i.ClientInstance == instance);
+        if (!string.IsNullOrWhiteSpace(q))
+            query = query.Where(i => i.Title.Contains(q) || i.Impact.Contains(q) || i.SubjectId.Contains(q)
+                || (i.EvidenceJson != null && i.EvidenceJson.Contains(q)));
+        return query;
+    }
+
     private static async Task DescribeSubjectsAsync(List<OperationalIssue> items, IServiceProvider services, CancellationToken ct)
     {
         var cache = services.GetService(typeof(ITorrentCacheService)) as ITorrentCacheService;
@@ -130,10 +142,8 @@ public static class OperationalIssueEndpoints
             {
                 var issues = db.OperationalIssues.AsNoTracking();
                 var query = state == "resolved" ? issues.Where(i => i.ResolvedAt != null) : VisibleActive(issues, cutoff, updates);
-                if (category != null) query = query.Where(i => i.Category == category);
-                if (severity != null) query = query.Where(i => i.Severity == severity);
-                if (!string.IsNullOrWhiteSpace(instance)) query = query.Where(i => i.ArrInstance == instance || i.ClientInstance == instance);
-                if (!string.IsNullOrWhiteSpace(q)) query = query.Where(i => i.Title.Contains(q) || i.Impact.Contains(q) || i.SubjectId.Contains(q));
+                query = ApplyFilters(query, category, severity, instance, q);
+                var resolved = ApplyFilters(issues.Where(i => i.ResolvedAt != null), category, severity, instance, q);
                 var grouped = query.GroupBy(i => new { i.Code, i.Category, i.ArrInstance, i.ClientInstance })
                     .Select(g => new
                     {
@@ -160,8 +170,8 @@ public static class OperationalIssueEndpoints
                 var subjects = new List<OperationalIssue>();
                 foreach (var group in groups)
                 {
-                    var examples = await query.Where(i => i.Code == group.Code && i.ArrInstance == group.ArrInstance && i.ClientInstance == group.ClientInstance)
-                        .OrderByDescending(i => i.LastObserved).Take(5).ToListAsync(ct);
+                    var examples = await query.Where(i => i.Category == group.Category && i.Code == group.Code && i.ArrInstance == group.ArrInstance && i.ClientInstance == group.ClientInstance)
+                        .OrderByDescending(i => i.LastObserved).ThenBy(i => i.Id).Take(5).ToListAsync(ct);
                     subjects.AddRange(examples);
                     items.Add(new
                     {
@@ -180,6 +190,9 @@ public static class OperationalIssueEndpoints
                         group.resolvedAt,
                         group.affected,
                         group.occurrences,
+                        hasResolvedItems = state != "resolved" && await resolved.AnyAsync(i =>
+                            i.Category == group.Category && i.Code == group.Code && i.ArrInstance == group.ArrInstance
+                            && i.ClientInstance == group.ClientInstance, ct),
                         examples
                     });
                 }
@@ -188,8 +201,12 @@ public static class OperationalIssueEndpoints
             }
             catch (Exception) when (!ct.IsCancellationRequested) { return Results.Ok(new { available = false, items = Array.Empty<object>(), total = (int?)null, page = currentPage, pageSize, pending }); }
         });
-        app.MapGet(prefix + "/issues/{id:long}", async (long id, TorrentarrDbContext db, IOperationalIssueReporter reporter, IServiceProvider services, int? page, int? page_size, CancellationToken ct) =>
+        app.MapGet(prefix + "/issues/{id:long}", async (long id, TorrentarrDbContext db, IOperationalIssueReporter reporter, IServiceProvider services,
+            int? page, int? page_size, string? state, string? category, string? severity, string? instance, string? q, CancellationToken ct) =>
         {
+            if (state is not (null or "active" or "resolved") || category is not (null or "automation" or "system")
+                || severity is not (null or "warning" or "error"))
+                return Results.BadRequest(new { error = "Invalid issue filter." });
             try
             {
                 var cutoff = VisibilityCutoff(services);
@@ -198,9 +215,15 @@ public static class OperationalIssueEndpoints
                 var visible = issues.Where(i => i.ResolvedAt != null).Union(VisibleActive(issues, cutoff, updates));
                 var issue = await visible.SingleOrDefaultAsync(i => i.Id == id, ct);
                 if (issue == null) return Results.NotFound();
-                var query = visible.Where(i => i.Code == issue.Code && i.ArrInstance == issue.ArrInstance && i.ClientInstance == issue.ClientInstance);
+                var query = (state switch
+                {
+                    "active" => VisibleActive(issues, cutoff, updates),
+                    "resolved" => issues.Where(i => i.ResolvedAt != null),
+                    _ => visible
+                }).Where(i => i.Category == issue.Category && i.Code == issue.Code && i.ArrInstance == issue.ArrInstance && i.ClientInstance == issue.ClientInstance);
+                query = ApplyFilters(query, category, severity, instance, q);
                 var current = Math.Max(0, page ?? 0); var size = Math.Clamp(page_size ?? 50, 1, 100);
-                var items = await query.OrderBy(i => i.ResolvedAt != null).ThenByDescending(i => i.LastObserved).Skip((int)Math.Min((long)current * size, int.MaxValue)).Take(size).ToListAsync(ct);
+                var items = await query.OrderBy(i => i.ResolvedAt != null).ThenByDescending(i => i.LastObserved).ThenBy(i => i.Id).Skip((int)Math.Min((long)current * size, int.MaxValue)).Take(size).ToListAsync(ct);
                 await DescribeSubjectsAsync(items, services, ct);
                 return Results.Ok(new { available = true, total = await query.CountAsync(ct), items, page = current, pageSize = size });
             }

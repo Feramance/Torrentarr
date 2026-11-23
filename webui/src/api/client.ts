@@ -1036,14 +1036,29 @@ export async function getIssuesSummary(): Promise<
 export async function getIssueDetails(
   id: number,
   page = 0,
+  filters: {
+    state?: string;
+    category?: string;
+    severity?: string;
+    instance?: string;
+    q?: string;
+  } = {},
 ): Promise<{
   available: boolean;
   total: number;
   items: import("./types").OperationalIssue[];
   page: number;
   pageSize: number;
-}> {
-  return fetchJson(`/web/issues/${id}?page=${page}`);
+} | null> {
+  const params = new URLSearchParams({ page: String(page) });
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value) params.set(key, value);
+  });
+  return fetchWithAuthRetry(
+    `/web/issues/${id}?${params}`,
+    undefined,
+    async (response) => (response.status === 404 ? null : handleJson(response)),
+  );
 }
 
 export function watchStatistics(

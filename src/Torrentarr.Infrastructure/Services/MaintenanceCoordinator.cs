@@ -1413,10 +1413,13 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         {
             var selection = string.Join(",", preview.Operations.Order());
             foreach (var diagnostic in preview.Diagnostics)
-                await issues.ReportAsync(new("maintenance.preview." + diagnostic.Code, "automation", "Maintenance preview needs attention",
-                    $"Preview operations={selection}; diagnostic={diagnostic.Code}; {DiagnosticText.Safe(diagnostic.Message)} Examples: {string.Join("; ", diagnostic.Examples.Select(e => DiagnosticText.Safe(System.Text.Json.JsonSerializer.Serialize(e))))}",
+                await issues.ReportAsync(new("maintenance.preview." + diagnostic.Code, "automation", diagnostic.Message,
+                    diagnostic.Message,
                     DiagnosticText.Safe(diagnostic.Remediation), ClientInstance: diagnostic.ClientInstanceId,
-                    SubjectType: "preview", SubjectId: selection, Severity: diagnostic.Severity, Target: "maintenance"), ct);
+                    SubjectType: "preview", SubjectId: selection, Severity: diagnostic.Severity, Target: "maintenance",
+                    Evidence: new IssueEvidence(Operations: diagnostic.Operations.Select(op => op.ToString()).ToArray(),
+                        AffectedFiles: diagnostic.AffectedFiles, AffectedTorrents: diagnostic.AffectedTorrents,
+                        Files: diagnostic.Examples.ToArray())), ct);
             var db = services.GetRequiredService<TorrentarrDbContext>();
             var clients = preview.OperationResults.Select(r => r.ClientInstanceId).Concat(inspectedClients?.AsEnumerable() ?? []).Distinct().ToList();
             var previous = await db.OperationalIssues.AsNoTracking().Where(i => i.SubjectType == "preview" && i.ResolvedAt == null && clients.Contains(i.ClientInstance)).ToListAsync(ct);

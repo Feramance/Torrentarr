@@ -146,8 +146,10 @@ public sealed class ReauditRegressionTests
         reports.Should().BeEmpty();
         await SonarrRetryQueue.ExecuteAsync(db, executor.Object, "Arr", NullLogger.Instance, default, Config(type, stub.Url), reporter.Object);
         reports.Should().ContainSingle().Which.Should().Be("import.replacement"); resolved.Should().BeEmpty();
-        reporter.Verify(r => r.ReportAsync(It.Is<OperationalIssueReport>(i => i.Impact.Contains("Phase=blocklist")
-            && i.Impact.Contains("hash=ABC") && i.Impact.Contains("category=media") && i.Impact.Contains("queue/1") && i.Impact.Contains("HTTP status=400")), It.IsAny<CancellationToken>()), Times.Once());
+        reporter.Verify(r => r.ReportAsync(It.Is<OperationalIssueReport>(i => i.Evidence != null && i.Evidence.Detail != null
+            && i.Evidence.Detail.Contains("Phase=blocklist") && i.Evidence.Detail.Contains("hash=ABC")
+            && i.Evidence.Detail.Contains("category=media") && i.Evidence.Detail.Contains("queue/1")
+            && i.Evidence.Detail.Contains("HTTP status=400")), It.IsAny<CancellationToken>()), Times.Once());
         stub.RejectDelete = false;
         await SonarrRetryQueue.ExecuteAsync(db, executor.Object, "Arr", NullLogger.Instance, default, Config(type, stub.Url), reporter.Object);
         (await db.SonarrSearchRetries.CountAsync()).Should().Be(0);

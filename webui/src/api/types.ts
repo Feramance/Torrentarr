@@ -838,6 +838,21 @@ export interface TorrentAutomationStatus {
   inspections: NonNullable<MaintenanceStatus["inspections"]>;
 }
 
+export interface IssueEvidence {
+  detail?: string | null;
+  operations?: string[] | null;
+  affectedFiles?: number | null;
+  affectedTorrents?: number | null;
+  files?:
+    | {
+        torrentHash: string | null;
+        torrentName: string | null;
+        clientPath: string | null;
+        localPath: string | null;
+      }[]
+    | null;
+}
+
 export interface OperationalIssue {
   id: number;
   code: string;
@@ -849,6 +864,7 @@ export interface OperationalIssue {
   subjectName?: string | null;
   subjectCategory?: string | null;
   relatedLogStream?: string | null;
+  evidence?: IssueEvidence | null;
   severity: "warning" | "error";
   title: string;
   impact: string;
@@ -862,6 +878,7 @@ export interface OperationalIssue {
 }
 export interface OperationalIssueGroup extends OperationalIssue {
   affected: number;
+  hasResolvedItems?: boolean;
   examples: OperationalIssue[];
 }
 export interface PendingOperationalIssue {

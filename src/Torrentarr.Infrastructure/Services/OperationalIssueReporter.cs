@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -23,25 +24,42 @@ public sealed class OperationalIssueReporter(IServiceScopeFactory scopes, ILogge
 
     private async Task SubmitAsync(PendingOperationalIssue update, CancellationToken ct)
     {
+        var evidence = update.Report.Evidence;
         update = update with
         {
             Report = update.Report with
             {
                 Title = DiagnosticText.Safe(update.Report.Title),
                 Impact = DiagnosticText.Safe(update.Report.Impact),
-                Remediation = DiagnosticText.Safe(update.Report.Remediation)
+                Remediation = DiagnosticText.Safe(update.Report.Remediation),
+                Evidence = evidence == null ? null : evidence with
+                {
+                    Detail = SafeOptional(evidence.Detail),
+                    Operations = evidence.Operations?.Select(DiagnosticText.Safe).ToArray(),
+                    Files = evidence.Files?.Take(5).Select(file => new Torrentarr.Core.Models.MaintenanceDiagnosticExample(
+                        SafeOptional(file.TorrentHash), SafeOptional(file.TorrentName),
+                        SafeOptional(file.ClientPath), SafeOptional(file.LocalPath))).ToArray()
+                }
             }
         };
         lock (_gate)
         {
             var key = Key(update.Report);
             var previous = _pending.GetValueOrDefault(key);
-            update = update with { FirstObserved = previous?.FirstObserved ?? (update.Resolved ? null : update.ObservedAt) };
+            update = update with
+            {
+                FirstObserved = previous?.FirstObserved ?? (update.Resolved ? null : update.ObservedAt),
+                Report = update.Resolved && previous is { Resolved: false }
+                    ? previous.Report
+                    : update.Report
+            };
             if (_pending.Count < 100 || _pending.ContainsKey(key)) _pending[key] = update;
             else logger.LogWarning("Issue reporting backlog is full; additional issue updates remain in application logs");
         }
         await FlushAsync(ct);
     }
+
+    private static string? SafeOptional(string? value) => value == null ? null : DiagnosticText.Safe(value);
 
     internal async Task FlushAsync(CancellationToken ct)
     {
@@ -60,13 +78,14 @@ public sealed class OperationalIssueReporter(IServiceScopeFactory scopes, ILogge
                     if (scope.ServiceProvider.GetService<IConfigReloader>() is { } reloader)
                         r = r with { ArrInstance = reloader.ResolveInstanceName(r.ArrInstance, update.ConfigurationRevision), ClientInstance = reloader.ResolveInstanceName(r.ClientInstance, update.ConfigurationRevision) };
                     var at = update.ObservedAt;
+                    var evidenceJson = r.Evidence == null ? null : JsonSerializer.Serialize(r.Evidence);
                     if (db.Database.IsRelational())
                     {
                         if (update.Resolved)
                         {
                             // A failure and recovery during the same outage still belong in resolved history.
                             if (update.FirstObserved.HasValue)
-                                await db.Database.ExecuteSqlInterpolatedAsync($"INSERT OR IGNORE INTO torrentarr_operational_issues (Code, Category, ArrInstance, ClientInstance, SubjectType, SubjectId, Severity, Title, Impact, Remediation, Target, FirstObserved, LastObserved, ResolvedAt, Resolution, Occurrences) VALUES ({r.Code}, {r.Category}, {r.ArrInstance}, {r.ClientInstance}, {r.SubjectType}, {r.SubjectId}, {r.Severity}, {r.Title}, {r.Impact}, {r.Remediation}, {r.Target}, {update.FirstObserved.Value}, {at}, {at}, {"Verified recovery"}, 1)", ct);
+                                await db.Database.ExecuteSqlInterpolatedAsync($"INSERT OR IGNORE INTO torrentarr_operational_issues (Code, Category, ArrInstance, ClientInstance, SubjectType, SubjectId, Severity, Title, Impact, Remediation, EvidenceJson, Target, FirstObserved, LastObserved, ResolvedAt, Resolution, Occurrences) VALUES ({r.Code}, {r.Category}, {r.ArrInstance}, {r.ClientInstance}, {r.SubjectType}, {r.SubjectId}, {r.Severity}, {r.Title}, {r.Impact}, {r.Remediation}, {evidenceJson}, {r.Target}, {update.FirstObserved.Value}, {at}, {at}, {"Verified recovery"}, 1)", ct);
                             var hasActive = update.FirstObserved.HasValue || await db.OperationalIssues.AsNoTracking().AnyAsync(i =>
                                 i.ResolvedAt == null && i.Code == r.Code && i.ArrInstance == r.ArrInstance && i.ClientInstance == r.ClientInstance
                                 && i.SubjectType == r.SubjectType && i.SubjectId == r.SubjectId, ct);
@@ -74,7 +93,7 @@ public sealed class OperationalIssueReporter(IServiceScopeFactory scopes, ILogge
                                 await db.Database.ExecuteSqlInterpolatedAsync($"UPDATE torrentarr_operational_issues SET ResolvedAt={at}, Resolution={"Verified recovery"}, LastObserved={at} WHERE Code={r.Code} AND ArrInstance={r.ArrInstance} COLLATE NOCASE AND ClientInstance={r.ClientInstance} COLLATE NOCASE AND SubjectType={r.SubjectType} AND SubjectId={r.SubjectId} AND (ResolvedAt IS NULL OR {update.FirstObserved.HasValue}) AND LastObserved <= {at}", ct);
                         }
                         else
-                            await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO torrentarr_operational_issues (Code, Category, ArrInstance, ClientInstance, SubjectType, SubjectId, Severity, Title, Impact, Remediation, Target, FirstObserved, LastObserved, Occurrences) VALUES ({r.Code}, {r.Category}, {r.ArrInstance}, {r.ClientInstance}, {r.SubjectType}, {r.SubjectId}, {r.Severity}, {r.Title}, {r.Impact}, {r.Remediation}, {r.Target}, {update.FirstObserved ?? at}, {at}, 1) ON CONFLICT(Code, ArrInstance, ClientInstance, SubjectType, SubjectId) DO UPDATE SET FirstObserved=CASE WHEN ResolvedAt IS NULL THEN FirstObserved ELSE excluded.FirstObserved END, LastObserved=excluded.LastObserved, ResolvedAt=NULL, Resolution=NULL, Occurrences=Occurrences+1, Severity=excluded.Severity, Title=excluded.Title, Impact=excluded.Impact, Remediation=excluded.Remediation, Target=excluded.Target WHERE LastObserved <= excluded.LastObserved", ct);
+                            await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO torrentarr_operational_issues (Code, Category, ArrInstance, ClientInstance, SubjectType, SubjectId, Severity, Title, Impact, Remediation, EvidenceJson, Target, FirstObserved, LastObserved, Occurrences) VALUES ({r.Code}, {r.Category}, {r.ArrInstance}, {r.ClientInstance}, {r.SubjectType}, {r.SubjectId}, {r.Severity}, {r.Title}, {r.Impact}, {r.Remediation}, {evidenceJson}, {r.Target}, {update.FirstObserved ?? at}, {at}, 1) ON CONFLICT(Code, ArrInstance, ClientInstance, SubjectType, SubjectId) DO UPDATE SET FirstObserved=CASE WHEN ResolvedAt IS NULL THEN FirstObserved ELSE excluded.FirstObserved END, LastObserved=excluded.LastObserved, ResolvedAt=NULL, Resolution=NULL, Occurrences=Occurrences+1, Severity=excluded.Severity, Title=excluded.Title, Impact=excluded.Impact, Remediation=excluded.Remediation, EvidenceJson=excluded.EvidenceJson, Target=excluded.Target WHERE LastObserved <= excluded.LastObserved", ct);
                     }
                     else
                     {
@@ -93,6 +112,7 @@ public sealed class OperationalIssueReporter(IServiceScopeFactory scopes, ILogge
                                 Title = r.Title,
                                 Impact = r.Impact,
                                 Remediation = r.Remediation,
+                                EvidenceJson = evidenceJson,
                                 Severity = r.Severity,
                                 Target = r.Target,
                                 Occurrences = update.Resolved ? 1 : 0
@@ -104,7 +124,7 @@ public sealed class OperationalIssueReporter(IServiceScopeFactory scopes, ILogge
                             if (item.ResolvedAt != null) item.FirstObserved = update.FirstObserved ?? at;
                             item.LastObserved = at; item.ResolvedAt = update.Resolved ? at : null;
                             item.Resolution = update.Resolved ? "Verified recovery" : null;
-                            if (!update.Resolved) { item.Occurrences++; item.Title = r.Title; item.Impact = r.Impact; item.Remediation = r.Remediation; item.Severity = r.Severity; item.Target = r.Target; }
+                            if (!update.Resolved) { item.Occurrences++; item.Title = r.Title; item.Impact = r.Impact; item.Remediation = r.Remediation; item.EvidenceJson = evidenceJson; item.Severity = r.Severity; item.Target = r.Target; }
                             await db.SaveChangesAsync(ct);
                         }
                     }

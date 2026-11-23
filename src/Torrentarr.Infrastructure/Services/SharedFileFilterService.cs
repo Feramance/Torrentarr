@@ -98,15 +98,15 @@ public sealed class SharedFileFilterService(
         Volatile.Write(ref _states, next);
         foreach (var state in next.Values)
         {
-            var issue = new OperationalIssueReport("shared-file-filter", "configuration", "Shared file filter unavailable",
+            var issue = new OperationalIssueReport("shared-file-filter", "system", "Shared file filter unavailable",
                 state.LoadedAt == null ? "Torrent processing and import wait for a usable shared list."
                     : "Filtering uses the last valid version while refresh is failing.",
-                "Review the list source and format in general settings.", SubjectId: state.Name);
-            if (state.Error != null) await issues.ReportAsync(issue, ct);
+                "Review the list source and format in general settings.", SubjectId: state.Name, Target: "config");
+            if (state.Error != null) await issues.ReportAsync(issue.WithEvidence(state.Error), ct);
             else await issues.ResolveAsync(issue, ct);
         }
         foreach (var removed in previous.Keys.Except(next.Keys))
-            await issues.ResolveAsync(new("shared-file-filter", "configuration", "Shared file filter unavailable", "", "", SubjectId: removed), ct);
+            await issues.ResolveAsync(new("shared-file-filter", "system", "Shared file filter unavailable", "", "", SubjectId: removed), ct);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
