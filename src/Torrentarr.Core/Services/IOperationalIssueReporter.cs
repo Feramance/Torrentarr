@@ -3,7 +3,11 @@ using Torrentarr.Core.Models;
 namespace Torrentarr.Core.Services;
 
 public sealed record IssueEvidence(string? Detail = null, string[]? Operations = null,
-    int? AffectedFiles = null, int? AffectedTorrents = null, MaintenanceDiagnosticExample[]? Files = null);
+    int? AffectedFiles = null, int? AffectedTorrents = null, MaintenanceDiagnosticExample[]? Files = null,
+    TorrentRemovalEvidence? Removal = null);
+
+public sealed record TorrentRemovalEvidence(string Name, string Category, string Intent,
+    string? Context, IReadOnlyList<RemovalBlocker> Blockers);
 
 public sealed record OperationalIssueReport(string Code, string Category, string Title, string Impact,
     string Remediation, string ArrInstance = "", string ClientInstance = "", string SubjectType = "service",

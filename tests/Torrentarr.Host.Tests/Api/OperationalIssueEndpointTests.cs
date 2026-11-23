@@ -110,6 +110,10 @@ public sealed class OperationalIssueEndpointTests
             group.GetProperty("affected").GetInt32().Should().Be(1);
             group.GetProperty("occurrences").GetInt32().Should().Be(occurrences);
             group.GetProperty("impact").GetString().Should().Contain("Original blocker evidence");
+            var blocker = group.GetProperty("examples")[0].GetProperty("evidence").GetProperty("removal").GetProperty("blockers")[0];
+            blocker.GetProperty("code").GetString().Should().Be("test.blocker");
+            blocker.GetProperty("reason").GetString().Should().Be("Original blocker evidence");
+            blocker.GetProperty("remediation").GetString().Should().Be("Retry after recovery");
         }
 
         await Scan();

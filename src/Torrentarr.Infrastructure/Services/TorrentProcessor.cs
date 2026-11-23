@@ -1167,10 +1167,19 @@ public class TorrentProcessor : ITorrentProcessor
         if (_issues != null)
         {
             if (expectedWait) await _issues.ResolveAsync(RemovalIssue(torrent, intent));
-            else await _issues.ReportAsync(RemovalIssue(torrent, intent) with
+            else
             {
-                Impact = DiagnosticText.Safe($"Torrent={torrent.Name}; hash={torrent.Hash}; client={torrent.ClientInstanceId}; category={torrent.Category}; intent={intent}. {reason}")
-            });
+                var blockerSummary = decision?.Reason;
+                var context = !string.IsNullOrEmpty(blockerSummary) && reason.EndsWith(blockerSummary, StringComparison.Ordinal)
+                    ? reason[..^blockerSummary.Length].TrimEnd().TrimEnd(':')
+                    : reason;
+                await _issues.ReportAsync(RemovalIssue(torrent, intent) with
+                {
+                    Impact = DiagnosticText.Safe($"Torrent={torrent.Name}; hash={torrent.Hash}; client={torrent.ClientInstanceId}; category={torrent.Category}; intent={intent}. {reason}"),
+                    Evidence = new IssueEvidence(Removal: new(torrent.Name, torrent.Category, intent.ToString(),
+                        string.IsNullOrWhiteSpace(context) ? null : context, decision?.Blockers ?? []))
+                });
+            }
         }
     }
 

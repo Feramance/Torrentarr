@@ -457,3 +457,79 @@ it("links grouped storage issues to each affected monitor", async () => {
     window.removeEventListener(NAVIGATE_TAB_EVENT, capture);
   }
 });
+
+it.each([false, true])(
+  "lists torrent metadata and blockers for a removal report (structured: %s)",
+  async (structured) => {
+    const blockers = [
+      {
+        code: "torrent.protected-tag",
+        reason: "Blocking tag 'free_space_paused' is present",
+        remediation: "Resolve the free-space policy.",
+      },
+      {
+        code: "stalled.grace",
+        reason: "StalledDelay=1440min; idle=696s; required=86400s",
+        remediation:
+          "Wait for the stalled grace; a negative delay disables removal.",
+      },
+    ];
+    const issue = {
+      ...group.examples[0],
+      code: "torrent.removal.SeedingLimit",
+      subjectType: "torrent",
+      subjectId: "deadbeef",
+      subjectName: "Season pack",
+      clientInstance: "qBit-General",
+      impact:
+        "Torrent=Season pack; hash=deadbeef; client=qBit-General; category=sonarranime; intent=SeedingLimit. " +
+        blockers
+          .map(
+            ({ code, reason, remediation }) =>
+              `${code}: ${reason} Next: ${remediation}`,
+          )
+          .join("; "),
+      evidence: structured
+        ? {
+            removal: {
+              name: "Season pack",
+              category: "sonarranime",
+              intent: "SeedingLimit",
+              blockers,
+            },
+          }
+        : undefined,
+    };
+    server.use(
+      http.get("/web/issues", () =>
+        HttpResponse.json({
+          available: true,
+          total: 1,
+          page: 0,
+          pageSize: 50,
+          pending: [],
+          items: [
+            { ...group, code: issue.code, affected: 1, examples: [issue] },
+          ],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<IssuesView />);
+    await user.click(await screen.findByText("Torrent removal was blocked"));
+    await user.click(screen.getByText("Technical details"));
+    expect(screen.getByText("Removal rule").closest("li")).toHaveTextContent(
+      "Seeding Limit",
+    );
+    expect(screen.getByText("Hash").closest("li")).toHaveTextContent(
+      "deadbeef",
+    );
+    for (const blocker of blockers) {
+      const bullet = screen
+        .getByText(blocker.code, { selector: "li strong" })
+        .closest("li");
+      expect(bullet).toHaveTextContent(blocker.reason);
+      expect(bullet).toHaveTextContent(blocker.remediation);
+    }
+  },
+);

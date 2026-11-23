@@ -5364,8 +5364,12 @@ section.maintenance-workspace {
   margin: 0.35rem 0 0.65rem;
 }
 .issue-details ol,
-.issue-file-examples ul {
+.issue-file-examples ul,
+.issue-technical ul {
   padding-inline-start: 1.5rem;
+}
+.issue-technical ul {
+  list-style: disc;
 }
 .issue-details li + li {
   margin-top: 0.35rem;

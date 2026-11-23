@@ -35,6 +35,11 @@ public sealed class OperationalIssueReporter(IServiceScopeFactory scopes, ILogge
                 Evidence = evidence == null ? null : evidence with
                 {
                     Detail = SafeOptional(evidence.Detail),
+                    Removal = evidence.Removal is { } removal ? new TorrentRemovalEvidence(
+                        DiagnosticText.Safe(removal.Name), DiagnosticText.Safe(removal.Category),
+                        DiagnosticText.Safe(removal.Intent), SafeOptional(removal.Context),
+                        removal.Blockers.Select(blocker => new RemovalBlocker(DiagnosticText.Safe(blocker.Code),
+                            DiagnosticText.Safe(blocker.Reason), DiagnosticText.Safe(blocker.Remediation))).ToArray()) : null,
                     Operations = evidence.Operations?.Select(DiagnosticText.Safe).ToArray(),
                     Files = evidence.Files?.Take(5).Select(file => new Torrentarr.Core.Models.MaintenanceDiagnosticExample(
                         SafeOptional(file.TorrentHash), SafeOptional(file.TorrentName),

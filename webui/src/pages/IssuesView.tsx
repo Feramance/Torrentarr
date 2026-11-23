@@ -46,6 +46,42 @@ function subjectName(item: OperationalIssue) {
   }
 }
 
+function removalEvidence(item: OperationalIssue): IssueEvidence["removal"] {
+  if (item.evidence?.removal) return item.evidence.removal;
+  if (!item.code.startsWith("torrent.removal.")) return undefined;
+
+  // Older reports use this exact envelope. Keep unfamiliar text visible as-is.
+  const legacy =
+    /^Torrent=(.*?); hash=([^;]+); client=([^;]*); category=(.*?); intent=(\w+)\. (.+)$/s.exec(
+      item.impact,
+    );
+  if (
+    !legacy ||
+    legacy[2] !== item.subjectId ||
+    legacy[3] !== item.clientInstance
+  )
+    return undefined;
+  const [, name, , , category, intent, detail] = legacy;
+  const parts = detail.split(
+    /; (?=[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)+: .*? Next: )/s,
+  );
+  const blockers = parts.map((part) =>
+    /^([\w.-]+): (.*?) Next: (.+)$/s.exec(part),
+  );
+  return blockers.every((match) => match !== null)
+    ? {
+        name,
+        category,
+        intent,
+        blockers: blockers.map((match) => ({
+          code: match![1],
+          reason: match![2],
+          remediation: match![3],
+        })),
+      }
+    : { name, category, intent, context: detail, blockers: [] };
+}
+
 function IssueTechnicalDetails({
   item,
   summary,
@@ -54,6 +90,7 @@ function IssueTechnicalDetails({
   summary?: string;
 }) {
   const evidence = item.evidence;
+  const removal = removalEvidence(item);
   const hasPaths = evidence?.files?.some(
     (file) => file.clientPath || file.localPath,
   );
@@ -144,14 +181,54 @@ function IssueTechnicalDetails({
       )}
       <details className="issue-technical">
         <summary>Technical details</summary>
-        {item.impact && item.impact !== summary && <p>{item.impact}</p>}
+        {removal ? (
+          <>
+            <ul>
+              <li>
+                <strong>Torrent</strong> {removal.name}
+              </li>
+              <li>
+                <strong>Hash</strong> {item.subjectId}
+              </li>
+              <li>
+                <strong>Client</strong> {item.clientInstance}
+              </li>
+              <li>
+                <strong>Category</strong> {removal.category || "Uncategorized"}
+              </li>
+              <li>
+                <strong>Removal rule</strong>{" "}
+                {removal.intent.replace(/([a-z])([A-Z])/g, "$1 $2")}
+              </li>
+            </ul>
+            {removal.context && <p>{removal.context}</p>}
+            {removal.blockers.length > 0 && (
+              <>
+                <strong>Removal blockers</strong>
+                <ul>
+                  {removal.blockers.map((blocker, index) => (
+                    <li key={`${blocker.code}-${index}`}>
+                      <strong>{blocker.code}</strong>
+                      <p>{blocker.reason}</p>
+                      <p>
+                        <strong>Next step</strong> {blocker.remediation}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </>
+        ) : (
+          item.impact && item.impact !== summary && <p>{item.impact}</p>
+        )}
         {evidence?.detail && <p>{evidence.detail}</p>}
         {!issueGuidance(item.code) && item.remediation && (
           <p>{item.remediation}</p>
         )}
         <p className="muted">
           Issue {item.id} · {item.code}
-          {item.subjectId ? ` · ${item.subjectId}` : ""}
+          {item.subjectId && !removal ? ` · ${item.subjectId}` : ""}
         </p>
         <CopyButton label="Copy details" text={copyText} />
       </details>

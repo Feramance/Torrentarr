@@ -840,6 +840,13 @@ export interface TorrentAutomationStatus {
 
 export interface IssueEvidence {
   detail?: string | null;
+  removal?: {
+    name: string;
+    category: string;
+    intent: string;
+    context?: string | null;
+    blockers: { code: string; reason: string; remediation: string }[];
+  } | null;
   operations?: string[] | null;
   affectedFiles?: number | null;
   affectedTorrents?: number | null;
