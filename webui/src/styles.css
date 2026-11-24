@@ -5524,6 +5524,7 @@ pre,
   border-right: 1px solid var(--border);
   background: var(--surface-sunken);
   overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 .sidebar__brand {
   position: relative;
@@ -5864,6 +5865,10 @@ pre,
   max-width: calc(100vw - 32px);
   border-radius: 0;
   border-width: 0 1px 0 0;
+  overflow: hidden;
+}
+.navigation-drawer > .shell-dialog__heading {
+  flex-shrink: 0;
 }
 .metric-strip {
   display: grid;
@@ -6790,6 +6795,7 @@ body:has(.instance-add-bar) .toasts {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior-y: contain;
   min-height: 0;
   margin-bottom: 20px;
 }
