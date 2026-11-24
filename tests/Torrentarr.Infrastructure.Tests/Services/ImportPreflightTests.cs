@@ -31,6 +31,7 @@ public sealed class ImportPreflightTests : IAsyncDisposable
     private readonly List<TorrentFileRecord> _files = [];
     private readonly ConcurrentQueue<JObject> _posts = new();
     private readonly ConcurrentQueue<string> _reads = new();
+    private readonly ConcurrentQueue<string> _previewRequests = new();
     private readonly Dictionary<string, JToken> _resources = new();
     private JArray _preview = [];
     private JArray _history = [];
@@ -39,6 +40,7 @@ public sealed class ImportPreflightTests : IAsyncDisposable
     private int _postStatus = 201;
     private int _previewReads;
     private bool _changePreviewOnRefresh;
+    private string _apiVersion = "v3";
     private const string Type = "sonarr";
 
     public ImportPreflightTests()
@@ -159,6 +161,38 @@ public sealed class ImportPreflightTests : IAsyncDisposable
     {
         AddEpisode("episode.mkv", [1], null);
         (await Service().TriggerImportAsync(_torrent, "media")).Success.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("v3", "downloadId")]
+    [InlineData("v5", "downloadIds")]
+    public async Task SonarrPreflightUsesVersionedDownloadParameterForBothPreviews(string version, string parameter)
+    {
+        _apiVersion = version;
+        AddEpisode("episode.mkv", [1], null);
+
+        (await Service().TriggerImportAsync(_torrent, "media")).Success.Should().BeTrue();
+
+        _previewRequests.Should().HaveCount(2).And.OnlyContain(path =>
+            path == $"/api/{version}/manualimport?{parameter}=download&filterExistingFiles=true&replaceExistingFiles=true");
+        _posts.Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData("v3")]
+    [InlineData("v5")]
+    public async Task EmptySonarrPreviewDoesNotAuthorizeImport(string version)
+    {
+        _apiVersion = version;
+        AddEpisode("episode.mkv", [1], null);
+        _preview.Clear();
+
+        var result = await Service().TriggerImportAsync(_torrent, "media");
+
+        result.Success.Should().BeFalse();
+        result.Deferred.Should().BeTrue();
+        _posts.Should().BeEmpty();
+        Receipt().Files.Single().Reason.Should().Contain("exactly one owned file");
     }
 
     [Fact]
@@ -525,7 +559,7 @@ public sealed class ImportPreflightTests : IAsyncDisposable
                 var route = context.Request.Url!.AbsolutePath.Split('/', 4).Last();
                 _reads.Enqueue(route);
                 JToken response;
-                if (route == "system/status") response = new JObject { ["version"] = "4.0.0" };
+                if (route == "system/status") response = new JObject { ["version"] = _apiVersion == "v5" ? "5.0.0" : "4.0.0" };
                 else if (route == "queue") response = new JObject
                 {
                     ["page"] = 1,
@@ -535,8 +569,19 @@ public sealed class ImportPreflightTests : IAsyncDisposable
                 };
                 else if (route == "manualimport")
                 {
-                    if (++_previewReads > 1 && _changePreviewOnRefresh) _preview[0]!["episodes"] = new JArray(new JObject { ["id"] = 2 });
-                    response = _preview.DeepClone();
+                    _previewRequests.Enqueue(context.Request.Url.PathAndQuery);
+                    var parameter = _apiVersion == "v5" ? "downloadIds" : "downloadId";
+                    var wrongParameter = _apiVersion == "v5" ? "downloadId" : "downloadIds";
+                    if (context.Request.QueryString[parameter] != "download" || context.Request.QueryString[wrongParameter] != null)
+                    {
+                        context.Response.StatusCode = 500;
+                        response = new JObject { ["message"] = "Missing version-specific download parameter." };
+                    }
+                    else
+                    {
+                        if (++_previewReads > 1 && _changePreviewOnRefresh) _preview[0]!["episodes"] = new JArray(new JObject { ["id"] = 2 });
+                        response = _preview.DeepClone();
+                    }
                 }
                 else if (route == "history/since") response = _history.DeepClone();
                 else if (route == "command" && context.Request.HttpMethod == "GET") response = _commands.DeepClone();

@@ -408,6 +408,10 @@ public partial class SonarrClient : IArrActivityClient
     private async Task<RestRequest> CreateRequestAsync(string path, Method method, CancellationToken ct)
     {
         var info = await SonarrApiDiscovery.ResolveAsync(_baseUrl, _apiKey, _skipTlsVerify, ct);
+        // Sonarr v5 accepts multiple download IDs for a manual-import preview.
+        if (info.ApiVersion == "v5" && path.StartsWith("manualimport?", StringComparison.Ordinal))
+            path = path.Replace("?downloadId=", "?downloadIds=", StringComparison.Ordinal)
+                .Replace("&downloadId=", "&downloadIds=", StringComparison.Ordinal);
         return new RestRequest($"api/{info.ApiVersion}/{path}", method);
     }
 
