@@ -1040,9 +1040,10 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
 }
 
 // Processes endpoint - list all processes with status
-app.MapGet("/web/processes", (TorrentarrConfig config) =>
+app.MapGet("/web/processes", async (TorrentarrConfig config, TorrentarrDbContext db) =>
 {
     var processes = new List<object>();
+    var lastActions = await WorkerHistory.LastActionsAsync(db, config.ArrInstances.Keys);
 
     foreach (var arr in config.ArrInstances)
     {
@@ -1054,8 +1055,8 @@ app.MapGet("/web/processes", (TorrentarrConfig config) =>
             kind = "worker",
             restartable = false,
             status = "Supervisor unavailable",
-            torrent = (WorkerLoopProgress?)null,
-            search = (WorkerLoopProgress?)null,
+            torrent = WorkerHistory.RestoreLast(null, false, arr.Key, "torrent", lastActions),
+            search = WorkerHistory.RestoreLast(null, false, arr.Key, "search", lastActions),
             alive = false,
             pid = (int?)null,
             uptime = (long?)null
@@ -1620,6 +1621,7 @@ app.MapStatisticsEndpoints();
 app.MapTransferHistory();
 app.MapArrActivity();
 app.MapSearchDecisions("/web");
+app.MapWorkerHistory("/web");
 app.MapSharedFileFilters("/web");
 app.MapFailedTorrentDestinations("/web");
 app.MapArrCatalogEndpoints();

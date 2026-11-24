@@ -339,6 +339,7 @@ public class ArrWorkerManager : BackgroundService
         {
             while (!ct.IsCancellationRequested)
             {
+                using var history = WorkerHistory.Begin(_scopeFactory, _logger, instanceName, "torrent", arrCfg);
                 using var configuration = _config.BeginOperation();
                 var intervals = TorrentScanSchedule.Intervals(_config);
                 var due = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -409,6 +410,7 @@ public class ArrWorkerManager : BackgroundService
         {
             while (!ct.IsCancellationRequested)
             {
+                using var history = WorkerHistory.Begin(_scopeFactory, _logger, instanceName, "search", arrCfg);
 
                 try
                 {

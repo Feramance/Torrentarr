@@ -1,6 +1,9 @@
 """Torrentarr search activity, filter, destination and issue alert APIs."""
 
 ROUTES = (
+    ("get", "/history", "Read worker action history",
+     "Returns entries, workers (including retained former workers), types and nextCursor. Filter by exact worker instance and action type. Newest first; pass nextCursor as cursor for older entries. Retention defaults to 30 days via Settings.HistoryRetentionDays. Entries distinguish worker actions from observed item changes and preserve submitted commands until completion evidence is available.",
+     (("worker", "query", False), ("type", "query", False), ("cursor", "query", False), ("pageSize", "query", False)), {"400": "Invalid type, cursor or page size"}),
     ("get", "/processes/{instance}/search-activity", "Preview proactive search and read decision history",
      "The preview uses the latest usable catalog and current search observations. Null means no usable preview. History distinguishes submission, completion, grabs and confirmed no-grab windows.",
      (("instance", "path", True),), {"404": "Unknown integration"}),
@@ -25,7 +28,7 @@ def apply(spec):
                 "summary": summary,
                 "description": description,
                 "parameters": [
-                    {"name": name, "in": location, "required": required, "schema": {"type": "string"}}
+                    {"name": name, "in": location, "required": required, "schema": ({"type": "integer", "minimum": 1, **({"maximum": 100, "default": 50} if name == "pageSize" else {})} if name in ("cursor", "pageSize") else {"type": "string"})}
                     for name, location, required in parameters
                 ],
                 "responses": {

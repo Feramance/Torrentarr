@@ -129,6 +129,10 @@ The numeric **major** of this field follows Torrentarr’s release policy: **one
 
 ---
 
+### HistoryRetentionDays
+
+`HistoryRetentionDays = 30` keeps worker action history for 30 days by default. Set a positive number of days in General settings or `[Settings]`; changes apply during the next hourly cleanup. History survives restarts and starts collecting after upgrade. The History page, immediately below Logs, filters worker actions and observed item additions, updates, and deletions by worker and action type.
+
 ### ConsoleLevel
 
 ```toml

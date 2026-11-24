@@ -1106,3 +1106,13 @@ export function getArrActivity(
     `/web/statistics/arr-activity?${params}`,
   );
 }
+
+export function getWorkerHistory(worker = "", type = "", cursor?: number) {
+  const params = new URLSearchParams();
+  if (worker) params.set("worker", worker);
+  if (type) params.set("type", type);
+  if (cursor != null) params.set("cursor", String(cursor));
+  return fetchJson<import("./types").WorkerHistoryResponse>(
+    `/web/history?${params}`,
+  );
+}

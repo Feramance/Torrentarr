@@ -5,6 +5,10 @@ export interface WorkerLoopProgress {
   startedAt: string;
   wakeAt?: string | null;
   lastSuccess?: string | null;
+  currentAction?: string | null;
+  currentActionAt?: string | null;
+  lastAction?: string | null;
+  lastActionAt?: string | null;
 }
 
 export interface ProcessInfo {
@@ -950,4 +954,30 @@ export interface ArrActivityHistory {
   bucketMinutes: number;
   generatedAt: string;
   series: ArrActivitySeries[];
+}
+
+export interface WorkerHistoryEvent {
+  logStream?: string;
+  runId?: string;
+  id: number;
+  timestamp: string;
+  instance: string;
+  loop: string;
+  type: string;
+  source: "worker" | "observed";
+  subjectType: string;
+  subjectId: string;
+  summary: string;
+  outcome: string;
+  details: string;
+  clientInstance: string;
+  commandId: number | null;
+  completedAt: string | null;
+}
+
+export interface WorkerHistoryResponse {
+  entries: WorkerHistoryEvent[];
+  workers: string[];
+  types: string[];
+  nextCursor: number | null;
 }

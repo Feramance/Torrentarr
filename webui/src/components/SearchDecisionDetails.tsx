@@ -49,9 +49,11 @@ function SearchItem({
 export function SearchDecisionDetails({
   instance,
   category,
+  label = "Search activity",
 }: {
   instance: string;
   category: string;
+  label?: string;
 }) {
   const [result, setResult] = useState<SearchDecisionResponse>();
   const [loading, setLoading] = useState(false);
@@ -73,7 +75,7 @@ export function SearchDecisionDetails({
         if (event.currentTarget.open && !loading) void load();
       }}
     >
-      <summary>Search activity</summary>
+      <summary>{label}</summary>
       {loading && <p role="status">Loading search activity…</p>}
       {failed && <p role="alert">Search activity is unavailable.</p>}
       <button

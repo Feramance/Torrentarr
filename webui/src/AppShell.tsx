@@ -40,6 +40,7 @@ import UpdateIcon from "./icons/up-arrow.svg";
 import ProcessesIcon from "./icons/process.svg";
 import IssuesIcon from "./icons/alert.svg";
 import LogsIcon from "./icons/log.svg";
+import HistoryIcon from "./icons/history.svg";
 import RadarrIcon from "./icons/radarr.svg";
 import SonarrIcon from "./icons/sonarr.svg";
 import LidarrIcon from "./icons/lidarr.svg";
@@ -59,6 +60,7 @@ type Tab =
   | "issues"
   | "processes"
   | "logs"
+  | "history"
   | "radarr"
   | "sonarr"
   | "lidarr"
@@ -70,6 +72,10 @@ type Tab =
 const loadProcessesView = () =>
   import("./pages/ProcessesView").then((module) => ({
     default: module.ProcessesView,
+  }));
+const loadHistoryView = () =>
+  import("./pages/HistoryView").then((module) => ({
+    default: module.HistoryView,
   }));
 const loadLogsView = () =>
   import("./pages/LogsView").then((module) => ({ default: module.LogsView }));
@@ -93,6 +99,7 @@ const loadIssuesView = () =>
 const IssuesView = lazy(loadIssuesView);
 const ProcessesView = lazy(loadProcessesView);
 const LogsView = lazy(loadLogsView);
+const HistoryView = lazy(loadHistoryView);
 const ArrCatalogView = lazy(loadArrCatalogView);
 const QbitCategoriesView = lazy(loadQbitCategoriesView);
 const ConfigView = lazy(loadConfigView);
@@ -111,6 +118,7 @@ const TAB_PREFETCHERS: Record<Tab, () => Promise<unknown>> = {
   issues: loadIssuesView,
   processes: loadProcessesView,
   logs: loadLogsView,
+  history: loadHistoryView,
   radarr: loadArrCatalogView,
   sonarr: loadArrCatalogView,
   lidarr: loadArrCatalogView,
@@ -229,6 +237,9 @@ function AppShell({
     id: string;
   }>();
   const [configDirty, setConfigDirty] = useState(false);
+  const [historySelection, setHistorySelection] = useState<{
+    worker: string;
+  }>();
   const [relatedLogs, setRelatedLogs] =
     useState<NavigateTabDetail["relatedLogs"]>();
   const [configKey, setConfigKey] = useState(0);
@@ -486,6 +497,7 @@ function AppShell({
           "processes",
           "issues",
           "logs",
+          "history",
           ...(configuredTabs.radarr ? (["radarr"] as Tab[]) : []),
           ...(configuredTabs.sonarr ? (["sonarr"] as Tab[]) : []),
           ...(configuredTabs.lidarr ? (["lidarr"] as Tab[]) : []),
@@ -530,6 +542,8 @@ function AppShell({
           instance: detail.issueInstance ?? "",
           category: detail.issueCategory ?? "automation",
         });
+      if (tab === "history")
+        setHistorySelection({ worker: detail.historyWorker ?? "" });
       if (tab === "logs")
         setRelatedLogs(detail.relatedLogs && { ...detail.relatedLogs });
       if (tab === "config") {
@@ -800,6 +814,7 @@ function AppShell({
       { id: "processes", label: "Processes", icon: ProcessesIcon },
       { id: "issues", label: "Issues", icon: IssuesIcon },
       { id: "logs", label: "Logs", icon: LogsIcon },
+      { id: "history", label: "History", icon: HistoryIcon },
     ];
     if (configuredTabs.radarr) {
       nextTabs.push({
@@ -1033,7 +1048,7 @@ function AppShell({
   const navigation = (scope: string) => (
     <nav className="nav" aria-label="Main navigation">
       {[
-        { label: "Monitor", ids: ["processes", "issues", "logs"] },
+        { label: "Monitor", ids: ["processes", "issues", "logs", "history"] },
         {
           label: "Libraries & clients",
           ids: ["radarr", "sonarr", "lidarr", "readarr", "qbittorrent"],
@@ -1461,6 +1476,14 @@ function AppShell({
             {visitedTabs.has("processes") ? (
               <div hidden={activeTab !== "processes"}>
                 <ProcessesView active={activeTab === "processes"} />
+              </div>
+            ) : null}
+            {visitedTabs.has("history") ? (
+              <div hidden={activeTab !== "history"}>
+                <HistoryView
+                  active={activeTab === "history"}
+                  selection={historySelection}
+                />
               </div>
             ) : null}
             {visitedTabs.has("logs") ? (

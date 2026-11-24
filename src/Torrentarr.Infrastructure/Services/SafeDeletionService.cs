@@ -66,7 +66,19 @@ public sealed class SafeDeletionService : ISafeDeletionService
         if (expected == null) return new(false, true, 0, "Torrent no longer exists in the client.");
         var clearance = await ProtectionDecisionAsync(clientInstanceId, hash, ct, expected, intent: intent);
         if (!clearance.Allowed)
+        {
+            await WorkerHistory.RecordAsync(new()
+            {
+                Type = "torrent-removal",
+                SubjectType = "torrent",
+                SubjectId = hash,
+                ClientInstance = clientInstanceId,
+                Summary = $"Removal blocked: {expected.Name}",
+                Outcome = "blocked",
+                Details = System.Text.Json.JsonSerializer.Serialize(new { reason = DiagnosticText.Safe(clearance.Reason), intent = intent.ToString() })
+            });
             return new(false, true, 0, clearance.Reason) { RemovalDecision = clearance };
+        }
 
         if (!removeContent)
             return await client.DeleteTorrentsAsync([hash], false, ct)
@@ -359,7 +371,18 @@ public sealed class SafeDeletionService : ISafeDeletionService
         validation = ValidateFileSource(path, cfg);
         if (validation != null) return Denied(validation);
         ct.ThrowIfCancellationRequested();
+        var existed = File.Exists(path);
         File.Delete(path);
+        if (existed) await WorkerHistory.RecordAsync(new()
+        {
+            Type = "delete",
+            SubjectType = "file",
+            SubjectId = hash,
+            ClientInstance = instanceId,
+            Summary = $"Deleted excluded file: {Path.GetFileName(path)}",
+            Outcome = "completed",
+            Details = System.Text.Json.JsonSerializer.Serialize(new { file = DiagnosticText.Safe(Path.GetFileName(path)), reason = "Rejected by file allowlist" })
+        });
         return true;
     }
 

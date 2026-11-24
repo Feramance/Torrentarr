@@ -631,9 +631,11 @@ try
     app.MapTransferHistory();
     app.MapArrActivity();
     app.MapSearchDecisions("/web");
+    app.MapWorkerHistory("/web");
     app.MapSharedFileFilters("/web");
     app.MapFailedTorrentDestinations("/web");
     app.MapSearchDecisions("/api");
+    app.MapWorkerHistory("/api");
     app.MapSharedFileFilters("/api");
     app.MapFailedTorrentDestinations("/api");
     app.MapArrCatalogEndpoints();
@@ -757,8 +759,9 @@ try
     });
 
     // Web Processes — host tasks and real worker heartbeats; clients use /web/status.
-    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, WorkerProcessSupervisor workers) =>
+    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, WorkerProcessSupervisor workers, TorrentarrDbContext db) =>
     {
+        var lastActions = await WorkerHistory.LastActionsAsync(db, cfg.ArrInstances.Keys);
         var processes = stateMgr.GetAll().Select(s => new
         {
             category = s.Category,
@@ -788,7 +791,7 @@ try
         }).ToList<object>();
 
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchesTriggered = status.SearchesTriggered, itemsSearched = status.ItemsSearched, downloadingCount = status.DownloadingCount, seedingCount = status.SeedingCount, observedAt = status.ObservedAt, observationError = status.ObservationError, pausedLastPass = status.PausedLastPass, resumedLastPass = status.ResumedLastPass, handledLastPass = status.HandledLastPass, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchesTriggered = status.SearchesTriggered, itemsSearched = status.ItemsSearched, downloadingCount = status.DownloadingCount, seedingCount = status.SeedingCount, observedAt = status.ObservedAt, observationError = status.ObservationError, pausedLastPass = status.PausedLastPass, resumedLastPass = status.ResumedLastPass, handledLastPass = status.HandledLastPass, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = WorkerHistory.RestoreLast(status.Torrent, status.IsAlive, status.Name, "torrent", lastActions), search = WorkerHistory.RestoreLast(status.Search, status.IsAlive, status.Name, "search", lastActions) });
 
         return Results.Ok(new { processes });
     });
@@ -1430,8 +1433,9 @@ try
         });
     });
 
-    app.MapGet("/api/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, WorkerProcessSupervisor workers) =>
+    app.MapGet("/api/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, WorkerProcessSupervisor workers, TorrentarrDbContext db) =>
     {
+        var lastActions = await WorkerHistory.LastActionsAsync(db, cfg.ArrInstances.Keys);
         var processes = stateMgr.GetAll().Select(s => new
         {
             category = s.Category,
@@ -1460,7 +1464,7 @@ try
             status = s.Status
         }).ToList<object>();
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchesTriggered = status.SearchesTriggered, itemsSearched = status.ItemsSearched, downloadingCount = status.DownloadingCount, seedingCount = status.SeedingCount, observedAt = status.ObservedAt, observationError = status.ObservationError, pausedLastPass = status.PausedLastPass, resumedLastPass = status.ResumedLastPass, handledLastPass = status.HandledLastPass, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchesTriggered = status.SearchesTriggered, itemsSearched = status.ItemsSearched, downloadingCount = status.DownloadingCount, seedingCount = status.SeedingCount, observedAt = status.ObservedAt, observationError = status.ObservationError, pausedLastPass = status.PausedLastPass, resumedLastPass = status.ResumedLastPass, handledLastPass = status.HandledLastPass, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = WorkerHistory.RestoreLast(status.Torrent, status.IsAlive, status.Name, "torrent", lastActions), search = WorkerHistory.RestoreLast(status.Search, status.IsAlive, status.Name, "search", lastActions) });
         return Results.Ok(new { processes });
     });
 

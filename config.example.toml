@@ -18,6 +18,9 @@ ConsoleLevel = "INFO"
 # Enable logging to files (logs/ directory)
 Logging = true
 
+# Days to retain worker action history (positive integer)
+HistoryRetentionDays = 30
+
 # Sleep time when no internet connection (seconds)
 NoInternetSleepTimer = 15
 

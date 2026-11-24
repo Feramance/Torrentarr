@@ -9,7 +9,8 @@ internal static class ArrClientResponse
 {
     internal static async Task<RestResponse> ExecuteAsync(RestClient client, RestRequest request, CancellationToken ct)
     {
-        var response = await HttpRetryHelper.ExecuteArrAsync(client, request, ct);
+        var response = await Torrentarr.Infrastructure.Services.WorkerHistory.ExecuteAsync(request,
+            () => HttpRetryHelper.ExecuteArrAsync(client, request, ct));
         await Torrentarr.Infrastructure.Services.ArrActivityTracking.RecordAcceptedAsync(request, response, ct);
         return response;
     }
@@ -22,7 +23,8 @@ internal static class ArrClientResponse
             Timeout = client.Options.Timeout,
             RemoteCertificateValidationCallback = client.Options.RemoteCertificateValidationCallback
         });
-        return await submission.ExecuteAsync(request, ct);
+        return await Torrentarr.Infrastructure.Services.WorkerHistory.ExecuteAsync(request,
+            () => submission.ExecuteAsync(request, ct));
     }
 
     internal static void EnsureSuccess(RestResponse response, string operation)

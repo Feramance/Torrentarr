@@ -225,6 +225,8 @@ public static class ConfigValidationHelper
 
     public static (bool Ok, string? Error) ValidateAll(TorrentarrConfig config)
     {
+        if (config.Settings.HistoryRetentionDays <= 0)
+            return (false, "History retention must be a positive number of days.");
         var shared = config.Settings.SharedFileFilters;
         if (shared == null || shared.Count > 32 || shared.Any(item => item == null
             || string.IsNullOrWhiteSpace(item.Name) || item.Name.Length > 80 || item.Name.Any(char.IsControl)

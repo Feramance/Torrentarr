@@ -1,3 +1,4 @@
+using Torrentarr.Infrastructure.Services;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RestSharp;
@@ -43,6 +44,7 @@ internal static class ArrQualityProfilePut
         var put = new RestRequest(resourcePath, Method.Put);
         put.AddHeader("X-Api-Key", apiKey);
         put.AddStringBody(resource.ToString(Formatting.None), DataFormat.Json);
+        using var profile = WorkerHistory.ProfileChange(expectedProfileId, qualityProfileId);
         var putResponse = await ArrClientResponse.ExecuteAsync(client, put, ct);
         return putResponse.IsSuccessful;
     }

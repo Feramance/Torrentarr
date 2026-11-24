@@ -11,6 +11,20 @@ public static class ManualSqliteMigrations
 {
     public static void Apply(TorrentarrDbContext db)
     {
+        CreateTableIfMissing(db, "torrentarr_worker_history", """
+            CREATE TABLE IF NOT EXISTS torrentarr_worker_history (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT, Timestamp INTEGER NOT NULL, RunId TEXT NOT NULL DEFAULT '',
+                Instance TEXT NOT NULL, Loop TEXT NOT NULL, Type TEXT NOT NULL, Source TEXT NOT NULL,
+                SubjectType TEXT NOT NULL, SubjectId TEXT NOT NULL, Summary TEXT NOT NULL,
+                Outcome TEXT NOT NULL, Details TEXT NOT NULL, ClientInstance TEXT NOT NULL,
+                Server TEXT NOT NULL, CommandId INTEGER, SubmittedAt INTEGER, CompletedAt INTEGER
+            );
+            """);
+        AddColumnIfMissing(db, "torrentarr_worker_history", "RunId", "TEXT NOT NULL DEFAULT ''");
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_history_instance ON torrentarr_worker_history (Instance, Id)");
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_history_loop ON torrentarr_worker_history (Instance, Loop, Id)");
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_history_type ON torrentarr_worker_history (Type, Id)");
+        db.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_history_timestamp ON torrentarr_worker_history (Timestamp)");
         CreateTableIfMissing(db, "torrentarr_operational_issues", """
             CREATE TABLE IF NOT EXISTS torrentarr_operational_issues (
                 Id INTEGER PRIMARY KEY AUTOINCREMENT, Code TEXT NOT NULL, Category TEXT NOT NULL,

@@ -205,6 +205,7 @@ public class TorrentProcessor : ITorrentProcessor
 
             foreach (var torrent in torrents)
             {
+                using var historySubject = WorkerHistory.ForSubject("torrent", torrent.Hash, torrent.Name);
                 try
                 {
                     await ProcessObservedTorrentAsync(torrent, category, stats, cancellationToken);

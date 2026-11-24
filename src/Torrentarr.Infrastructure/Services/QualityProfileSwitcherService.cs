@@ -31,6 +31,7 @@ public class QualityProfileSwitcherService(ILogger<QualityProfileSwitcherService
     private async Task<bool> RunAsync(string instance, ArrInstanceConfig config, List<SearchCandidate>? candidates, DateTime? cutoff, CancellationToken ct)
     {
         var subject = candidates == null ? "restore" : "prepare";
+        using var history = WorkerHistory.ForProfileOperation(subject);
         var ownerIds = candidates?.Select(c => config.Type.ToLowerInvariant() switch
         {
             "sonarr" => c.SeriesId,

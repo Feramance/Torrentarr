@@ -145,3 +145,9 @@ enabled qBittorrent client. Each result includes `client`, `available`, and
 `categories`. A category supplies `name`, `arrOwner`, and `unavailableReason`.
 Unavailable clients have an empty category list. The authenticated endpoint
 reads category inventories and makes no changes.
+
+### Worker history
+
+`GET /web/history` (or `/api/history` on Host) returns persisted Arr worker actions and observed item changes. Optional filters are `worker` (exact instance name) and `type` (for example `search`, `import`, `torrent-removal`, `add`, `update`, `delete`, or `temp-profile`). `pageSize` defaults to 50 and accepts 1–100; pass the returned `nextCursor` as `cursor` for older entries. Responses contain `entries`, `workers` (including retained former workers), `types`, and `nextCursor`.
+
+Entries distinguish worker-initiated actions from observed catalog changes, include outcomes and bounded details, and retain accepted commands as submitted until completion evidence is available. History starts collecting after upgrade and is retained according to `Settings.HistoryRetentionDays` (default 30 days).

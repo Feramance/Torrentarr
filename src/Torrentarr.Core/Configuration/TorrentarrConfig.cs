@@ -62,6 +62,7 @@ public sealed class SharedFileFilterDefinition
 
 public class SettingsConfig
 {
+    public int HistoryRetentionDays { get; set; } = 30;
     public string ConfigVersion { get; set; } = ConfigurationLoader.ExpectedConfigVersion;
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;

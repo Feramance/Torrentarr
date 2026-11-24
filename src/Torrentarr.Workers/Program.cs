@@ -449,6 +449,8 @@ class ArrWorkerService : BackgroundService
             using var configuration = _config.BeginOperation();
             using var identity = _context.BeginOperation();
             _runtimeMetrics.InstanceName = _context.InstanceName;
+            using var history = WorkerHistory.Begin(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), _logger,
+                _context.InstanceName, "torrent", _instanceConfig);
             using var logScope = _logger.BeginScope(new Dictionary<string, object>
             {
                 ["ProcessInstance"] = _context.InstanceName,
@@ -560,6 +562,8 @@ class ArrWorkerService : BackgroundService
             using var configuration = _config.BeginOperation();
             using var identity = _context.BeginOperation();
             _runtimeMetrics.InstanceName = _context.InstanceName;
+            using var history = WorkerHistory.Begin(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), _logger,
+                _context.InstanceName, "search", _instanceConfig);
             using var logScope = _logger.BeginScope(new Dictionary<string, object>
             {
                 ["ProcessInstance"] = _context.InstanceName,
@@ -1153,8 +1157,8 @@ sealed class WorkerRuntimeMetrics
             QueueCount = queueDepth?.Revision == revision ? queueDepth.Count : null,
             CategoryCount = CategoryCount,
             MetricType = MetricType,
-            Torrent = Torrent,
-            Search = Search
+            Torrent = WorkerHistory.Describe(instance, "torrent", Torrent),
+            Search = WorkerHistory.Describe(instance, "search", Search)
         };
     }
 

@@ -201,6 +201,7 @@ export function simpleGroups(
   if (section === "general")
     return groupFields(fields, [
       ["Logging", ["Settings.ConsoleLevel", "Settings.Logging"]],
+      ["History", ["Settings.HistoryRetentionDays"]],
       ["Shared file filters", ["Settings.SharedFileFilters"]],
       [
         "Issue alerts",

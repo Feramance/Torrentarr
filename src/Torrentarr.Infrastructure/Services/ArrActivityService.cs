@@ -72,7 +72,8 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
                         operation.Outcome = "expired";
                     else eligible.Add(operation);
                 }
-                if (eligible.Count > 0)
+                var historyPending = await db.WorkerHistory.Where(e => e.Instance == name && e.Outcome == "submitted" && e.CommandId != null).ToListAsync(ct);
+                if (eligible.Count > 0 || historyPending.Count > 0)
                 {
                     using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                     timeout.CancelAfter(TimeSpan.FromSeconds(20));
@@ -85,6 +86,7 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
                         history = await read(settings, $"history/since?date={Uri.EscapeDataString(since.ToString("O"))}&eventType={eventType}", timeout.Token);
                     }
                     await ReconcileAsync(db, eligible, commands, history, now, ct);
+                    ReconcileHistory(historyPending, eligible, commands, ArrActivityTracking.ServerKey(settings), now);
                 }
                 try { await ObserveSearchGrabsAsync(db, name, settings, now, read, ct); }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
@@ -108,6 +110,9 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
         }
         if (minute - _lastPrune >= 60)
         {
+            var staleHistory = now.AddDays(-7);
+            await db.WorkerHistory.Where(e => e.Outcome == "submitted" && e.Timestamp < staleHistory)
+                .ExecuteUpdateAsync(update => update.SetProperty(e => e.Outcome, "unknown"), ct);
             var oldestMinute = minute / ArrActivityApi.HourBucketMinutes * ArrActivityApi.HourBucketMinutes - ArrActivityApi.WeekMinutes;
             await db.ArrActivitySamples.Where(s => s.Minute < oldestMinute).ExecuteDeleteAsync(ct);
             var expiredSubmission = now.ToUnixTimeSeconds() - ArrActivityApi.WeekMinutes * 60;
@@ -115,6 +120,7 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
                 ? o.ConfirmedAt < oldestMinute * 60
                 : o.SubmittedAt < expiredSubmission).ExecuteDeleteAsync(ct);
             await db.SearchDecisions.Where(d => d.ObservedAt < expiredSubmission).ExecuteDeleteAsync(ct);
+            await PruneHistoryAsync(db, config.Settings.HistoryRetentionDays, now, ct);
             await db.RetirementUploads.Where(o => o.Seen < expiredSubmission).ExecuteDeleteAsync(ct);
             await db.Database.ExecuteSqlInterpolatedAsync($"""
                 DELETE FROM torrentarr_maintenance_state
@@ -187,6 +193,35 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
             System.Globalization.DateTimeStyles.AssumeUniversal, out var date) => date.ToUnixTimeSeconds(),
         _ => -1L
     };
+
+    internal static Task<int> PruneHistoryAsync(TorrentarrDbContext db, int days, DateTimeOffset now, CancellationToken ct = default)
+    {
+        var cutoff = days >= (now - DateTimeOffset.MinValue).TotalDays ? DateTimeOffset.MinValue : now.AddDays(-Math.Max(1, days));
+        return db.WorkerHistory.Where(e => e.Timestamp < cutoff).ExecuteDeleteAsync(ct);
+    }
+
+    internal static void ReconcileHistory(List<WorkerHistoryEvent> events, List<ArrActivityOperation> operations,
+        JArray commands, string server, DateTimeOffset now)
+    {
+        foreach (var entry in events)
+        {
+            if (entry.Server != server || entry.Timestamp < now.AddDays(-7)) { entry.Outcome = "unknown"; continue; }
+            var command = commands.FirstOrDefault(c => c["id"]?.Value<int>() == entry.CommandId);
+            var state = command?["status"]?.Value<string>()?.ToLowerInvariant();
+            var result = command?["result"]?.Value<string>()?.ToLowerInvariant();
+            if (state is "failed" or "aborted" or "cancelled" or "canceled" || result is "failed" or "unsuccessful" or "2")
+                entry.Outcome = "failed";
+            else if (entry.Type == "import")
+            {
+                var operation = operations.FirstOrDefault(o => o.CommandId == entry.CommandId && o.Server == entry.Server
+                    && entry.SubmittedAt != null && Math.Abs(o.SubmittedAt - entry.SubmittedAt.Value) <= 5);
+                if (operation?.Outcome == "completed") entry.Outcome = "completed";
+                else if (operation?.Outcome == "failed") entry.Outcome = "failed";
+            }
+            else if (state == "completed" && result is "successful" or "1") entry.Outcome = "completed";
+            if (entry.Outcome is "completed" or "failed") entry.CompletedAt = now;
+        }
+    }
 
     internal static async Task ReconcileAsync(TorrentarrDbContext db, List<ArrActivityOperation> pending,
         JArray commands, JArray history, DateTimeOffset now, CancellationToken ct = default)

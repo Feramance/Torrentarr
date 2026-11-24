@@ -18,6 +18,7 @@ public static class ConfigSchemaBuilder
         {
             ["Settings"] = [.. Qbitrr5146ConfigSchema.Settings.Where(f => f.key is not ("CompletedDownloadFolder" or "FreeSpace" or "FreeSpaceFolder" or "AutoPauseResume" or "FreeSpaceThresholdGB")).Select(f => f.key == "ConfigVersion" ? f with { @default = ConfigurationLoader.ExpectedConfigVersion }
                 : f.key == "LoopSleepTimer" ? f with { label = "Database refresh interval", comments = "Interval in seconds between Arr catalog refreshes into SQLite. Torrent scans use each client’s scan interval." } : f).Select(RuntimeField),
+                RuntimeField(Field("HistoryRetentionDays", "number", "History retention (days)", 30, minimum: 1)) with { section = "Settings", description = "Keep worker action history for this many days." },
                 Field("SharedFileFilters", "collection", "Shared file filter lists", Array.Empty<object>()) with
                 { section = "Settings", description = "Named reviewed lists. Sources are relative files below the data directory or public HTTPS URLs. Refresh every five minutes.", itemFields = [
                     Item("Name", "Name", "Unique case-sensitive list name.", "reviewed"),

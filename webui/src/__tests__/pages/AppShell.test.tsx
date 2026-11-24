@@ -518,7 +518,7 @@ it("reveals Settings from the icon rail and opens General from the number shortc
   expect(
     await screen.findByRole("heading", { name: "Interface & Access" }),
   ).toBeInTheDocument();
-  fireEvent.keyDown(window, { key: "4" });
+  fireEvent.keyDown(window, { key: "5" });
   expect(
     await screen.findByRole("heading", { name: "General" }),
   ).toBeInTheDocument();
@@ -565,7 +565,7 @@ it("opens Maintenance as a sibling of Settings from the mobile drawer and keyboa
     "aria-current",
     "page",
   );
-  fireEvent.keyDown(window, { key: "5" });
+  fireEvent.keyDown(window, { key: "6" });
   expect(
     await screen.findByRole("heading", { name: "Shared Settings" }),
   ).toBeVisible();

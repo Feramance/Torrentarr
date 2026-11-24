@@ -1051,6 +1051,7 @@ public class ConfigurationLoader
         {
             var settingsDefaults = new (string Key, object Default)[]
             {
+                ("HistoryRetentionDays", (long)30),
                 ("ConsoleLevel", "INFO"),
                 ("Logging", true),
                 ("NoInternetSleepTimer", (long)15),
@@ -1347,6 +1348,10 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("AutoUpdateEnabled", out var autoUpdate))
             settings.AutoUpdateEnabled = Convert.ToBoolean(autoUpdate);
+
+        if (table.TryGetValue("HistoryRetentionDays", out var retention))
+            settings.HistoryRetentionDays = Convert.ToInt32(retention);
+        if (settings.HistoryRetentionDays <= 0) throw new FormatException("HistoryRetentionDays must be positive.");
 
         if (table.TryGetValue("AutoUpdateCron", out var updateCron))
             settings.AutoUpdateCron = updateCron?.ToString() ?? "0 3 * * 0";
@@ -2287,6 +2292,7 @@ public class ConfigurationLoader
         sb.AppendLine($"AutoUpdateCron = \"{EscapeTomlString(config.Settings.AutoUpdateCron)}\"");
         if (config.Settings.SharedFileFilters.Count > 0)
             sb.AppendLine($"SharedFileFilters = [{string.Join(", ", config.Settings.SharedFileFilters.Select(item => "{ Name = \"" + EscapeTomlString(item.Name) + "\", Source = \"" + EscapeTomlString(item.Source) + "\" }"))}]");
+        sb.AppendLine($"HistoryRetentionDays = {config.Settings.HistoryRetentionDays}");
         if (config.Settings.IssueAlertsEnabled) sb.AppendLine("IssueAlertsEnabled = true");
         if (!string.IsNullOrEmpty(config.Settings.IssueAlertsSecretUrl))
             sb.AppendLine($"IssueAlertsSecretUrl = \"{EscapeTomlString(config.Settings.IssueAlertsSecretUrl)}\"");

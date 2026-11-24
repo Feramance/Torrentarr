@@ -60,23 +60,27 @@ public class QBittorrentClient : ITorrentClient, IDisposable
 
     public void Dispose() => _client.Dispose();
 
-    private async Task<RestResponse> ExecuteAsync(RestRequest request, CancellationToken ct)
+    private async Task<RestResponse> ExecuteAsync(RestRequest request, CancellationToken ct, bool recordHistory = true)
     {
         using var scope = Serilog.Context.LogContext.PushProperty("ClientInstance", Identity.InstanceId);
-        return await HttpRetryHelper.ExecuteQBitAsync(_client, request, ct);
+        return recordHistory
+            ? await Torrentarr.Infrastructure.Services.WorkerHistory.ExecuteAsync(request,
+                () => HttpRetryHelper.ExecuteQBitAsync(_client, request, ct), Identity.InstanceId)
+            : await HttpRetryHelper.ExecuteQBitAsync(_client, request, ct);
     }
 
-    private async Task<RestResponse> ExecuteAuthenticatedAsync(RestRequest request, CancellationToken ct)
-    {
-        var response = await ExecuteAsync(request, ct);
-        if (_apiKey == null && !UsesBypass && response.StatusCode == HttpStatusCode.Forbidden && await LoginAsync(ct))
+    private Task<RestResponse> ExecuteAuthenticatedAsync(RestRequest request, CancellationToken ct) =>
+        Torrentarr.Infrastructure.Services.WorkerHistory.ExecuteAsync(request, async () =>
         {
-            Serilog.Log.Debug("qBittorrent session renewed for {ClientInstance}; retrying {Method} {Route}", Identity.InstanceId, request.Method, request.Resource.Split('?', '#')[0]);
-            request.AddOrUpdateHeader("Cookie", _cookie!);
-            response = await ExecuteAsync(request, ct);
-        }
-        return response;
-    }
+            var response = await ExecuteAsync(request, ct, recordHistory: false);
+            if (_apiKey == null && !UsesBypass && response.StatusCode == HttpStatusCode.Forbidden && await LoginAsync(ct))
+            {
+                Serilog.Log.Debug("qBittorrent session renewed for {ClientInstance}; retrying {Method} {Route}", Identity.InstanceId, request.Method, request.Resource.Split('?', '#')[0]);
+                request.AddOrUpdateHeader("Cookie", _cookie!);
+                response = await ExecuteAsync(request, ct, recordHistory: false);
+            }
+            return response;
+        }, Identity.InstanceId);
 
     private async Task<Version?> DetectVersionAsync(CancellationToken ct)
     {
@@ -314,7 +318,8 @@ public class QBittorrentClient : ITorrentClient, IDisposable
 
         // A retry could hide whether an earlier delete reached the server.
         using var scope = Serilog.Context.LogContext.PushProperty("ClientInstance", Identity.InstanceId);
-        var response = await HttpRetryHelper.ExecuteQBitOnceAsync(_client, request, ct);
+        var response = await Torrentarr.Infrastructure.Services.WorkerHistory.ExecuteAsync(request,
+            () => HttpRetryHelper.ExecuteQBitOnceAsync(_client, request, ct), Identity.InstanceId);
         if (response.IsSuccessful) return true;
         ct.ThrowIfCancellationRequested();
         if ((int)response.StatusCode is >= 400 and < 500

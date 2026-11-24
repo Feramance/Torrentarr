@@ -16,6 +16,7 @@ internal sealed class ArrActivityTracking : IDisposable
     private sealed record Context(TorrentarrDbContext? Db, ILogger? Logger, string Instance,
         ArrInstanceConfig? Config, string Kind, string Hash, string Client, Action<int, long>? Receipt = null);
     private static readonly AsyncLocal<Context?> Current = new();
+    internal static string ClientInstance => Current.Value?.Client ?? "";
     private readonly Context? _previous;
     private ArrActivityTracking(Context value) { _previous = Current.Value; Current.Value = value; }
     internal static IDisposable ForClient(string? client) => new ArrActivityTracking(

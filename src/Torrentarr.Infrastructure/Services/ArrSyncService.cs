@@ -58,6 +58,8 @@ public class ArrSyncService
     {
         using var logScope = _logger.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = instanceName, ["Operation"] = "CatalogSync" });
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        using var history = WorkerHistory.ObserveCatalog();
+        using var action = WorkerHistory.Active("Refreshing Arr catalog");
         _logger.LogInformation("[{Instance}] Starting sync for Arr instance {Name}", instanceName, instanceName);
 
         if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))

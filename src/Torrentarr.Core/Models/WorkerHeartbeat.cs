@@ -4,6 +4,10 @@ namespace Torrentarr.Core.Models;
 
 public sealed record WorkerLoopProgress(string Phase, DateTimeOffset StartedAt, DateTimeOffset? WakeAt = null, DateTimeOffset? LastSuccess = null)
 {
+    public string? CurrentAction { get; init; }
+    public DateTimeOffset? CurrentActionAt { get; init; }
+    public string? LastAction { get; init; }
+    public DateTimeOffset? LastActionAt { get; init; }
     // shortcut: active cycles are capped at 30 minutes; revisit if large libraries need longer.
     public static readonly TimeSpan CycleTimeout = TimeSpan.FromMinutes(30);
     public bool IsStalled(DateTimeOffset now) => now > (WakeAt ?? StartedAt + CycleTimeout) + TimeSpan.FromSeconds(15);

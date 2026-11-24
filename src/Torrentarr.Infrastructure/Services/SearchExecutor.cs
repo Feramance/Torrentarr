@@ -198,6 +198,7 @@ public class SearchExecutor : ISearchExecutor
         {
             var cycle = Guid.NewGuid().ToString("N");
             var candidate = plan.Trigger;
+            using var historySubject = WorkerHistory.ForSubject(candidate.Type, candidate.ArrId.ToString(), candidate.Title, candidate.Reason, cycle);
             using var candidateScope = _logger.BeginScope(new Dictionary<string, object>
             { ["MediaId"] = candidate.ArrId, ["Operation"] = "SearchSubmission", ["CycleId"] = cycle });
             var gate = _timing.Gate(instanceName);

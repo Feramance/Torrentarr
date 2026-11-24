@@ -1861,13 +1861,6 @@ svg[height] {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
-.process-card__header-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  margin-left: auto;
-}
 .process-card__footer {
   display: none;
 }
@@ -6603,26 +6596,6 @@ body:has(.instance-add-bar) .toasts {
   color: var(--muted);
   margin-top: 3px;
 }
-.process-actions {
-  position: relative;
-}
-.process-actions > summary {
-  list-style: none;
-  cursor: pointer;
-}
-.process-actions__menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 5;
-  background: var(--surface);
-  padding: 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  min-width: 150px;
-  box-shadow: var(--overlay-shadow);
-}
-
 .observation-stale {
   color: var(--warning);
   font-size: 12px;
@@ -7136,4 +7109,119 @@ select,
   align-items: center;
   gap: 8px;
   padding: 4px;
+}
+
+/* Name, live activity, and controls have distinct columns on process rows. */
+.console-shell .process-card {
+  grid-template-columns: minmax(150px, 210px) minmax(0, 1fr) auto;
+}
+.process-card__header {
+  min-width: 0;
+}
+.process-card__name,
+.process-activity__detail {
+  overflow-wrap: anywhere;
+}
+.process-card__identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.process-card__controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+}
+.process-icon {
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+}
+.process-icon .icon {
+  width: 18px;
+  height: 18px;
+}
+.process-icon:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.history-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 16px;
+}
+.history-toolbar h2 {
+  margin-right: auto;
+}
+.history-toolbar .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+}
+.history-table-wrap {
+  overflow-x: auto;
+  margin: 16px 0;
+}
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.history-table th,
+.history-table td {
+  text-align: left;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.history-table th {
+  color: var(--muted);
+}
+.history-table td:first-child {
+  white-space: nowrap;
+}
+.history-table details {
+  min-width: 220px;
+  max-width: 700px;
+  overflow-wrap: anywhere;
+}
+.history-table summary {
+  cursor: pointer;
+}
+.history-table pre {
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow: auto;
+}
+.history-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+}
+.history-details dd {
+  margin: 0;
+}
+.history-search-details {
+  margin-top: 24px;
+}
+@media (max-width: 1100px) {
+  .console-shell .process-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+  .process-card__controls {
+    grid-column: 2;
+  }
+  .console-shell .process-activities {
+    grid-column: 1 / -1;
+  }
+  .console-shell .process-card > .storage-allocation,
+  .console-shell .process-card > .process-card__list {
+    grid-column: 1 / -1;
+  }
 }

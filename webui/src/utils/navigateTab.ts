@@ -6,6 +6,7 @@ export type NavigableTab =
   | "issues"
   | "processes"
   | "logs"
+  | "history"
   | "radarr"
   | "sonarr"
   | "lidarr"
@@ -23,6 +24,7 @@ export interface ConfigDestination {
 
 export interface NavigateTabDetail {
   tab: NavigableTab;
+  historyWorker?: string;
   relatedLogs?: {
     stream: string;
     runId?: string;

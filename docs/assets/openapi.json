@@ -1967,6 +1967,64 @@
         ]
       }
     },
+    "/api/history": {
+      "get": {
+        "description": "Returns entries, workers (including retained former workers), types and nextCursor. Filter by exact worker instance and action type. Newest first; pass nextCursor as cursor for older entries. Retention defaults to 30 days via Settings.HistoryRetentionDays. Entries distinguish worker actions from observed item changes and preserve submitted commands until completion evidence is available.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "worker",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid type, cursor or page size"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "Read worker action history",
+        "tags": [
+          "Torrentarr automation"
+        ]
+      }
+    },
     "/api/issues": {
       "get": {
         "description": "Read-only operational issues. History is retained for 30 days after resolution. available=false means history cannot be read; it is not an empty healthy result. /api requires a Bearer token; /web follows WebUI authentication.",
@@ -4728,6 +4786,64 @@
           }
         },
         "summary": "Preview configured file filters",
+        "tags": [
+          "Torrentarr automation"
+        ]
+      }
+    },
+    "/web/history": {
+      "get": {
+        "description": "Returns entries, workers (including retained former workers), types and nextCursor. Filter by exact worker instance and action type. Newest first; pass nextCursor as cursor for older entries. Retention defaults to 30 days via Settings.HistoryRetentionDays. Entries distinguish worker actions from observed item changes and preserve submitted commands until completion evidence is available.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "worker",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Invalid type, cursor or page size"
+          },
+          "401": {
+            "description": "Authentication required"
+          }
+        },
+        "summary": "Read worker action history",
         "tags": [
           "Torrentarr automation"
         ]
