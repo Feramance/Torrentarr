@@ -475,7 +475,7 @@ public sealed class TorrentProcessorTests : IDisposable
         var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance);
         RegisterTestClient(manager, "qBit", new StubQBittorrentClient(torrent));
         var imports = new Mock<IArrImportService>();
-        imports.Setup(i => i.TriggerImportAsync(torrent.Hash, It.IsAny<string>(), "media", It.IsAny<CancellationToken>()))
+        imports.Setup(i => i.TriggerImportAsync(It.Is<TorrentInfo>(t => t.Hash == torrent.Hash), "media", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ImportResult { Success = true });
         var issues = new Mock<IOperationalIssueReporter>();
         var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, manager, _db, config,
@@ -485,7 +485,7 @@ public sealed class TorrentProcessorTests : IDisposable
         (await processor.IsReadyForImportAsync(torrent.Hash, "qBit")).Should().Be(owned);
         await processor.ImportTorrentAsync(torrent.Hash, "qBit");
 
-        imports.Verify(i => i.TriggerImportAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+        imports.Verify(i => i.TriggerImportAsync(It.IsAny<TorrentInfo>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             owned ? Times.Once() : Times.Never());
         (await _db.TorrentLibrary.SingleAsync()).Imported.Should().BeFalse();
         issues.Verify(i => i.ReportAsync(It.Is<OperationalIssueReport>(r => r.Code == "import.ownership"), It.IsAny<CancellationToken>()), Times.Never());
@@ -601,7 +601,7 @@ public sealed class TorrentProcessorTests : IDisposable
 
             var importMock = new Mock<IArrImportService>();
             importMock
-                .Setup(s => s.TriggerImportAsync(hash, tempFile, "radarr-hd", It.IsAny<CancellationToken>()))
+                .Setup(s => s.TriggerImportAsync(It.Is<TorrentInfo>(t => t.Hash == hash && t.ContentPath == tempFile), "radarr-hd", It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new ImportResult { Success = true, Message = "queued" });
 
             var pathTracker = new ImportPathTracker();
@@ -662,7 +662,7 @@ public sealed class TorrentProcessorTests : IDisposable
                 QBitInstanceName = instance
             }));
             var imports = new Mock<IArrImportService>();
-            imports.Setup(service => service.TriggerImportAsync(hash, directory.FullName, "radarr-hd", It.IsAny<CancellationToken>()))
+            imports.Setup(service => service.TriggerImportAsync(It.Is<TorrentInfo>(t => t.Hash == hash && t.ContentPath == directory.FullName), "radarr-hd", It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new ImportResult { Success = true, Message = "queued" });
             var processor = new TorrentProcessor(
                 NullLogger<TorrentProcessor>.Instance,
@@ -953,7 +953,7 @@ public sealed class TorrentProcessorTests : IDisposable
         var manager = new QBittorrentConnectionManager(NullLogger<QBittorrentConnectionManager>.Instance);
         RegisterTestClient(manager, "qBit", new StubQBittorrentClient(torrent));
         var imports = new Mock<IArrImportService>();
-        imports.Setup(i => i.TriggerImportAsync(torrent.Hash, path, torrent.Category, It.IsAny<CancellationToken>()))
+        imports.Setup(i => i.TriggerImportAsync(It.Is<TorrentInfo>(t => t.Hash == torrent.Hash), torrent.Category, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ImportResult { Success = true });
         var historyStart = DateTimeOffset.FromUnixTimeSeconds(torrent.AddedOn);
         var hasHistory = importedBeforeScan;
@@ -976,7 +976,7 @@ public sealed class TorrentProcessorTests : IDisposable
         await processor.ProcessTorrentAsync(torrent.Hash);
         (await processor.IsReadyForImportAsync(torrent.Hash, "qBit")).Should().BeFalse();
         await processor.ImportTorrentAsync(torrent.Hash, "qBit");
-        imports.Verify(i => i.TriggerImportAsync(torrent.Hash, path, torrent.Category, It.IsAny<CancellationToken>()), Times.Never);
+        imports.Verify(i => i.TriggerImportAsync(It.Is<TorrentInfo>(t => t.Hash == torrent.Hash), torrent.Category, It.IsAny<CancellationToken>()), Times.Never);
         imports.Verify(i => i.IsImportedAsync(torrent.Hash, torrent.Category, historyStart, It.IsAny<CancellationToken>()), Times.Never);
         deletion.Verify(s => s.RemoveTorrentAsync("qBit", torrent.Hash, true, It.IsAny<CancellationToken>()), Times.Never);
 
@@ -997,7 +997,7 @@ public sealed class TorrentProcessorTests : IDisposable
         tracker.MarkScanned("qBit", path, torrent.Hash);
         await processor.ProcessTorrentAsync(torrent.Hash);
         deletion.Verify(s => s.RemoveTorrentAsync("qBit", torrent.Hash, true, It.IsAny<CancellationToken>()), Times.Once);
-        imports.Verify(i => i.TriggerImportAsync(torrent.Hash, path, torrent.Category, It.IsAny<CancellationToken>()),
+        imports.Verify(i => i.TriggerImportAsync(It.Is<TorrentInfo>(t => t.Hash == torrent.Hash), torrent.Category, It.IsAny<CancellationToken>()),
             importedBeforeScan ? Times.Never() : Times.Once());
     }
 
@@ -1123,7 +1123,7 @@ public sealed class TorrentProcessorTests : IDisposable
         seeding.Setup(s => s.EvaluateRemovalAsync(It.IsAny<TorrentInfo>(), TorrentRemovalIntent.SeedingLimit, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RemovalDecision([]));
         var import = new Mock<IArrImportService>();
-        import.Setup(s => s.TriggerImportAsync(torrent.Hash, torrent.ContentPath, category, It.IsAny<CancellationToken>()))
+        import.Setup(s => s.TriggerImportAsync(It.Is<TorrentInfo>(t => t.Hash == torrent.Hash), category, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ImportResult { Success = true });
         import.SetupSequence(s => s.IsImportedAsync(torrent.Hash, category, It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false).ReturnsAsync(true);
@@ -1155,7 +1155,7 @@ public sealed class TorrentProcessorTests : IDisposable
         File.Exists(excluded).Should().BeFalse();
         saved.AutoDeletePendingAddedOn.Should().BeNull();
         client.Verify(c => c.DeleteTorrentsAsync(It.IsAny<List<string>>(), false, It.IsAny<CancellationToken>()), Times.Once);
-        import.Verify(s => s.TriggerImportAsync(torrent.Hash, torrent.ContentPath, category, It.IsAny<CancellationToken>()), Times.Once);
+        import.Verify(s => s.TriggerImportAsync(It.Is<TorrentInfo>(t => t.Hash == torrent.Hash), category, It.IsAny<CancellationToken>()), Times.Once);
         client.Verify(c => c.SetFilePriorityAsync(It.IsAny<string>(), It.IsAny<int[]>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -1242,7 +1242,7 @@ public sealed class TorrentProcessorTests : IDisposable
             RegisterTestClient(manager, "qBit", new StubQBittorrentClient(torrent));
             var imports = new Mock<IArrImportService>();
             imports.Setup(i => i.IsCustomFormatUnmetAsync(torrent.Hash, torrent.Category, It.IsAny<CancellationToken>())).ReturnsAsync(repaired);
-            imports.Setup(i => i.TriggerImportAsync(torrent.Hash, path, torrent.Category, It.IsAny<CancellationToken>())).ReturnsAsync(new ImportResult { Success = true });
+            imports.Setup(i => i.TriggerImportAsync(It.Is<TorrentInfo>(t => t.Hash == torrent.Hash), torrent.Category, It.IsAny<CancellationToken>())).ReturnsAsync(new ImportResult { Success = true });
             var seeding = new Mock<ISeedingService>();
             seeding.Setup(s => s.ShouldRemoveTorrentAsync(torrent, It.IsAny<CancellationToken>())).ReturnsAsync(removalLimitMet);
             var deletion = new Mock<ISafeDeletionService>(MockBehavior.Strict);
@@ -1255,7 +1255,7 @@ public sealed class TorrentProcessorTests : IDisposable
             var processor = new TorrentProcessor(NullLogger<TorrentProcessor>.Instance, manager, _db, config, cache, new DatabaseRestartCoordinator(),
                 imports.Object, seeding.Object, mediaValidation: validation.Object, safeDeletion: deletion.Object);
             await processor.ProcessTorrentAsync(torrent.Hash);
-            imports.Verify(i => i.TriggerImportAsync(torrent.Hash, path, torrent.Category, It.IsAny<CancellationToken>()), Times.Once);
+            imports.Verify(i => i.TriggerImportAsync(It.Is<TorrentInfo>(t => t.Hash == torrent.Hash), torrent.Category, It.IsAny<CancellationToken>()), Times.Once);
             imports.Verify(i => i.BlocklistAndReSearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
             File.Exists(path).Should().BeTrue();
             deletion.VerifyNoOtherCalls();

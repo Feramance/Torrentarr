@@ -86,7 +86,21 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
                         history = await read(settings, $"history/since?date={Uri.EscapeDataString(since.ToString("O"))}&eventType={eventType}", timeout.Token);
                     }
                     await ReconcileAsync(db, eligible, commands, history, now, ct);
-                    ReconcileHistory(historyPending, eligible, commands, ArrActivityTracking.ServerKey(settings), now);
+                    var server = ArrActivityTracking.ServerKey(settings);
+                    var planRows = await db.MaintenanceState.FromSqlInterpolated($"""
+                        SELECT Key, Data FROM torrentarr_maintenance_state
+                        WHERE substr(Key, -12) = '|import-plan'
+                            AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Instance') END = {name}
+                            AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Server') END = {server}
+                        """).AsNoTracking().ToListAsync(ct);
+                    var importPlans = new List<ImportPlanReceipt>();
+                    foreach (var row in planRows)
+                    {
+                        try { importPlans.Add(ImportPlanReceipt.Parse(row.Data)); }
+                        catch (Exception ex) when (ex is Newtonsoft.Json.JsonException or InvalidDataException)
+                        { logger.LogDebug("Import history receipt is unavailable for {Instance}", name); }
+                    }
+                    ReconcileHistory(historyPending, eligible, commands, ArrActivityTracking.ServerKey(settings), now, importPlans);
                 }
                 try { await ObserveSearchGrabsAsync(db, name, settings, now, read, ct); }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
@@ -201,7 +215,7 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
     }
 
     internal static void ReconcileHistory(List<WorkerHistoryEvent> events, List<ArrActivityOperation> operations,
-        JArray commands, string server, DateTimeOffset now)
+        JArray commands, string server, DateTimeOffset now, IReadOnlyList<ImportPlanReceipt>? importPlans = null)
     {
         foreach (var entry in events)
         {
@@ -209,6 +223,22 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
             var command = commands.FirstOrDefault(c => c["id"]?.Value<int>() == entry.CommandId);
             var state = command?["status"]?.Value<string>()?.ToLowerInvariant();
             var result = command?["result"]?.Value<string>()?.ToLowerInvariant();
+            var plan = importPlans?.FirstOrDefault(plan => plan.Files.Any(file => file.CommandId == entry.CommandId));
+            if (entry.Type == "import" && plan != null)
+            {
+                var files = plan.Files.Where(file => file.CommandId == entry.CommandId).ToArray();
+                if (files.All(file => file.State == "confirmed")) entry.Outcome = plan.State == "confirmed" ? "completed" : "partial";
+                else if (files.All(file => file.State != "pending")) entry.Outcome = files.Any(file => file.State == "confirmed") ? "partial" : "failed";
+                if (entry.Outcome != "submitted") entry.CompletedAt = now;
+                UpdateImportHistoryDetails(entry, command, files);
+                continue;
+            }
+            if (entry.Type == "import" && command?["name"]?.Value<string>() == "ManualImport")
+            {
+                // A lost receipt must not fall back to whole-download success from one history event.
+                UpdateImportHistoryDetails(entry, command, []);
+                continue;
+            }
             if (state is "failed" or "aborted" or "cancelled" or "canceled" || result is "failed" or "unsuccessful" or "2")
                 entry.Outcome = "failed";
             else if (entry.Type == "import")
@@ -220,7 +250,28 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
             }
             else if (state == "completed" && result is "successful" or "1") entry.Outcome = "completed";
             if (entry.Outcome is "completed" or "failed") entry.CompletedAt = now;
+            if (entry.Type == "import") UpdateImportHistoryDetails(entry, command, []);
         }
+    }
+
+    private static void UpdateImportHistoryDetails(WorkerHistoryEvent entry, JToken? command, IReadOnlyList<ImportPlanFile> files)
+    {
+        JObject details;
+        try { details = JObject.Parse(entry.Details); }
+        catch (Newtonsoft.Json.JsonException) { details = new(); }
+        if (command != null)
+        {
+            details["commandStatus"] = command["status"]?.DeepClone();
+            details["commandResult"] = command["result"]?.DeepClone();
+            var reason = command["message"]?.Value<string>() ?? command["exception"]?.Value<string>();
+            if (!string.IsNullOrWhiteSpace(reason))
+            {
+                var safe = Torrentarr.Core.Services.DiagnosticText.Safe(reason);
+                details["failureReason"] = safe[..Math.Min(2000, safe.Length)];
+            }
+        }
+        if (files.Count > 0) details["files"] = JArray.FromObject(files.Take(500));
+        entry.Details = details.ToString(Newtonsoft.Json.Formatting.None);
     }
 
     internal static async Task ReconcileAsync(TorrentarrDbContext db, List<ArrActivityOperation> pending,

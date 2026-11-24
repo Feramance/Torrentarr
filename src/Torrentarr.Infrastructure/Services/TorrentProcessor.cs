@@ -413,7 +413,8 @@ public class TorrentProcessor : ITorrentProcessor
                 _logger.LogInformation("Skipping import — hash already sent to scan: {Hash}", hash);
                 return;
             }
-            if (!File.Exists(contentPath) && !Directory.Exists(contentPath))
+            var localContentPath = LocalImportContentPath(torrent);
+            if (localContentPath == null || !File.Exists(localContentPath) && !Directory.Exists(localContentPath))
             {
                 _logger.LogWarning("Missing torrent file for import: {Path} ({Hash})", contentPath, hash);
                 _cache.AddToIgnoreCache(torrent.QBitInstanceName, hash, TimeSpan.FromSeconds(_config.Settings.IgnoreTorrentsYoungerThan));
@@ -429,7 +430,7 @@ public class TorrentProcessor : ITorrentProcessor
         using var activityClient = ArrActivityTracking.ForClient(torrent.QBitInstanceName);
         var submittedAt = DateTimeOffset.UtcNow;
         var result = await _importService.TriggerImportAsync(
-            hash, torrent.ContentPath, owner, cancellationToken);
+            torrent, owner, cancellationToken);
 
         if (result.Success)
         {
@@ -445,6 +446,10 @@ public class TorrentProcessor : ITorrentProcessor
                 i.Category.Equals(libraryEntry.Category, StringComparison.OrdinalIgnoreCase));
             if (arrCfg?.Torrent.AutoDelete == true && !string.IsNullOrEmpty(contentPath))
                 await RunPostImportAutoDeleteCleanupAsync(torrent, arrCfg, contentPath, cancellationToken);
+        }
+        else if (result.Deferred)
+        {
+            _logger.LogInformation("Import deferred for torrent {Hash}: {Message}", hash, result.Message);
         }
         else
         {
@@ -468,6 +473,8 @@ public class TorrentProcessor : ITorrentProcessor
             || MaintenanceRecovery.BlocksAutomaticRemoval(_dbContext, torrent,
                 _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig()))
             return;
+
+        if (ImportRescueReceipt.BlocksRemoval(_dbContext, torrent, TorrentRemovalIntent.RejectedByAllowlist)) return;
 
         var allowlist = arrCfg.Torrent.FileExtensionAllowlist.Count > 0
             ? (IReadOnlyCollection<string>)arrCfg.Torrent.FileExtensionAllowlist
@@ -757,7 +764,7 @@ public class TorrentProcessor : ITorrentProcessor
         // ================================================================================
 
         // Branch 1: Custom format unmet → delete (qBitrr _process_single_torrent_delete_cfunmet)
-        if (!rescueConfirmed && !pendingImport && !recoveryBlocksRemoval && _importService != null
+        if (!completedForImport && !rescueConfirmed && !pendingImport && !recoveryBlocksRemoval && _importService != null
             && arrCfg?.Search.CustomFormatUnmetSearch == true
             && !HasTag(torrent, IgnoredTag)
             && !HasTag(torrent, FreeSpacePausedTag)
@@ -2029,7 +2036,7 @@ public class TorrentProcessor : ITorrentProcessor
 
         try
         {
-            foreach (var file in meaningfulFiles) _ = ResolveTorrentOwnedPath(torrent, file.Name);
+            foreach (var file in meaningfulFiles) _ = ResolveOwnedLocalPath(torrent, file.Name);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -2116,7 +2123,7 @@ public class TorrentProcessor : ITorrentProcessor
             _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.ErrorRecovery ?? new ErrorRecoveryConfig())) return;
         try
         {
-            var path = ResolveTorrentOwnedPath(torrent, relativePath);
+            var path = ResolveOwnedLocalPath(torrent, relativePath);
             if (File.Exists(path) && (_safeDeletion == null || !await _safeDeletion.DeleteOwnedFileAsync(torrent.ClientInstanceId, torrent.Hash, path, ct)))
                 _logger.LogWarning("Excluded-file cleanup was not authorized for {Hash}: {Path}; import is permitted after configured filtering", torrent.Hash, path);
         }
@@ -2126,11 +2133,11 @@ public class TorrentProcessor : ITorrentProcessor
         }
     }
 
-    private static bool TorrentOwnedFileExists(TorrentInfo torrent, string relativePath)
+    private bool TorrentOwnedFileExists(TorrentInfo torrent, string relativePath)
     {
         try
         {
-            return File.Exists(ResolveTorrentOwnedPath(torrent, relativePath));
+            return File.Exists(ResolveOwnedLocalPath(torrent, relativePath));
         }
         catch
         {
@@ -2139,12 +2146,13 @@ public class TorrentProcessor : ITorrentProcessor
         }
     }
 
-    private static bool TorrentStorageAvailable(
+    private bool TorrentStorageAvailable(
         TorrentInfo torrent,
         IReadOnlyCollection<TorrentFileRecord> expectedFiles)
     {
+        var localContent = LocalImportContentPath(torrent);
         var rootExists = !string.IsNullOrWhiteSpace(torrent.ContentPath)
-            ? File.Exists(torrent.ContentPath) || Directory.Exists(torrent.ContentPath)
+            ? localContent != null && (File.Exists(localContent) || Directory.Exists(localContent))
             : !string.IsNullOrWhiteSpace(torrent.SavePath) && Directory.Exists(torrent.SavePath);
         if (!rootExists)
             return false;
@@ -2152,16 +2160,36 @@ public class TorrentProcessor : ITorrentProcessor
         return expectedFiles.Any(file => TorrentOwnedFileAccessible(torrent, file.Name));
     }
 
-    private static bool TorrentOwnedFileAccessible(TorrentInfo torrent, string relativePath)
+    private bool TorrentOwnedFileAccessible(TorrentInfo torrent, string relativePath)
     {
         try
         {
-            return File.Exists(ResolveTorrentOwnedPath(torrent, relativePath));
+            return File.Exists(ResolveOwnedLocalPath(torrent, relativePath));
         }
         catch
         {
             return false;
         }
+    }
+
+    private string? LocalImportContentPath(TorrentInfo torrent)
+    {
+        var mappings = _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.PathMappings;
+        return mappings is { Count: > 0 } ? new PathMappingService().Resolve(torrent.ContentPath, mappings).LocalPath : torrent.ContentPath;
+    }
+
+    private string ResolveOwnedLocalPath(TorrentInfo torrent, string relativePath)
+    {
+        var mappings = _config.GetTorrentClient(torrent.ClientInstanceId)?.Maintenance.PathMappings;
+        if (mappings is not { Count: > 0 }) return ResolveTorrentOwnedPath(torrent, relativePath);
+        var normalized = relativePath.Replace('\\', '/');
+        if (normalized.StartsWith('/') || normalized.Contains(':') || normalized.Split('/').Any(part => part is "." or ".."))
+            throw new InvalidOperationException("Torrent file path is unsafe.");
+        var paths = new PathMappingService();
+        var mapped = paths.Resolve(torrent.SavePath.TrimEnd('/', '\\') + "/" + normalized, mappings);
+        if (mapped.LocalPath == null || mapped.LocalRoot == null || paths.ValidateLocalPath(mapped.LocalPath, mapped.LocalRoot) != null)
+            throw new InvalidOperationException("Torrent file cannot be mapped safely to local storage.");
+        return mapped.LocalPath;
     }
 
     private static string ResolveTorrentOwnedPath(TorrentInfo torrent, string relativePath)

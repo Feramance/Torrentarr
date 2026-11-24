@@ -23,15 +23,15 @@ describe("generated config schema", () => {
     expect(getArrFieldSets("Lidarr-Music").entryOverseerrFields).toEqual([]);
   });
 
-  it("offers import rescue only for its supported Arr adapter", () => {
+  it("offers opt-in import rescue for all supported Arr adapters", () => {
     const hasRescue = (instance: string) =>
       getArrFieldSets(instance).torrentFields.some(
         (field) => field.path?.join(".") === "Torrent.RescueBlockedImports",
       );
     expect(hasRescue("Radarr-Movies")).toBe(true);
-    expect(hasRescue("Sonarr-TV")).toBe(false);
-    expect(hasRescue("Lidarr-Music")).toBe(false);
-    expect(hasRescue("Readarr-Books")).toBe(false);
+    expect(hasRescue("Sonarr-TV")).toBe(true);
+    expect(hasRescue("Lidarr-Music")).toBe(true);
+    expect(hasRescue("Readarr-Books")).toBe(true);
   });
   it("offers shared search gates and restricts availability to Radarr", () => {
     for (const name of [

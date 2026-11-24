@@ -38,6 +38,7 @@ internal sealed class ImportRescueReceipt
 
     internal static bool BlocksRemoval(TorrentarrDbContext db, TorrentInfo torrent, TorrentRemovalIntent intent)
     {
+        if (ImportPlanReceipt.BlocksRemoval(db, torrent, intent)) return true;
         var key = Key(torrent);
         var data = db.MaintenanceState.AsNoTracking().Where(row => row.Key == key).Select(row => row.Data).FirstOrDefault();
         if (data == null) return false;
@@ -59,11 +60,19 @@ public partial class ArrImportService
         && item.StatusMessages?.Any(message => message.Title == RadarrIdMatchWarning
             || message.Messages?.Contains(RadarrIdMatchWarning) == true) == true;
 
-    public Task<ImportRescueOutcome> TryRescueImportAsync(TorrentInfo torrent, string category, CancellationToken ct = default)
-        => TryRescueImportCoreAsync(torrent, category, allowSubmission: true, allowMissing: false, ct);
+    public async Task<ImportRescueOutcome> TryRescueImportAsync(TorrentInfo torrent, string category, CancellationToken ct = default)
+    {
+        using var configuration = _config.BeginOperation();
+        using var processing = ConfigMutationGuard.EnterProcessing();
+        if (_config.Revision != _config.LatestRevision) return ImportRescueOutcome.Pending;
+        var plan = await ReconcileImportPlanAsync(torrent, category, ct);
+        if (plan.HasValue) return plan.Value;
+        return await TryRescueImportCoreAsync(torrent, category, allowSubmission: true, allowMissing: false, ct);
+    }
 
     public async Task ReconcileImportRescuesAsync(string category, CancellationToken ct = default)
     {
+        await ReconcileMissingImportPlansAsync(category, ct);
         if (!_dbContext.Database.IsSqlite()) return;
         using var configuration = _config.BeginOperation();
         using var processing = ConfigMutationGuard.EnterProcessing();
@@ -257,6 +266,13 @@ public partial class ArrImportService
             var preview = await client.GetManualImportsAsync(torrent.Hash, token);
             var prepared = PrepareRescueFile(torrent, matching[0], arr.Torrent, settings.Maintenance.PathMappings, files, preview, filters, token);
             if (prepared == null) return ImportRescueOutcome.NotApplicable;
+            using (var importClient = ArrImportClient.Create(arr))
+            {
+                var movie = await importClient.ReadImportAsync($"movie/{matching[0].MovieId}", token);
+                if (movie is not JObject || movie["id"]?.Value<int?>() != matching[0].MovieId
+                    || movie["movieFileId"]?.Value<int?>() != 0 || movie["hasFile"]?.Value<bool?>() == true)
+                    return ImportRescueOutcome.NotApplicable;
+            }
             if (!await RescueTorrentUnchangedAsync(torrent, token)) return ImportRescueOutcome.NotApplicable;
             var freshQueue = (await client.GetAllQueueAsync(token)).Where(item => string.Equals(item.DownloadId, torrent.Hash, StringComparison.OrdinalIgnoreCase)).ToArray();
             if (freshQueue.Length != 1 || freshQueue[0].Id != matching[0].Id || freshQueue[0].MovieId != matching[0].MovieId

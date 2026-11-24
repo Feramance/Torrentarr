@@ -54,70 +54,17 @@ public partial class ArrImportService : IArrImportService
     }
 
     public async Task<ImportResult> TriggerImportAsync(
-        string hash,
-        string contentPath,
-        string category,
-        CancellationToken cancellationToken = default)
+        string hash, string contentPath, string category, CancellationToken cancellationToken = default)
     {
-        using var importScope = _logger.BeginScope(new Dictionary<string, object> { ["Operation"] = "Import", ["TorrentHash"] = hash, ["TorrentCategory"] = category });
-        var started = System.Diagnostics.Stopwatch.GetTimestamp();
-        _logger.LogInformation("Starting import trigger for hash {Hash} in category {Category}", hash, category);
-
-        // Find the Arr instance configuration for this category
-        _logger.LogTrace("Looking up Arr instance for category {Category}", category);
-        var target = _config.ArrInstances.FirstOrDefault(p =>
-            p.Value.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
-        var arrInstance = target.Value;
-
-        if (arrInstance == null)
-        {
-            _logger.LogWarning("No Arr instance configured for category {Category}", category);
-            _logger.LogInformation("Import aborted - no Arr instance found for category {Category}", category);
-            return new ImportResult
-            {
-                Success = false,
-                Message = $"No Arr instance configured for category {category}"
-            };
-        }
-
-        _logger.LogInformation("Found Arr instance: Type={Type}, URI={URI}, Category={Category}",
-            arrInstance.Type, DiagnosticText.Safe(arrInstance.URI), arrInstance.Category);
-        using var instanceScope = _logger.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = target.Key });
-        _logger.LogTrace("Import request: path={Path}; configuredMode={ConfiguredMode}; globalMode={GlobalMode}; type={Type}", contentPath, arrInstance.ImportMode, _config.Settings.ImportMode, arrInstance.Type);
-
-        try
-        {
-            _logger.LogInformation("Routing import to {Type} handler", arrInstance.Type);
-            using var activity = ArrActivityTracking.Begin(_dbContext, _logger, target.Key, arrInstance, "import", hash);
-            var result = arrInstance.Type.ToLower() switch
-            {
-                "radarr" => await TriggerRadarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
-                "sonarr" => await TriggerSonarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
-                "lidarr" => await TriggerLidarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
-                "readarr" => await TriggerReadarrImportAsync(arrInstance, hash, contentPath, cancellationToken),
-                _ => new ImportResult
-                {
-                    Success = false,
-                    Message = $"Unknown Arr type: {arrInstance.Type}"
-                }
-            };
-
-            _logger.LogInformation("Import scan submission result for {Hash}: accepted={Success}; message={Message}; elapsed={ElapsedMs:F1}ms; media import completion requires a later Arr observation",
-                hash, result.Success, result.Message, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
-            await ObserveAsync("scan", category, hash, result.Success, cancellationToken, result.Message);
-            return result;
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
-        catch (Exception ex)
-        {
-            await ObserveAsync("scan", category, hash, false, cancellationToken, DiagnosticText.Error(ex));
-            _logger.LogError(ex, "Error triggering import for hash {Hash}", hash);
-            return new ImportResult
-            {
-                Success = false,
-                Message = $"Error: {ex.Message}"
-            };
-        }
+        var arr = _config.ArrInstances.Values.FirstOrDefault(instance => instance.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        if (arr == null) return new() { Message = $"No Arr instance configured for category {category}" };
+        if (arr.Type.ToLowerInvariant() is not ("radarr" or "sonarr" or "lidarr" or "readarr"))
+            return new() { Message = $"Unknown Arr type: {arr.Type}" };
+        // Legacy callers must resolve the same explicit client identity as the processor.
+        var torrent = await TorrentClientLookup.FindAsync(_qbitManager, hash, null, _logger, cancellationToken);
+        if (torrent == null || ClientPathKey(torrent.ContentPath) != ClientPathKey(contentPath))
+            return new() { Message = "Import requires one uniquely owned torrent and its current content path." };
+        return await TriggerImportAsync(torrent, arr.Category, cancellationToken);
     }
 
     public async Task<bool> IsImportedAsync(string hash, string category, DateTimeOffset historySince,
@@ -129,6 +76,13 @@ public partial class ArrImportService : IArrImportService
 
         try
         {
+            var suffix = "|" + hash.ToUpperInvariant() + "|import-plan";
+            var plans = await _dbContext.MaintenanceState.AsNoTracking().Where(row => row.Key.EndsWith(suffix)).Select(row => row.Data).ToListAsync(cancellationToken);
+            if (plans.Count > 0)
+            {
+                var receipts = plans.Select(ImportPlanReceipt.Parse).ToArray();
+                if (receipts.Length != 1 || receipts[0].State != "confirmed" || receipts[0].Server != ArrActivityTracking.ServerKey(arr)) return false;
+            }
             var type = arr.Type.ToLowerInvariant();
             var evidence = new Torrentarr.Infrastructure.Database.Models.ArrActivityOperation
             {
@@ -174,134 +128,6 @@ public partial class ArrImportService : IArrImportService
             default:
                 return false;
         }
-    }
-
-    private async Task<ImportResult> TriggerRadarrImportAsync(
-        ArrInstanceConfig config,
-        string hash,
-        string contentPath,
-        CancellationToken cancellationToken)
-    {
-        var client = new RadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-
-        var importMode = ResolveImportMode(config, _config.Settings);
-        var response = await client.TriggerDownloadedMoviesScanAsync(
-            contentPath, hash, importMode, cancellationToken);
-
-        if (response != null)
-        {
-            _logger.LogInformation("Triggered Radarr import command {CommandId} for {Path}",
-                response.Id, contentPath);
-
-            return new ImportResult
-            {
-                Success = true,
-                Message = $"Radarr import command {response.Id} queued",
-                CommandId = response.Id
-            };
-        }
-
-        return new ImportResult
-        {
-            Success = false,
-            Message = "Failed to trigger Radarr import"
-        };
-    }
-
-    private async Task<ImportResult> TriggerSonarrImportAsync(
-        ArrInstanceConfig config,
-        string hash,
-        string contentPath,
-        CancellationToken cancellationToken)
-    {
-        var client = new SonarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-
-        var importMode = ResolveImportMode(config, _config.Settings);
-        var response = await client.TriggerDownloadedEpisodesScanAsync(
-            contentPath, hash, importMode, cancellationToken);
-
-        if (response != null)
-        {
-            _logger.LogInformation("Triggered Sonarr import command {CommandId} for {Path}",
-                response.Id, contentPath);
-
-            return new ImportResult
-            {
-                Success = true,
-                Message = $"Sonarr import command {response.Id} queued",
-                CommandId = response.Id
-            };
-        }
-
-        return new ImportResult
-        {
-            Success = false,
-            Message = "Failed to trigger Sonarr import"
-        };
-    }
-
-    private async Task<ImportResult> TriggerLidarrImportAsync(
-        ArrInstanceConfig config,
-        string hash,
-        string contentPath,
-        CancellationToken cancellationToken)
-    {
-        var client = new LidarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-
-        var importMode = ResolveImportMode(config, _config.Settings);
-        var response = await client.TriggerDownloadedAlbumsScanAsync(
-            contentPath, hash, importMode, cancellationToken);
-
-        if (response != null)
-        {
-            _logger.LogInformation("Triggered Lidarr import command {CommandId} for {Path}",
-                response.Id, contentPath);
-
-            return new ImportResult
-            {
-                Success = true,
-                Message = $"Lidarr import command {response.Id} queued",
-                CommandId = response.Id
-            };
-        }
-
-        return new ImportResult
-        {
-            Success = false,
-            Message = "Failed to trigger Lidarr import"
-        };
-    }
-
-    private async Task<ImportResult> TriggerReadarrImportAsync(
-        ArrInstanceConfig config,
-        string hash,
-        string contentPath,
-        CancellationToken cancellationToken)
-    {
-        var client = new ReadarrClient(config.URI, config.APIKey, config.SkipTLSVerify);
-
-        var importMode = ResolveImportMode(config, _config.Settings);
-        var response = await client.TriggerDownloadedBooksScanAsync(
-            contentPath, hash, importMode, cancellationToken);
-
-        if (response != null)
-        {
-            _logger.LogInformation("Triggered Readarr import command {CommandId} for {Path}",
-                response.Id, contentPath);
-
-            return new ImportResult
-            {
-                Success = true,
-                Message = $"Readarr import command {response.Id} queued",
-                CommandId = response.Id
-            };
-        }
-
-        return new ImportResult
-        {
-            Success = false,
-            Message = "Failed to trigger Readarr import"
-        };
     }
 
     public async Task MarkAsImportedAsync(string instanceId, string hash, IEnumerable<string> tags, CancellationToken cancellationToken = default)

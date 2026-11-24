@@ -186,9 +186,6 @@ public sealed class AuditFixRegressionTests
         config.ArrInstances["Arr"].Category = "movies";
         var submitted = DateTimeOffset.UtcNow;
         var added = submitted.AddHours(-1);
-        var accepted = await service.TriggerImportAsync("TARGET", "/downloads/item", "movies");
-        accepted.Success.Should().BeTrue();
-        accepted.CommandId.Should().Be(42);
         (await service.IsImportedAsync("TARGET", "movies", submitted)).Should().BeFalse();
         stub.ImportHistoryDate = submitted.AddMinutes(-1);
         (await service.IsImportedAsync("TARGET", "movies", submitted)).Should().BeFalse();

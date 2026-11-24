@@ -90,6 +90,14 @@ public static class ManualSqliteMigrations
             """);
 
         db.Database.ExecuteSqlRaw("""
+            CREATE INDEX IF NOT EXISTS idx_import_plans ON torrentarr_maintenance_state
+                (CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Instance') END,
+                 CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Server') END,
+                 CASE WHEN json_valid(Data) THEN json_extract(Data, '$.State') END, Key)
+            WHERE substr(Key, -12) = '|import-plan'
+            """);
+
+        db.Database.ExecuteSqlRaw("""
             CREATE INDEX IF NOT EXISTS idx_pending_failed_parking ON torrentarr_maintenance_state
                 (CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Server') END, Key)
             WHERE substr(Key, -15) = '|failed-parking'

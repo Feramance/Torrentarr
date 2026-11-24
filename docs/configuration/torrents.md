@@ -1000,70 +1000,60 @@ Unchanged allowlist and removal diagnostics move to Debug after the first messag
 Configured file inclusion/exclusion rules determine import eligibility. If allowed content remains and ordinary readiness checks pass, excluded files remaining on disk do not block import. `AutoDelete` cleanup is independent and retries safely; H&R can prevent that cleanup or torrent removal without suppressing the import. This applies to all excluded file types, with no screenshot or metadata exception list. All-files-excluded releases remain rejected, and unsafe paths, missing storage, failed filtering requests, and Arr failures remain actionable.
 
 
-## Rescue supported blocked imports
+## Import preflight and blocked import rescue
 
-`RescueBlockedImports` defaults to `false` and is available for Radarr instances.
-Enable it under **Failed torrents and import rescue** in the Radarr editor or in
-the instance's `Torrent` section.
+Torrentarr checks Arr's manual-import preview, completed torrent files, file filters,
+path mappings and current library files before submitting targeted `ManualImport`
+commands. It uses paths returned by Arr, including when Arr and the torrent client
+see different mount paths. Missing or ambiguous identity, unsafe/inaccessible files,
+incomplete payloads and unrecognized structural rejections hold import.
+
+`RescueBlockedImports` defaults to `false` for Radarr, Sonarr, Lidarr and Readarr.
+Enable it under **Failed torrents and import rescue** for each integration:
 
 ```toml
-[Radarr-Movies.Torrent]
+[Sonarr-TV.Torrent]
 RescueBlockedImports = true
 ```
 
-The first supported incident is Radarr's blocked import for a release matched by
-ID through grab history. Torrentarr asks Radarr's manual-import preview for its
-own match and accepts exactly one eligible file for the same movie and download.
-The preview must contain no rejection for that file. Ambiguous matches and other
-rejection reasons keep their existing failure policy. Sonarr, Lidarr and Readarr
-rescue policies remain disabled until their rejection and import contracts have
-fixtures. Radarr's upstream implementation defines this warning and its manual
-import workflow. [Radarr completed-download handling](https://github.com/Radarr/Radarr/blob/develop/src/NzbDrone.Core/Download/CompletedDownloadService.cs)
+Without rescue, Arr's rejection decisions are honored. With rescue, identified
+files can override supported quality, cutoff and custom-format upgrade rejections,
+using Copy mode to preserve the torrent payload. Incoming custom-format scores
+must be at least the existing score for every movie, episode, track or book being
+replaced. Equal scores permit replacement even when media quality decreases.
+Unknown replacement scores hold that file; absent scores are never assumed zero.
+Missing media does not require a replacement score. Torrentarr uses Arr's identity
+and metadata, rather than guessing matches from filenames.
 
-Rescue requires a completed torrent past the normal sixty-second grace period,
-fresh queue and client observations, unique client ownership, a stable download
-identity, and explicit client-to-local path mappings. The Arr output path must
-match the client content path or its explicitly mapped local path. Each selected file must be
-owned by the torrent, accessible through its mapping, and match its reported
-size. Use the physical local path for mappings, including when macOS exposes
-the directory under a symlinked alias. Current local exclusions, extension rules and shared filter snapshots all
-apply. Excluded extras stay outside the submitted import.
+Season and album packs import eligible files individually. A multi-episode or
+multi-track file must pass for all its targets. Replacements that would remove
+untargeted media from a shared existing file are held. Existing Lidarr albums
+also keep their selected release so partial imports cannot change track identity.
+Lower-scoring, unresolved and
+structurally blocked files stay out of the command. Partial imports never mark
+the entire torrent imported or authorize whole-torrent cleanup.
 
-Torrentarr submits one `ManualImport` command in Copy mode, preserving the client
-entry and source payload. It stores a claim before the request and sends the POST
-once, with redirects disabled. A timeout or worker restart keeps that claim and
-cannot repeat the command for the same incident. Command acceptance and queue
-disappearance leave the result pending. Positive import history must match the
-movie, download ID and submission time, and the queue must be clear, before the
-rescue is confirmed. A reported source path must also match the selected file.
+A durable claim is stored before each command and the POST is sent only once,
+without redirects or automatic retries. After a restart, pending claims still
+require matching Arr import history. Command acceptance, command completion and
+queue disappearance alone do not prove an import. Uncertain submissions with no
+command receipt remain protected and raise an Issue after fifteen minutes.
+Known terminal commands without positive import evidence become failed after
+that window; identical decisions are not replayed. Blocked eligibility is
+rechecked at most every fifteen minutes using fresh library evidence.
 
-Competing automatic removal and failed outcomes wait while confirmation is
-pending. After fifteen minutes, fresh Arr and client observations can classify
-the result as unconfirmed and resume normal failure handling. An unavailable
-observation keeps the hold and raises an Issue. Fresh queue or command evidence
-of an active import extends the hold beyond that window. A confirmed rescue skips failed
-custom-format handling, blocklisting and replacement. Existing configured
-post-import cleanup still uses its normal protection checks.
+History records selected paths, media IDs, incoming/existing scores and reasons
+for blocked, submitted, failed, partial or confirmed results. Pending and partial
+imports preserve payload removal protection. A torrent is confirmed only after
+all selected files are confirmed, no unresolved media remains and Arr's queue is
+clear. Existing post-import cleanup still requires its normal protection checks.
 
-Receipts use Torrentarr's existing maintenance-state extension, with one record
-per client and torrent hash. They retain download identity, incident and outcome
-information across restarts. A repeated warning cannot create another attempt
-until a fresh, unique queue entry reports a healthy import-pending state for the
-same movie and output path, or a new verified download identity supersedes it.
-Queue disappearance preserves the old claim. Receipts are retained alongside torrent state.
-Disabling rescue stops new attempts while existing pending claims are reconciled.
-Catalog sync also reconciles receipts after Arr removes a successfully imported
-download from the client. It checks up to 100 pending receipts within a thirty-second
-budget, rotating a persisted cursor between batches. A missing torrent requires a
-fresh client inventory, positive matching history and no active import command;
-it never triggers a new submission. Database updates match the original download
-epoch so a re-added torrent cannot inherit success. A SQLite partial index bounds
-receipt selection to pending rescues for that Arr server.
-A pending claim is scoped to the original Arr server and owner category. A
-configuration change holds the claim until that scope is restored and its
-outcome can be inspected.
-Unreadable or incomplete receipts raise an Issue and preserve removal protection
-until valid database evidence is restored.
+Receipts use the existing maintenance-state extension, scoped to the torrent
+client, hash, download epoch and Arr server. Existing Radarr matched-by-ID rescue
+receipts remain supported. Disabling rescue stops new policy overrides while
+pending submissions continue reconciliation, including downloads removed from the
+client by Arr. Configuration changes and corrupt receipts preserve pending claims
+until valid evidence can be restored.
 
 ### Failed torrent action
 

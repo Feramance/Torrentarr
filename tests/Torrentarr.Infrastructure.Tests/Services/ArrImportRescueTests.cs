@@ -525,6 +525,7 @@ public sealed class ArrImportRescueTests : IAsyncDisposable
                         if (_queueDeleteStatus == 200) _queue = [];
                         response = new JObject();
                         break;
+                    case "/api/v3/movie/10": response = new JObject { ["id"] = 10, ["movieFileId"] = 0, ["hasFile"] = false }; break;
                     case "/api/v3/manualimport": response = _preview.DeepClone(); break;
                     case "/api/v3/history/since": response = _history.DeepClone(); break;
                     case "/api/v3/command" when context.Request.HttpMethod == "GET": response = _commandInventory.DeepClone(); break;

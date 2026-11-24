@@ -64,16 +64,20 @@ public class ConfigurationLoaderTests : IDisposable
         search.QuietHoursTimeZone.Should().Be("Europe/Malta");
     }
 
-    [Fact]
-    public void ImportRescue_OptInRoundTripsAndDefaultsOff()
+    [Theory]
+    [InlineData("Radarr-Movies")]
+    [InlineData("Sonarr-TV")]
+    [InlineData("Lidarr-Music")]
+    [InlineData("Readarr-Books")]
+    public void ImportRescue_OptInRoundTripsAndDefaultsOff(string instance)
     {
         new TorrentConfig().RescueBlockedImports.Should().BeFalse();
-        WriteToml("[Radarr-Movies.Torrent]\nRescueBlockedImports = true\n");
+        WriteToml($"[{instance}.Torrent]\nRescueBlockedImports = true\n");
         var loader = new ConfigurationLoader(_tempFilePath);
         var config = loader.Load();
-        config.ArrInstances["Radarr-Movies"].Torrent.RescueBlockedImports.Should().BeTrue();
+        config.ArrInstances[instance].Torrent.RescueBlockedImports.Should().BeTrue();
         loader.SaveConfig(config);
-        loader.Load().ArrInstances["Radarr-Movies"].Torrent.RescueBlockedImports.Should().BeTrue();
+        loader.Load().ArrInstances[instance].Torrent.RescueBlockedImports.Should().BeTrue();
     }
 
     [Fact]

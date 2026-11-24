@@ -370,6 +370,24 @@ export const CONFIG_SCHEMA = {
       {
         "section": "Settings",
         "path": [
+          "HistoryRetentionDays"
+        ],
+        "key": "HistoryRetentionDays",
+        "label": "History retention (days)",
+        "kind": "number",
+        "default": 30,
+        "comments": "History retention (days). Uses the displayed units and default; operation prerequisites and protection checks still apply.",
+        "required": false,
+        "secure": false,
+        "uiExpose": true,
+        "applyLive": true,
+        "requiresRestart": false,
+        "description": "Keep worker action history for this many days.",
+        "minimum": 1
+      },
+      {
+        "section": "Settings",
+        "path": [
           "SharedFileFilters"
         ],
         "key": "SharedFileFilters",
@@ -9297,15 +9315,18 @@ export const CONFIG_SCHEMA = {
         "label": "Rescue supported blocked imports",
         "kind": "checkbox",
         "default": false,
-        "comments": "Enable one supported Copy import per failure incident. Pending claims retain protection while their outcome is reconciled.",
+        "comments": "Opt in to targeted Copy imports with per-item custom-format protection. Partial and uncertain imports retain their payload.",
         "required": false,
         "secure": false,
         "uiExpose": true,
         "applyLive": true,
         "requiresRestart": false,
-        "description": "Radarr only. Attempt one copy import for its matched-by-ID warning when one owned file has an unambiguous, unrejected manual-import match. Import history must confirm success. Disabling stops new attempts while pending claims are reconciled.",
+        "description": "Copy identified files through manual import, allowing policy rejections only when custom-format scores do not decrease for any replaced movie, episode, track or book. Equal scores may override quality and cutoff decisions. Unknown replacement scores or ambiguous matches hold import. Pending claims are reconciled even when disabled.",
         "arrKinds": [
-          "radarr"
+          "radarr",
+          "sonarr",
+          "lidarr",
+          "readarr"
         ]
       },
       {

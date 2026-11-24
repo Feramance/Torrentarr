@@ -155,6 +155,24 @@ public sealed class WorkerHistoryTests : IDisposable
     }
 
     [Fact]
+    public void ImportHistoryRetainsFailureReasonsAndDoesNotTurnPartialImportsIntoSuccess()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var entry = new WorkerHistoryEvent { Type = "import", Outcome = "submitted", Server = "server", Timestamp = now, CommandId = 42 };
+        var command = new JObject { ["id"] = 42, ["name"] = "ManualImport", ["status"] = "failed", ["message"] = "Permission denied" };
+        var file = new ImportPlanFile { CommandId = 42, State = "pending" };
+        var plan = new ImportPlanReceipt { State = "pending", Files = [file] };
+        ArrActivityCollector.ReconcileHistory([entry], [], new JArray(command), "server", now, [plan]);
+        entry.Outcome.Should().Be("submitted");
+        JObject.Parse(entry.Details)["failureReason"]!.Value<string>().Should().Be("Permission denied");
+        file.State = "confirmed";
+        plan.State = "partial";
+        ArrActivityCollector.ReconcileHistory([entry], [], new JArray(command), "server", now, [plan]);
+        entry.Outcome.Should().Be("partial");
+        entry.CompletedAt.Should().Be(now);
+    }
+
+    [Fact]
     public async Task UpgradeAddsHistoryTableWithoutChangingExistingCatalog()
     {
         using var db = Db();

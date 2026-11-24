@@ -206,6 +206,12 @@ public static class WorkerHistory
         var details = new JObject();
         foreach (var field in new[] { "movieIds", "episodeIds", "seriesId", "artistId", "albumIds", "authorId", "bookIds", "qualityProfileId", "downloadClientId", "downloadId", "importMode" })
             if (body?[field] is { } token) details[field] = token is JArray array ? new JArray(array.Take(100)) : token.DeepClone();
+        if (command == "ManualImport" && body?["files"] is JArray importFiles)
+        {
+            details["method"] = command;
+            details["fileCount"] = importFiles.Count;
+            details["downloadId"] = importFiles.FirstOrDefault()?["downloadId"]?.DeepClone();
+        }
         foreach (var parameter in request.Parameters.Where(p => p.Name is "blocklist" or "removeFromClient" or "skipRedownload"))
             details[parameter.Name!] = parameter.Value?.ToString();
         if (Profile.Value is { } profile)

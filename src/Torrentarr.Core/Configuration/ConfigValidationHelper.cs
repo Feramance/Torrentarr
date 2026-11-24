@@ -239,8 +239,6 @@ public static class ConfigValidationHelper
             || arr.Torrent.SharedFileFilters.Any(name => !shared.Any(item => item.Name == name))))
             return (false, "Arr shared file filter references must name a configured list.");
 
-        if (config.ArrInstances.Values.Any(arr => arr.Torrent.RescueBlockedImports && !arr.Type.Equals("radarr", StringComparison.OrdinalIgnoreCase)))
-            return (false, "Blocked import rescue currently supports Radarr only.");
         foreach (var (name, arr) in config.ArrInstances)
             if (FailedTorrentRouting.Validate(config, arr) is { } routeError)
                 return (false, $"Integration '{name}': {routeError}");

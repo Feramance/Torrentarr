@@ -175,7 +175,7 @@ SearchOnly = false
 ProcessingOnly = false
 
 [Radarr-Movies.Torrent]
-# Optional rescue for Radarr's matched-by-ID blocked import, using one validated Copy import.
+# Optional targeted Copy imports. Equal/higher per-item custom-format scores may override quality/cutoff policy.
 RescueBlockedImports = false
 FailedTorrentAction = 'existing' # 'move' preserves the entry and payload
 FailedTorrentDestinations = [] # e.g. [{ Client = 'qBit', Category = 'parked' }]
