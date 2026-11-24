@@ -1,4 +1,8 @@
 import { ArrActivityCharts } from "../components/ArrActivityCharts";
+import { IconImage } from "../components/IconImage";
+import HistoryIcon from "../icons/history.svg";
+import RestartIcon from "../icons/refresh-arrow.svg";
+import IssuesIcon from "../icons/alert.svg";
 import { useStatisticsUpdates } from "../hooks/useStatisticsUpdates";
 import {
   useCallback,
@@ -217,7 +221,35 @@ function ActivityRow({
         )}
       </div>
       <div className="process-activity__detail">
-        {showSummary ? (
+        {loop?.currentAction &&
+        item.alive &&
+        !/stopped|stale|timed out/i.test(state) ? (
+          <span
+            title={
+              loop.currentActionAt
+                ? new Date(loop.currentActionAt).toLocaleString()
+                : undefined
+            }
+          >
+            Current: {loop.currentAction}
+            {loop.currentActionAt
+              ? ` · ${formatRelativeTime(loop.currentActionAt)}`
+              : ""}
+          </span>
+        ) : loop?.lastAction ? (
+          <span
+            title={
+              loop.lastActionAt
+                ? new Date(loop.lastActionAt).toLocaleString()
+                : undefined
+            }
+          >
+            Last: {loop.lastAction}
+            {loop.lastActionAt
+              ? ` · ${formatRelativeTime(loop.lastActionAt)}`
+              : ""}
+          </span>
+        ) : showSummary ? (
           <span>{summary}</span>
         ) : kind === "search" && item.searchesTriggered == null ? (
           <span>No active search</span>
@@ -435,24 +467,6 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
     void load(false);
   }, refreshDelay);
 
-  const handleRestart = useCallback(
-    async (category: string, kind: string) => {
-      try {
-        await restartProcess(category, kind);
-        push(`Restarted ${category}:${kind}`, "success");
-        void load();
-      } catch (error) {
-        push(
-          error instanceof Error
-            ? error.message
-            : `Failed to restart ${category}:${kind}`,
-          "error",
-        );
-      }
-    },
-    [load, push],
-  );
-
   const handleRestartAll = useCallback(() => {
     setConfirmAction({
       title: "Restart All Processes",
@@ -507,18 +521,19 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
     (items: ProcessInfo[]) => {
       const label = items[0]?.name ?? "group";
       setConfirmAction({
-        title: "Restart All Processes",
-        message: `Restart all processes for ${label}?`,
+        title: "Restart Worker",
+        message: `Restart ${label}? This will temporarily interrupt its operations.`,
         danger: true,
         onConfirm: async () => {
           setConfirmAction(null);
           try {
-            await Promise.all(
+            const workers = new Map(
               items
                 .filter((item) => item.restartable ?? item.kind === "worker")
-                .map((item) =>
-                  restartProcess(item.restartKey ?? item.category, item.kind),
-                ),
+                .map((item) => [item.restartKey ?? item.name, item]),
+            );
+            await Promise.all(
+              [...workers].map(([key, item]) => restartProcess(key, item.kind)),
             );
             push(`Restarted ${label}`, "success");
             void load();
@@ -694,7 +709,16 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
         <div className="process-card" key={name}>
           <div className="process-card__header">
             <div className="process-card__title">
-              <div className="process-card__name">{displayName}</div>
+              <div className="process-card__identity">
+                <span
+                  className={statusToneClass(tone)}
+                  title={statusLabel}
+                  aria-label={statusLabel}
+                >
+                  <span className="process-status__dot" aria-hidden="true" />
+                </span>
+                <div className="process-card__name">{displayName}</div>
+              </div>
               {app !== "Torrent Clients" && filteredKinds.length ? (
                 <div className="process-card__badges">
                   {filteredKinds.map((kind) => (
@@ -707,68 +731,6 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
                   ))}
                 </div>
               ) : null}
-            </div>
-            <div className="process-card__header-actions">
-              <button
-                type="button"
-                className="btn small ghost"
-                aria-label={`View issues for ${displayName}`}
-                onClick={() =>
-                  requestNavigateTab({
-                    tab: "issues",
-                    issueInstance: app === "Other" ? undefined : name,
-                    issueCategory: "system",
-                  })
-                }
-              >
-                Issues
-              </button>
-              <div
-                className={statusToneClass(tone)}
-                title={statusLabel}
-                aria-label={statusLabel}
-              >
-                <span className="process-status__dot" aria-hidden="true" />
-              </div>
-              {items.some(
-                (item) => item.restartable ?? item.kind === "worker",
-              ) && (
-                <details className="process-actions">
-                  <summary className="btn small ghost">Actions</summary>
-                  <div className="process-actions__menu">
-                    {" "}
-                    {items.length === 1 &&
-                    items[0] != null &&
-                    (items[0].restartable ?? items[0].kind === "worker") ? (
-                      <button
-                        className="btn small ghost process-action-btn"
-                        type="button"
-                        onClick={() =>
-                          void handleRestart(
-                            items[0]!.restartKey ?? items[0]!.name,
-                            items[0]!.kind,
-                          )
-                        }
-                      >
-                        Restart {formatKind(items[0]!.kind).toLowerCase()}
-                      </button>
-                    ) : null}
-                    {items.filter(
-                      (item) => item.restartable ?? item.kind === "worker",
-                    ).length > 1 ? (
-                      <button
-                        className="btn small ghost process-action-btn"
-                        type="button"
-                        onClick={() => {
-                          handleRestartGroup(items);
-                        }}
-                      >
-                        Restart All
-                      </button>
-                    ) : null}
-                  </div>
-                </details>
-              )}
             </div>
           </div>
           <div
@@ -872,6 +834,52 @@ export function ProcessesView({ active }: ProcessesViewProps): JSX.Element {
                 </span>
               </div>
             ))}
+          <div
+            className="process-card__controls"
+            aria-label={`${displayName} controls`}
+          >
+            {arr && (
+              <button
+                type="button"
+                className="btn ghost process-icon"
+                title="View history"
+                aria-label={`View history for ${displayName}`}
+                onClick={() =>
+                  requestNavigateTab({ tab: "history", historyWorker: name })
+                }
+              >
+                <IconImage src={HistoryIcon} />
+              </button>
+            )}
+            {items.some(
+              (item) => item.restartable ?? item.kind === "worker",
+            ) && (
+              <button
+                type="button"
+                className="btn ghost process-icon"
+                title="Restart worker"
+                aria-label={`Restart ${displayName}`}
+                onClick={() => handleRestartGroup(items)}
+              >
+                <IconImage src={RestartIcon} />
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn ghost process-icon"
+              title="View issues"
+              aria-label={`View issues for ${displayName}`}
+              onClick={() =>
+                requestNavigateTab({
+                  tab: "issues",
+                  issueInstance: app === "Other" ? undefined : name,
+                  issueCategory: "system",
+                })
+              }
+            >
+              <IconImage src={IssuesIcon} />
+            </button>
+          </div>
           <div className="process-card__list">
             {instanceCategories.map((cat) => (
               <QbitCategoryChip

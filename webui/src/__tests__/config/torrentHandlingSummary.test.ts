@@ -52,3 +52,18 @@ it("describes observation confirmation of legacy OR clearance", () => {
   expect(summary).toContain("60 minutes of accounting grace");
   expect(summary).not.toContain("mandatory completed seed hours");
 });
+
+it("shows retirement requirements with inherited and explicitly disabled settings", () => {
+  const summary = getQbitTorrentHandlingSummary({
+    CategorySeeding: {
+      MinimumReportedSeeders: 3,
+      MinimumUploadInactivitySeconds: 3600,
+      Categories: [{ Name: "movies", MinimumUploadInactivitySeconds: 0 }],
+    },
+  });
+  expect(summary).toContain("at least 3 reported seeders and");
+  expect(summary).toContain("verified upload inactivity");
+  expect(summary).toContain(
+    "For movies, automatic retirement also requires at least 3 reported seeders.",
+  );
+});

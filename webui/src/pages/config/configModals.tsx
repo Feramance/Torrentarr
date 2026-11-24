@@ -1,12 +1,19 @@
 import type { SimpleConfigSection } from "../../config/settingsSections";
 import { requestNavigateTab } from "../../utils/navigateTab";
-import { clientGroups, arrGeneralGroups, simpleGroups } from "./configGroups";
+import {
+  clientGroups,
+  arrGeneralGroups,
+  arrSearchGroups,
+  arrTorrentGroups,
+  simpleGroups,
+} from "./configGroups";
 import React, { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import { get } from "lodash-es";
 import {
   testArrConnection,
+  sendIssueAlertTest,
   setPassword as apiSetPassword,
   type TestConnectionResponse,
 } from "../../api/client";
@@ -374,17 +381,20 @@ export function ArrInstanceModal({
                 )}
               </FieldGroup>
             ))}
-            <FieldGroup
-              title="Entry Search"
-              fields={entryFields}
-              state={state}
-              basePath={[]}
-              onChange={(path, def, value) =>
-                onChange([keyName, ...path], def, value)
-              }
-              sectionKey={keyName}
-              validationErrors={validationErrors}
-            />
+            {arrSearchGroups(entryFields).map((group) => (
+              <FieldGroup
+                key={group.title}
+                title={group.title}
+                fields={group.fields}
+                state={state}
+                basePath={[]}
+                onChange={(path, def, value) =>
+                  onChange([keyName, ...path], def, value)
+                }
+                sectionKey={keyName}
+                validationErrors={validationErrors}
+              />
+            ))}
             <FieldGroup
               title="Quality profiles"
               fields={qualityFields}
@@ -423,7 +433,8 @@ export function ArrInstanceModal({
             )}
             {entryOverseerrFields.length > 0 && (
               <FieldGroup
-                title="Overseerr Integration"
+                title="Seerr Integration"
+                description="Supports the legacy Overseerr API and existing Overseerr configuration."
                 fields={entryOverseerrFields}
                 state={state}
                 basePath={[]}
@@ -434,17 +445,20 @@ export function ArrInstanceModal({
                 validationErrors={validationErrors}
               />
             )}
-            <FieldGroup
-              title="Torrent Handling"
-              fields={torrentFields}
-              state={state}
-              basePath={[]}
-              onChange={(path, def, value) =>
-                onChange([keyName, ...path], def, value)
-              }
-              sectionKey={keyName}
-              validationErrors={validationErrors}
-            />
+            {arrTorrentGroups(torrentFields).map((group) => (
+              <FieldGroup
+                key={group.title}
+                title={group.title}
+                fields={group.fields}
+                state={state}
+                basePath={[]}
+                onChange={(path, def, value) =>
+                  onChange([keyName, ...path], def, value)
+                }
+                sectionKey={keyName}
+                validationErrors={validationErrors}
+              />
+            ))}
             <FieldGroup
               title="Seeding"
               fields={seedingFields}
@@ -781,6 +795,22 @@ export function SimpleConfigModal({
   const webUI = useWebUI();
   const { push } = useToast();
   const [savingModal, setSavingModal] = useState(false);
+  const [testingAlerts, setTestingAlerts] = useState(false);
+
+  async function testAlerts() {
+    setTestingAlerts(true);
+    try {
+      await sendIssueAlertTest();
+      push("Issue alert test delivered.", "success");
+    } catch (error) {
+      push(
+        error instanceof Error ? error.message : "Issue alert test failed.",
+        "error",
+      );
+    } finally {
+      setTestingAlerts(false);
+    }
+  }
 
   const handleSave = async () => {
     if (!onSave || savingModal) return;
@@ -847,6 +877,19 @@ export function SimpleConfigModal({
                 onChange={onChange}
                 validationErrors={validationErrors}
               >
+                {group.title === "Issue alerts" && (
+                  <div className="field--full-width">
+                    <button
+                      className="btn ghost small"
+                      type="button"
+                      disabled={testingAlerts}
+                      onClick={() => void testAlerts()}
+                    >
+                      {testingAlerts ? "Sending test…" : "Send test"}
+                    </button>
+                    <p className="hint">Uses the saved webhook destination.</p>
+                  </div>
+                )}
                 {group.title === "Appearance and live display" && (
                   <div className="field--full-width">
                     {showLiveSettings && webUI && (

@@ -233,11 +233,6 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                     result.Reason = $"Orphan scan blocked for {id}: {string.Join("; ", missing)}.";
                     AddIssue("orphan-prerequisite", result.Reason); continue;
                 }
-                if (operation == MaintenanceOperation.HardlinkAudit && cfg.Maintenance.Hardlinks.CountLinksInsideRoot)
-                {
-                    result.State = "blocked"; result.Reason = "Root-scoped hardlink inspection is not supported.";
-                    AddIssue("inspection-unsupported", result.Reason); continue;
-                }
                 if (required.HasFlag(InventoryRequirements.LocalFiles) && cfg.Maintenance.PathMappings.Count == 0)
                 {
                     result.State = "blocked"; result.Uninspectable = scoped.Count;
@@ -581,6 +576,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         var locks = plan.ClientInstanceIds.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .Select(id => _instanceLocks.GetOrAdd(id, _ => new SemaphoreSlim(1, 1))).ToList();
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(outerCt);
+        var hardlinkScans = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var run = new MaintenanceRunSummary
         {
             Trigger = trigger,
@@ -669,7 +665,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                                     & ~InventoryRequirements.GlobalOwnership
                             }, linked.Token, action.TorrentHash);
                     }
-                    var staleReason = budgetReason ?? await RevalidateActionAsync(action, inventory, seeding, linked.Token);
+                    var staleReason = budgetReason ?? await RevalidateActionAsync(action, inventory, seeding, linked.Token, hardlinkScans);
                     if (staleReason != null)
                     {
                         _logger.LogDebug("Maintenance action deferred: {ActionId}; reason={Reason}", action.Id, staleReason);
@@ -821,7 +817,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         }
     }
 
-    private async Task<string?> RevalidateActionAsync(MaintenanceAction action, TorrentInventory inventory, ISeedingService seeding, CancellationToken ct)
+    private async Task<string?> RevalidateActionAsync(MaintenanceAction action, TorrentInventory inventory, ISeedingService seeding, CancellationToken ct, Dictionary<string, int>? hardlinkScans = null)
     {
         var client = _registry.GetClient(action.ClientInstanceId);
         var cfg = _config.GetTorrentClient(action.ClientInstanceId);
@@ -882,7 +878,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 return "Action has no valid preview operation.";
             IEnumerable<MaintenanceAction> candidates = operation switch
             {
-                MaintenanceOperation.HardlinkAudit when MaintenanceRequirements.Enabled(MaintenanceOperation.HardlinkAudit, cfg.Maintenance) => await PlanHardlinksAsync(action.ClientInstanceId, cfg, client, [item], ct),
+                MaintenanceOperation.HardlinkAudit when MaintenanceRequirements.Enabled(MaintenanceOperation.HardlinkAudit, cfg.Maintenance) => await PlanHardlinksAsync(action.ClientInstanceId, cfg, client, [item], ct, scanCounts: hardlinkScans),
                 MaintenanceOperation.UnregisteredCleanup when MaintenanceRequirements.Enabled(MaintenanceOperation.UnregisteredCleanup, cfg.Maintenance) => PlanUnregistered(action.ClientInstanceId, cfg, [item], seeding),
                 MaintenanceOperation.CategoryReconcile => PlanCategories(action.ClientInstanceId, cfg, client, [item]),
                 MaintenanceOperation.AutomaticManagement => PlanAutomaticManagement(action.ClientInstanceId, cfg, client, [item]),
@@ -1018,7 +1014,7 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
 
     private async Task<IEnumerable<MaintenanceAction>> PlanHardlinksAsync(
         string id, TorrentClientInstanceConfig cfg, ITorrentClient client,
-        IEnumerable<TorrentInventoryItem> items, CancellationToken ct, List<MaintenanceDiagnostic>? diagnostics = null, MaintenanceOperationResult? result = null, Dictionary<string, string>? cursors = null)
+        IEnumerable<TorrentInventoryItem> items, CancellationToken ct, List<MaintenanceDiagnostic>? diagnostics = null, MaintenanceOperationResult? result = null, Dictionary<string, string>? cursors = null, Dictionary<string, int>? scanCounts = null)
     {
         var actions = new List<MaintenanceAction>();
         using var cursorScope = _scopes.CreateScope();
@@ -1027,7 +1023,19 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         var previous = MaintenancePersistence.Read<ScanCursor>(cursorDb, cursorKey).Position;
         var sorted = items.OrderBy(item => item.Torrent.Hash, StringComparer.Ordinal).ToList();
         var ordered = sorted.Where(item => string.CompareOrdinal(item.Torrent.Hash, previous) > 0).Concat(sorted.Where(item => string.CompareOrdinal(item.Torrent.Hash, previous) <= 0));
-        foreach (var item in ordered.Take(cfg.Maintenance.Hardlinks.MaxInspectedTorrentsPerRun))
+        var selected = ordered.Take(cfg.Maintenance.Hardlinks.MaxInspectedTorrentsPerRun).ToArray();
+        HardlinkRootInspection? rootInspection = null;
+        if (cfg.Maintenance.Hardlinks.CountLinksInsideRoot)
+        {
+            var targetPaths = selected.Select(item => item.Files.Where(file => file.LocalPath != null)
+                .OrderByDescending(file => file.File.Size).FirstOrDefault()?.LocalPath).OfType<string>().Distinct().ToArray();
+            var remaining = Math.Max(0, cfg.Maintenance.Hardlinks.MaxInspectedEntriesPerRun - (scanCounts?.GetValueOrDefault(id) ?? 0));
+            rootInspection = await _hardlinks.InspectLibraryRootsAsync(targetPaths, cfg.Maintenance.Hardlinks.LibraryRoots,
+                cfg.Maintenance.Hardlinks.IgnoredRoots, remaining, ct);
+            if (scanCounts != null)
+                scanCounts[id] = scanCounts.GetValueOrDefault(id) + (rootInspection?.InspectedEntries ?? 0);
+        }
+        foreach (var item in selected)
         {
             if (cursors != null) cursors[cursorKey] = item.Torrent.Hash;
             if (cfg.Maintenance.Hardlinks.Categories.Count > 0
@@ -1039,21 +1047,28 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
             int? links = null;
             if (largest?.LocalPath != null)
             {
-                try { links = await _hardlinks.GetLinkCountAsync(largest.LocalPath, ct); }
+                try
+                {
+                    if (cfg.Maintenance.Hardlinks.CountLinksInsideRoot)
+                        links = rootInspection?.LibraryLinks.GetValueOrDefault(largest.LocalPath) switch { true => 2, false => 1, null => null };
+                    else links = await _hardlinks.GetLinkCountAsync(largest.LocalPath, ct);
+                }
                 catch (Exception ex) when (ex is not OperationCanceledException) { _logger.LogWarning("Hardlink inspection failed for client {InstanceId}", id); }
             }
             if (links == null)
             {
                 if (result != null) { result.Uninspectable++; result.Examined--; }
                 if (diagnostics != null) MaintenanceDiagnostic.Add(diagnostics, "hardlink-inspection-failed", id,
-                    "Hardlink count could not be determined.", "Check file access and platform hardlink inspection support.",
+                    rootInspection?.Evidence ?? "Hardlink count could not be determined.", "Check file access, library coverage, and platform hardlink inspection support.",
                     new(item.Torrent.Hash, item.Torrent.Name, largest?.ClientPath, largest?.LocalPath), operations: [MaintenanceOperation.HardlinkAudit]);
             }
             if (links is > 1)
             {
                 if (tags.Contains(cfg.Maintenance.Hardlinks.Tag) && cfg.Maintenance.Hardlinks.RemoveClearedTag && OwnsTag(id, item.Torrent.Hash, cfg.Maintenance.Hardlinks.Tag, item.Torrent.AddedOn))
                 {
-                    var remove = TagAction(id, item, cfg.Maintenance.Hardlinks.Tag, "Additional hardlinks found; remove Torrentarr-owned tag.", null);
+                    var remove = TagAction(id, item, cfg.Maintenance.Hardlinks.Tag,
+                        rootInspection == null ? "Additional hardlinks found; remove Torrentarr-owned tag."
+                            : $"Library hardlink found; remove Torrentarr-owned tag. {rootInspection.Evidence}", null);
                     actions.Add(new MaintenanceAction
                     {
                         Kind = MaintenanceActionKind.RemoveTag,
@@ -1075,14 +1090,14 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
                 TorrentHash = item.Torrent.Hash,
                 TorrentName = item.Torrent.Name,
                 Path = largest?.LocalPath,
-                Reason = links == null ? "Hardlink count could not be determined." : "Largest torrent file has no additional hardlinks.",
+                Reason = rootInspection != null
+                    ? $"{(links == null ? "Library coverage is unknown." : "Largest torrent file has no hardlink in the configured library roots.")} {rootInspection.Evidence}"
+                    : links == null ? "Hardlink count could not be determined." : "Largest torrent file has no additional hardlinks.",
                 Arguments = new() { ["tag"] = cfg.Maintenance.Hardlinks.Tag },
                 RequiredCapabilities = ["tags"],
                 BlockedReason = !client.Capabilities.Tags ? "Client does not support tags."
                     : links == null ? "Hardlink inspection failed."
-                    : cfg.Maintenance.Hardlinks.CountLinksInsideRoot
-                        ? "Root-scoped hardlink inspection is not supported by this platform."
-                        : null
+                    : null
             });
         }
         return actions;
@@ -1398,10 +1413,13 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         {
             var selection = string.Join(",", preview.Operations.Order());
             foreach (var diagnostic in preview.Diagnostics)
-                await issues.ReportAsync(new("maintenance.preview." + diagnostic.Code, "automation", "Maintenance preview needs attention",
-                    $"Preview operations={selection}; diagnostic={diagnostic.Code}; {DiagnosticText.Safe(diagnostic.Message)} Examples: {string.Join("; ", diagnostic.Examples.Select(e => DiagnosticText.Safe(System.Text.Json.JsonSerializer.Serialize(e))))}",
+                await issues.ReportAsync(new("maintenance.preview." + diagnostic.Code, "automation", diagnostic.Message,
+                    diagnostic.Message,
                     DiagnosticText.Safe(diagnostic.Remediation), ClientInstance: diagnostic.ClientInstanceId,
-                    SubjectType: "preview", SubjectId: selection, Severity: diagnostic.Severity, Target: "maintenance"), ct);
+                    SubjectType: "preview", SubjectId: selection, Severity: diagnostic.Severity, Target: "maintenance",
+                    Evidence: new IssueEvidence(Operations: diagnostic.Operations.Select(op => op.ToString()).ToArray(),
+                        AffectedFiles: diagnostic.AffectedFiles, AffectedTorrents: diagnostic.AffectedTorrents,
+                        Files: diagnostic.Examples.ToArray())), ct);
             var db = services.GetRequiredService<TorrentarrDbContext>();
             var clients = preview.OperationResults.Select(r => r.ClientInstanceId).Concat(inspectedClients?.AsEnumerable() ?? []).Distinct().ToList();
             var previous = await db.OperationalIssues.AsNoTracking().Where(i => i.SubjectType == "preview" && i.ResolvedAt == null && clients.Contains(i.ClientInstance)).ToListAsync(ct);
@@ -1432,6 +1450,9 @@ public sealed class MaintenanceCoordinator : BackgroundService, IMaintenanceCoor
         var results = preview.OperationResults.Where(r => r.ClientInstanceId == client && (operations == null || operations.Contains(r.Operation))).ToList();
         if (code == "maintenance.preview.orphan-prerequisite")
             return results.Any(r => r.Operation == MaintenanceOperation.OrphanScan && r.State is "ready" or "partial");
+        if (code == "maintenance.preview.missing-file")
+            return results.Count > 0 && results.All(r => r.State == "ready"
+                || ((r.State is "partial" or "blocked") && r.Uninspectable == 0 && r.BlockedActions > 0));
         return results.Count > 0 && results.All(r => r.State == "ready");
     }
 }

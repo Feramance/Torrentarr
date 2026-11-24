@@ -1,5 +1,6 @@
 using Torrentarr.Core.Configuration;
 using Torrentarr.Core.Services;
+using Torrentarr.Core.Interfaces;
 using Torrentarr.Infrastructure.ApiClients.Arr;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Database.Models;
@@ -18,6 +19,7 @@ public class SearchExecutor : ISearchExecutor
     private readonly IOperationalIssueReporter? _issues;
     private readonly SearchSubmissionTiming _timing;
     private readonly IConfigReloader? _configReloader;
+    private readonly ITorrentClientRegistry? _torrentClients;
 
     internal TimeProvider Clock { get; set; } = TimeProvider.System;
 
@@ -28,6 +30,8 @@ public class SearchExecutor : ISearchExecutor
     {
         "queued", "started", "running"
     };
+
+    internal static bool IsActiveCommandStatus(string status) => ActiveCommandStatuses.Contains(status);
 
     private static readonly HashSet<string> SearchCommandNames = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -46,9 +50,11 @@ public class SearchExecutor : ISearchExecutor
 
     public SearchExecutor(ILogger<SearchExecutor> logger, TorrentarrConfig config, TorrentarrDbContext db,
         QualityProfileSwitcherService profileSwitcher, DatabaseRestartCoordinator restartCoordinator,
-        IOperationalIssueReporter? issues, SearchSubmissionTiming timing, IConfigReloader? configReloader = null)
+        IOperationalIssueReporter? issues, SearchSubmissionTiming timing, IConfigReloader? configReloader = null,
+        ITorrentClientRegistry? torrentClients = null)
     {
         _configReloader = configReloader;
+        _torrentClients = torrentClients;
         _timing = timing;
         _logger = logger;
         _config = config;
@@ -131,19 +137,8 @@ public class SearchExecutor : ISearchExecutor
             }
         }
 
-        // SearchInReverse=false (default) → oldest first (ASC); SearchInReverse=true → newest first (DESC)
-        var candidatesList = arrConfig.Search.SearchInReverse
-            ? candidates
-                .OrderBy(c => c.Priority)
-                .ThenByDescending(c => c.IsTodaysRelease)
-                .ThenByDescending(c => c.Year ?? 0)
-                .ToList()
-            : candidates
-                .OrderBy(c => c.Priority)
-                .ThenByDescending(c => c.IsTodaysRelease)
-                .ThenBy(c => c.Year ?? 0)
-                .ToList();
-
+        var candidatesList = OrderCandidates(candidates, arrConfig.Search);
+        var history = new SearchDecisionHistory(_db, _logger, instanceName, arrConfig, Clock);
         if (candidatesList.Count == 0)
         {
             _logger.LogInformation("SearchExecutor: no candidates for {Name}", instanceName);
@@ -155,33 +150,67 @@ public class SearchExecutor : ISearchExecutor
             candidatesList.Count, instanceName, searchLimit, searchLoopDelay);
 
         var isSonarr = arrConfig.Type.Equals("sonarr", StringComparison.OrdinalIgnoreCase);
-        var plans = candidatesList.Select(c => new SonarrSearchPlan(c, "", [c], 1, 1)).ToList();
-        if (isSonarr)
+        var usePacing = arrConfig.Search.ActiveDownloadCeiling > 0 || arrConfig.Search.RecentGrabCooldownMinutes > 0
+            || arrConfig.Search.QuietHoursEnabled || SearchLibraryGates.Enabled(arrConfig.Search)
+            || arrConfig.Search.UnsuccessfulSearchRestMinutes > 0;
+        string? PacingReason(SearchPacingObservation observation, SonarrSearchPlan plan) =>
+            observation.Hold(plan, arrConfig, Clock.GetUtcNow().ToUnixTimeSeconds());
+        bool ExcludedByTags(SearchPacingObservation observation, SonarrSearchPlan plan) =>
+            plan.Covered.Any(c => SearchLibraryGates.IsTagExclusion(
+                observation.Library?.Hold(c.ArrId, c.SeriesId ?? c.ArtistId ?? c.AuthorId, arrConfig)));
+
+        async Task RecordPacingHoldAsync(SonarrSearchPlan plan, string reason, string cycle)
         {
-            var inventory = await _db.Episodes.AsNoTracking().Where(e => e.ArrInstance == instanceName).ToListAsync(cancellationToken);
-            candidatesList = await ResolveSonarrRetriesAsync(instanceName, arrConfig, candidatesList, inventory, result, cancellationToken);
-            plans = SonarrSearchScope.Plan(candidatesList, inventory,
-                await _db.Series.AsNoTracking().Where(e => e.ArrInstance == instanceName).ToListAsync(cancellationToken),
-                arrConfig.Search, DateTime.UtcNow);
-            plans = await RestrictSonarrSeriesSearchesAsync(instanceName, arrConfig, plans, inventory, cancellationToken);
+            using var scope = _logger.BeginScope(new Dictionary<string, object> { ["Operation"] = "SearchSubmission", ["CycleId"] = cycle });
+            _logger.LogInformation("Proactive search deferred for {Instance} media ID {MediaId}: {Reason}", instanceName, plan.Trigger.ArrId, reason);
+            await history.RecordAsync(plan, reason, cycle, cancellationToken);
         }
 
-        var drained = result.Errors.Count == 0;
-        var submissionStopped = false;
+        var inventory = isSonarr
+            ? await ReadEpisodeInventoryAsync(instanceName, cancellationToken) : [];
+        if (isSonarr)
+            candidatesList = await ResolveSonarrRetriesAsync(instanceName, arrConfig, candidatesList, inventory, result, cancellationToken);
+        var plans = await PlanOrderedAsync(instanceName, arrConfig, candidatesList, inventory, cancellationToken);
+
+        var pacingDeferred = false;
+        if (usePacing && plans.Any(plan => !Replacement(plan)))
+        {
+            var observation = await ObservePacingAsync(arrConfig, cancellationToken);
+            var eligible = new List<SonarrSearchPlan>(plans.Count);
+            var recorded = 0;
+            foreach (var plan in plans)
+            {
+                var reason = Replacement(plan) ? null : PacingReason(observation, plan);
+                if (reason == null) eligible.Add(plan);
+                else
+                {
+                    pacingDeferred |= !ExcludedByTags(observation, plan);
+                    if (recorded++ < SearchDecisionHistory.MaxPreview)
+                        await RecordPacingHoldAsync(plan, reason, Guid.NewGuid().ToString("N"));
+                }
+            }
+            plans = eligible;
+        }
+        var drained = result.Errors.Count == 0 && !pacingDeferred;
+        var submissionStopped = pacingDeferred;
 
         foreach (var plan in plans)
         {
+            var cycle = Guid.NewGuid().ToString("N");
+            var candidate = plan.Trigger;
+            using var historySubject = WorkerHistory.ForSubject(candidate.Type, candidate.ArrId.ToString(), candidate.Title, candidate.Reason, cycle);
+            using var candidateScope = _logger.BeginScope(new Dictionary<string, object>
+            { ["MediaId"] = candidate.ArrId, ["Operation"] = "SearchSubmission", ["CycleId"] = cycle });
             var gate = _timing.Gate(instanceName);
             if (!deadline.HasValue && !await gate.WaitAsync(0, cancellationToken))
             {
                 _logger.LogInformation("Search deferred for {Instance}: another submission owns the instance gate", instanceName);
+                await history.RecordAsync(plan, "submission busy", cycle, cancellationToken);
                 drained = false; submissionStopped = true; break;
             }
             if (deadline.HasValue) await gate.WaitAsync(cancellationToken);
             try
             {
-                var candidate = plan.Trigger;
-                using var candidateScope = _logger.BeginScope(new Dictionary<string, object> { ["MediaId"] = candidate.ArrId, ["Operation"] = "SearchSubmission" });
                 _logger.LogTrace("Search plan for {Title}: mediaId={MediaId}; reason={Reason}; scope={Scope}; coveredIds={CoveredIds}; priority={Priority}; year={Year}; deadline={Deadline:O}; commandLimit={CommandLimit}; submissionDelay={Delay}s",
                     candidate.Title, candidate.ArrId, candidate.Reason, plan.Command.Length == 0 ? arrConfig.Type : plan.Command, string.Join(",", plan.Covered.Select(c => c.ArrId)), candidate.Priority, candidate.Year, deadline, searchLimit, searchLoopDelay);
                 cancellationToken.ThrowIfCancellationRequested();
@@ -192,7 +221,10 @@ public class SearchExecutor : ISearchExecutor
                 }
 
                 if (!await WaitForCapacityAsync())
-                { drained = false; submissionStopped = true; break; }
+                {
+                    await history.RecordAsync(plan, result.CapacityUnavailable ? "capacity unavailable" : "command limit", cycle, cancellationToken);
+                    drained = false; submissionStopped = true; break;
+                }
 
                 delay = _timing.RemainingDelay(instanceName, Clock.GetUtcNow(), TimeSpan.FromSeconds(searchLoopDelay));
                 if (OutOfBudget(delay))
@@ -211,11 +243,24 @@ public class SearchExecutor : ISearchExecutor
                     { drained = false; submissionStopped = true; break; }
                     if (OutOfBudget(TimeSpan.Zero))
                     { Yield(); drained = false; submissionStopped = true; break; }
+                    if (usePacing && !Replacement(plan))
+                    {
+                        var observation = await ObservePacingAsync(arrConfig, cancellationToken);
+                        if (PacingReason(observation, plan) is { } reason)
+                        {
+                            await RecordPacingHoldAsync(plan, reason, cycle);
+                            if (ExcludedByTags(observation, plan)) continue;
+                            drained = false; submissionStopped = true;
+                            if (observation.DownloadHold(arrConfig.Search.ActiveDownloadCeiling) != null) break;
+                            continue;
+                        }
+                    }
                     if (!await _profileSwitcher.SwitchToTempProfilesAsync(instanceName, arrConfig, plan.Covered, cancellationToken))
                     {
                         drained = false; submissionStopped = true;
                         result.Errors.Add($"Search skipped for {candidate.Title}: temporary profile preparation failed.");
                         _logger.LogInformation("Search skipped for {Title} [id={ArrId}]: temporary profile preparation failed", candidate.Title, candidate.ArrId);
+                        await history.RecordAsync(plan, "temporary profile unavailable", cycle, cancellationToken);
                         continue;
                     }
                     if (OutOfBudget(TimeSpan.Zero))
@@ -259,9 +304,12 @@ public class SearchExecutor : ISearchExecutor
 
                     RequireCurrentConfiguration();
                     bool triggered;
+                    int? commandId = null;
+                    long? submittedAt = null;
                     try
                     {
-                        using var activity = ArrActivityTracking.Begin(_db, _logger, instanceName, arrConfig, "search");
+                        using var activity = ArrActivityTracking.Begin(_db, _logger, instanceName, arrConfig, "search",
+                            receipt: (id, at) => (commandId, submittedAt) = (id, at));
                         triggered = isSonarr
                             ? await TriggerSonarrSearchAsync(instanceName, arrConfig, plan, cancellationToken)
                             : await TriggerSearchForCandidateAsync(instanceName, arrConfig, candidate, false, cancellationToken);
@@ -271,6 +319,7 @@ public class SearchExecutor : ISearchExecutor
                     {
                         _logger.LogInformation("Search accepted for {Title} [id={ArrId}, reason={Reason}], covering {Count} items", candidate.Title, candidate.ArrId, candidate.Reason, plan.Covered.Count);
                         commandAccepted = true;
+                        await history.RecordAsync(plan, "submitted", cycle, cancellationToken, commandId, submittedAt);
                         result.SearchesTriggered++;
                         foreach (var covered in plan.Covered)
                         {
@@ -289,6 +338,7 @@ public class SearchExecutor : ISearchExecutor
                         submissionStopped = true;
                         drained = false;
                         result.Errors.Add("Arr rejected a search submission.");
+                        await history.RecordAsync(plan, "submission rejected", cycle, cancellationToken);
                         if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, "submission", candidate.ArrId.ToString()).WithEvidence($"Candidate={candidate.Title}; Arr ID={candidate.ArrId}; endpoint={DiagnosticText.Safe(arrConfig.URI)}; search API returned false; HTTP status was not supplied by the API adapter."), cancellationToken);
                         _logger.LogInformation("SearchExecutor: search not triggered for {Title}", candidate.Title);
                     }
@@ -301,6 +351,8 @@ public class SearchExecutor : ISearchExecutor
                     drained = false;
                     _logger.LogError(ex, "SearchExecutor: error searching {Title}", candidate.Title);
                     result.Errors.Add($"Failed to search {candidate.Title}: {DiagnosticText.Error(ex)}");
+                    if (!commandAccepted)
+                        await history.RecordAsync(plan, "submission uncertain", cycle, cancellationToken);
                     if (_issues != null) await _issues.ReportAsync(SearchIssue(instanceName, commandAccepted ? "progress" : "submission", candidate.ArrId.ToString())
                         .WithEvidence($"Candidate={candidate.Title}; Arr ID={candidate.ArrId}; commandAccepted={commandAccepted}; endpoint={DiagnosticText.Safe(arrConfig.URI)}; {DiagnosticText.Error(ex)}"), cancellationToken);
                     break;
@@ -316,6 +368,52 @@ public class SearchExecutor : ISearchExecutor
             result.SearchesTriggered, result.ItemsSearched, result.Errors.Count, result.LoopCompleted);
         return result;
     }
+
+    private static List<SearchCandidate> OrderCandidates(IEnumerable<SearchCandidate> candidates, SearchConfig settings)
+    {
+        var ordered = candidates.OrderBy(candidate => candidate.Priority).ThenByDescending(candidate => candidate.IsTodaysRelease);
+        return (settings.SearchInReverse ? ordered.ThenByDescending(candidate => candidate.Year ?? 0)
+            : ordered.ThenBy(candidate => candidate.Year ?? 0)).ToList();
+    }
+
+    private static bool Replacement(SonarrSearchPlan plan) =>
+        plan.Covered.Any(candidate => candidate.Reason.Equals("Retry", StringComparison.OrdinalIgnoreCase));
+
+    internal async Task<List<SonarrSearchPlan>> PlanProactiveAsync(string instance, ArrInstanceConfig arr,
+        IEnumerable<SearchCandidate> candidates, CancellationToken ct)
+    {
+        var ordered = OrderCandidates(candidates, arr.Search);
+        if (ordered.Count == 0) return [];
+        var inventory = arr.Type.Equals("sonarr", StringComparison.OrdinalIgnoreCase)
+            ? await ReadEpisodeInventoryAsync(instance, ct) : [];
+        return await PlanOrderedAsync(instance, arr, ordered, inventory, ct);
+    }
+
+    private Task<List<EpisodeFilesModel>> ReadEpisodeInventoryAsync(string instance, CancellationToken ct) =>
+        _db.Episodes.AsNoTracking().Where(episode => episode.ArrInstance == instance).ToListAsync(ct);
+
+    private async Task<List<SonarrSearchPlan>> PlanOrderedAsync(string instance, ArrInstanceConfig arr,
+        List<SearchCandidate> ordered, List<EpisodeFilesModel> inventory, CancellationToken ct)
+    {
+        if (!arr.Type.Equals("sonarr", StringComparison.OrdinalIgnoreCase))
+            return ordered.Select(candidate => new SonarrSearchPlan(candidate, "", [candidate], 1, 1)).ToList();
+
+        var series = await _db.Series.AsNoTracking().Where(entry => entry.ArrInstance == instance).ToListAsync(ct);
+        var plans = SonarrSearchScope.Plan(ordered, inventory, series, arr.Search, Clock.GetUtcNow().UtcDateTime);
+        plans = await RestrictSonarrSeriesSearchesAsync(instance, arr, plans, inventory, ct);
+        if (arr.Search.RecentGrabCooldownMinutes > 0 || SearchLibraryGates.Enabled(arr.Search)
+            || arr.Search.UnsuccessfulSearchRestMinutes > 0)
+        {
+            // Broad proactive commands could include episodes blocked by an item-specific gate.
+            plans = plans.SelectMany(plan => Replacement(plan) ? [plan]
+                : plan.Covered.Select(candidate => new SonarrSearchPlan(candidate, "EpisodeSearch", [candidate], 1, 1))).ToList();
+        }
+        return plans;
+    }
+
+    internal virtual Task<SearchPacingObservation> ObservePacingAsync(ArrInstanceConfig arr, CancellationToken ct) =>
+        SearchPacing.ObserveAsync(_config, arr, _torrentClients, Clock, ct, _db,
+            _config.ArrInstances.FirstOrDefault(pair => ReferenceEquals(pair.Value, arr)).Key);
 
     private async Task<List<SearchCandidate>> ResolveSonarrRetriesAsync(string instanceName, ArrInstanceConfig config,
         List<SearchCandidate> requested, List<EpisodeFilesModel> inventory, SearchResult searchResult, CancellationToken ct)
@@ -490,7 +588,7 @@ public class SearchExecutor : ISearchExecutor
             };
 
             var activeSearchCommands = commands.Count(c =>
-                ActiveCommandStatuses.Contains(c.Status) &&
+                IsActiveCommandStatus(c.Status) &&
                 SearchCommandNames.Contains(c.Name));
 
             if (_issues != null) await _issues.ResolveAsync(SearchIssue(instanceName, "capacity"), cancellationToken);

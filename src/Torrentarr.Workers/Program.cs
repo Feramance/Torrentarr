@@ -165,6 +165,8 @@ try
     builder.Services.AddSingleton<OperationalIssueReporter>();
     builder.Services.AddSingleton<IOperationalIssueReporter>(sp => sp.GetRequiredService<OperationalIssueReporter>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<OperationalIssueReporter>());
+    builder.Services.AddSingleton<SharedFileFilterService>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<SharedFileFilterService>());
     builder.Services.AddSingleton(instanceConfig);
     builder.Services.AddSingleton(levelSwitch);
     builder.Services.AddSingleton<ConfigReloader>(sp => new ConfigReloader(
@@ -204,6 +206,7 @@ try
     builder.Services.AddSingleton<IImportPathTracker, ImportPathTracker>();
     builder.Services.AddSingleton<SearchYearCursor>();
     builder.Services.AddSingleton<StalledUploadTracker>();
+    builder.Services.AddSingleton<DownloadStallTracker>();
 
     builder.Services.AddHostedService<ArrWorkerService>();
 
@@ -446,6 +449,8 @@ class ArrWorkerService : BackgroundService
             using var configuration = _config.BeginOperation();
             using var identity = _context.BeginOperation();
             _runtimeMetrics.InstanceName = _context.InstanceName;
+            using var history = WorkerHistory.Begin(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), _logger,
+                _context.InstanceName, "torrent", _instanceConfig);
             using var logScope = _logger.BeginScope(new Dictionary<string, object>
             {
                 ["ProcessInstance"] = _context.InstanceName,
@@ -557,6 +562,8 @@ class ArrWorkerService : BackgroundService
             using var configuration = _config.BeginOperation();
             using var identity = _context.BeginOperation();
             _runtimeMetrics.InstanceName = _context.InstanceName;
+            using var history = WorkerHistory.Begin(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), _logger,
+                _context.InstanceName, "search", _instanceConfig);
             using var logScope = _logger.BeginScope(new Dictionary<string, object>
             {
                 ["ProcessInstance"] = _context.InstanceName,
@@ -906,6 +913,8 @@ class ArrWorkerService : BackgroundService
                 && _yearCursor.Advance(_context.InstanceName);
             _searchLoopCompleted = !hasMoreYears;
         }
+        if (searchResult != null)
+            syncService.RecordSearchYear(_context.InstanceName, _instanceConfig, _yearCursor.Peek(_context.InstanceName));
         _runtimeMetrics.RecordSearch(searchResult);
         if (searchResult != null)
         {
@@ -1148,8 +1157,8 @@ sealed class WorkerRuntimeMetrics
             QueueCount = queueDepth?.Revision == revision ? queueDepth.Count : null,
             CategoryCount = CategoryCount,
             MetricType = MetricType,
-            Torrent = Torrent,
-            Search = Search
+            Torrent = WorkerHistory.Describe(instance, "torrent", Torrent),
+            Search = WorkerHistory.Describe(instance, "search", Search)
         };
     }
 

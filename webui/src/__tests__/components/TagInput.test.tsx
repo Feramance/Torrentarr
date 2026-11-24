@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { TagInput } from "../../components/TagInput";
 
 describe("TagInput", () => {
-  it("renders each tag as a chip", () => {
+  it("renders each value as a row", () => {
     render(<TagInput value={["alpha", "beta"]} onChange={() => {}} />);
     expect(screen.getByText("alpha")).toBeInTheDocument();
     expect(screen.getByText("beta")).toBeInTheDocument();
@@ -24,16 +24,17 @@ describe("TagInput", () => {
     expect(onChange).toHaveBeenCalledWith(["newtag"]);
   });
 
-  it("pressing comma adds a tag", async () => {
+  it("adds a literal comma with the Add button", async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();
 
     render(<TagInput value={[]} onChange={onChange} />);
     const input = screen.getByRole("textbox");
 
-    await user.type(input, "tagone,");
-
-    expect(onChange).toHaveBeenCalledWith(["tagone"]);
+    await user.type(input, "tag,one");
+    expect(onChange).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    expect(onChange).toHaveBeenCalledWith(["tag,one"]);
   });
 
   it("clicking the remove button deletes that tag", async () => {
@@ -60,17 +61,18 @@ describe("TagInput", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("backspace on empty input removes the last tag", async () => {
+  it("edits an existing value and restores focus to its edit button", async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();
 
     render(<TagInput value={["alpha", "beta"]} onChange={onChange} />);
-    const input = screen.getByRole("textbox");
+    await user.click(screen.getByRole("button", { name: "Edit beta" }));
+    const input = screen.getByRole("textbox", { name: "Edit value 2" });
+    expect(input).toHaveFocus();
+    await user.type(input, ",gamma{Enter}");
 
-    await user.click(input);
-    await user.keyboard("{Backspace}");
-
-    expect(onChange).toHaveBeenCalledWith(["alpha"]);
+    expect(onChange).toHaveBeenCalledWith(["alpha", "beta,gamma"]);
+    expect(screen.getByRole("button", { name: "Edit beta" })).toHaveFocus();
   });
 
   it("does not show remove buttons when disabled", () => {

@@ -2,7 +2,9 @@ using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database;
 using Torrentarr.Infrastructure.Database.Models;
 using Torrentarr.Infrastructure.Services;
@@ -11,9 +13,7 @@ using Xunit;
 namespace Torrentarr.Infrastructure.Tests.Services;
 
 /// <summary>
-/// Tests for ArrSyncService that exercise only the code paths that do NOT
-/// make real network calls — i.e., early-return branches when an instance is
-/// not found in the config, has an unconfigured URI, or has an unknown type.
+/// Tests for ArrSyncService using a test database and stubbed provider responses.
 /// </summary>
 public sealed class ArrSyncServiceTests : IDisposable
 {
@@ -182,6 +182,132 @@ public sealed class ArrSyncServiceTests : IDisposable
         await svc.MarkRequestsAsync("Radarr");
 
         (await _db.Movies.SingleAsync()).IsRequest.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(true, "1")]
+    [InlineData(false, "1,2")]
+    public async Task MarkRequestsAsync_FiltersOmbiMoviesAndPreservesFlagsOnFailedPoll(bool approvedOnly, string expectedIds)
+    {
+        var arr = MakeInstance("radarr");
+        arr.Search.SearchMissing = true;
+        arr.Search.Ombi = new OmbiConfig
+        {
+            SearchOmbiRequests = true,
+            OmbiURI = "http://ombi.test/proxy/",
+            OmbiAPIKey = "key",
+            ApprovedOnly = approvedOnly
+        };
+        var config = new TorrentarrConfig { ArrInstances = new() { ["Radarr"] = arr } };
+        var svc = CreateService(config);
+        _db.Movies.AddRange(Enumerable.Range(1, 4).Select(id => new MoviesFilesModel
+        {
+            ArrInstance = "Radarr",
+            ArrId = id,
+            TmdbId = id,
+            IsRequest = true,
+            Monitored = true,
+            Reason = "Missing"
+        }));
+        _db.Movies.Add(new MoviesFilesModel { ArrInstance = "Radarr-other", ArrId = 1, TmdbId = 1 });
+        await _db.SaveChangesAsync();
+        var handler = new OverseerrRequestFetcherTests.StubHandler
+        {
+            OnSend = req =>
+            {
+                req.RequestUri!.AbsolutePath.Should().Be("/proxy/api/v1/Request/movie");
+                req.Headers.GetValues("ApiKey").Should().Equal("key");
+                return OverseerrRequestFetcherTests.Json("""
+                    [{"theMovieDbId":1,"approved":true},
+                     {"theMovieDbId":2,"approved":false},
+                     {"theMovieDbId":3,"approved":true,"denied":true},
+                     {"theMovieDbId":4,"approved":true,"available":true}]
+                    """);
+            }
+        };
+        using var http = new HttpClient(handler);
+
+        await svc.MarkRequestsAsync("Radarr", http, CancellationToken.None);
+        var expected = expectedIds.Split(',').Select(int.Parse).ToArray();
+        async Task<int[]> MarkedIds() => await _db.Movies.AsNoTracking().Where(m => m.IsRequest)
+            .OrderBy(m => m.TmdbId).Select(m => m.TmdbId).ToArrayAsync();
+        (await MarkedIds()).Should().Equal(expected);
+
+        var executor = new Mock<ISearchExecutor>();
+        executor.Setup(x => x.ExecuteSearchesAsync("Radarr", It.IsAny<IEnumerable<SearchCandidate>>(), CancellationToken.None))
+            .Callback<string, IEnumerable<SearchCandidate>, CancellationToken>((_, candidates, _) =>
+            {
+                candidates.Where(c => c.Priority == 0).Select(c => c.ArrId).Should().BeEquivalentTo(expected);
+            })
+            .ReturnsAsync(new SearchResult());
+        var media = new ArrMediaService(NullLogger<ArrMediaService>.Instance, _db, config, executor.Object, svc);
+        await media.SearchMissingMediaAsync(arr.Category);
+        executor.Verify(x => x.ExecuteSearchesAsync("Radarr", It.IsAny<IEnumerable<SearchCandidate>>(), CancellationToken.None), Times.Once);
+
+        handler.OnSend = _ => new HttpResponseMessage(System.Net.HttpStatusCode.ServiceUnavailable);
+        await svc.MarkRequestsAsync("Radarr", http, CancellationToken.None);
+        (await MarkedIds()).Should().Equal(expected);
+
+        using var canceled = new CancellationTokenSource();
+        canceled.Cancel();
+        Func<Task> poll = () => svc.MarkRequestsAsync("Radarr", http, canceled.Token);
+        await poll.Should().ThrowAsync<OperationCanceledException>();
+        (await MarkedIds()).Should().Equal(expected);
+
+        handler.OnSend = _ => OverseerrRequestFetcherTests.Json("[]");
+        await svc.MarkRequestsAsync("Radarr", http, CancellationToken.None);
+        (await MarkedIds()).Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(true, 1)]
+    [InlineData(false, 2)]
+    public async Task MarkRequestsAsync_UsesOmbiChildStatesAndPrioritizesEligibleEpisodes(bool approvedOnly, int preferredCount)
+    {
+        var arr = MakeInstance("sonarr");
+        arr.Search.SearchMissing = true;
+        arr.Search.Ombi = new OmbiConfig
+        {
+            SearchOmbiRequests = true,
+            OmbiURI = "http://ombi.test",
+            OmbiAPIKey = "key",
+            ApprovedOnly = approvedOnly
+        };
+        var svc = CreateService(new TorrentarrConfig { ArrInstances = new() { ["Sonarr"] = arr } });
+        foreach (var id in Enumerable.Range(1, 3))
+        {
+            _db.Series.Add(new SeriesFilesModel { EntryId = id, ArrId = id, ArrInstance = "Sonarr", TvdbId = id });
+            _db.Episodes.Add(new EpisodeFilesModel
+            {
+                ArrInstance = "Sonarr",
+                ArrId = id,
+                SeriesId = id,
+                ArrSeriesId = id,
+                Monitored = true,
+                SeasonNumber = 1,
+                EpisodeNumber = 1,
+                AirDateUtc = DateTime.UtcNow.AddDays(-2)
+            });
+        }
+        await _db.SaveChangesAsync();
+        using var http = new HttpClient(new OverseerrRequestFetcherTests.StubHandler
+        {
+            OnSend = req =>
+            {
+                req.RequestUri!.AbsolutePath.Should().Be("/api/v1/Request/tvlite");
+                return OverseerrRequestFetcherTests.Json("""
+                    [{"tvDbId":1,"childRequests":[{"denied":true},{"approved":true}]},
+                     {"tvDbId":2,"childRequests":[{"approved":false},{"approved":true,"available":true}]},
+                     {"tvDbId":3,"childRequests":[{"approved":true,"denied":true}]}]
+                    """);
+            }
+        });
+
+        await svc.MarkRequestsAsync("Sonarr", http, CancellationToken.None);
+        var episodes = await _db.Episodes.AsNoTracking().ToListAsync();
+        var candidates = SonarrSearchScope.Candidates(episodes, arr.Search, DateTime.UtcNow);
+        candidates.Should().HaveCount(3);
+        candidates.Where(c => c.Priority == 0).Select(c => c.ArrId).Should().BeEquivalentTo(Enumerable.Range(1, preferredCount));
     }
 
     [Fact]

@@ -484,17 +484,41 @@ it("keeps instance controls separate from activity with a secondary restart acti
   renderView();
   expect(await screen.findByText("Radarr-A")).toBeInTheDocument();
   expect(screen.queryByText("1/1")).not.toBeInTheDocument();
-  await userEvent.click(screen.getByText("Actions"));
+  expect(screen.queryByText("Actions")).not.toBeInTheDocument();
   expect(screen.getByText(/No active search/)).toBeInTheDocument();
   expect(screen.getByText("Arr queue").parentElement).toHaveTextContent("2");
   const card = screen.getByText("Radarr-A").closest(".process-card")!;
   expect(card.querySelectorAll(".process-activity")).toHaveLength(2);
   expect(card.querySelector(".process-metric")).not.toBeInTheDocument();
   expect(
-    screen.getAllByRole("button", { name: "Restart worker", exact: true }),
+    [...card.querySelectorAll(".process-card__controls button")].map((button) =>
+      button.getAttribute("aria-label"),
+    ),
+  ).toEqual([
+    "View history for Radarr-A",
+    "Restart Radarr-A",
+    "View issues for Radarr-A",
+  ]);
+  const navigate = vi.fn();
+  window.addEventListener(NAVIGATE_TAB_EVENT, navigate);
+  await userEvent.click(
+    screen.getByRole("button", { name: "View history for Radarr-A" }),
+  );
+  expect(navigate.mock.calls[0][0].detail).toEqual({
+    tab: "history",
+    historyWorker: "Radarr-A",
+  });
+  window.removeEventListener(NAVIGATE_TAB_EVENT, navigate);
+  expect(screen.queryByText("Search activity")).not.toBeInTheDocument();
+  expect(
+    screen.getAllByRole("button", { name: "Restart Radarr-A", exact: true }),
   ).toHaveLength(1);
   await userEvent.click(
-    screen.getByRole("button", { name: "Restart worker", exact: true }),
+    screen.getByRole("button", { name: "Restart Radarr-A", exact: true }),
+  );
+  expect(restarts).toBe(0);
+  await userEvent.click(
+    screen.getByRole("button", { name: "Confirm", exact: true }),
   );
   await waitFor(() => expect(restarts).toBe(1));
 });

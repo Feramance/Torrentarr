@@ -44,7 +44,9 @@ public static class DatabaseRetryExtensions
 
         async Task<int> SaveAsync()
         {
+            var history = context is TorrentarrDbContext db ? WorkerHistory.CatalogChanges(db) : [];
             var count = await context.SaveChangesAsync(cancellationToken);
+            await WorkerHistory.RecordBatchAsync(history);
             foreach (var (entry, state) in changes)
             {
                 var identity = string.Join(", ", entry.Properties.Where(p => p.Metadata.Name is

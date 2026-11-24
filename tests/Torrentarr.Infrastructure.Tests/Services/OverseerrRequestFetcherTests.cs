@@ -168,10 +168,90 @@ public sealed class OverseerrRequestFetcherTests : IDisposable
         handler.Paths.Should().Contain("/api/v1/movie/100");
     }
 
-    private static HttpResponseMessage Json(string body) =>
+    [Theory]
+    [InlineData(true, "processing")]
+    [InlineData(false, "unavailable")]
+    public async Task FetchAsync_UsesPageInfoAndResolvesMissingTvdbId(bool approvedOnly, string filter)
+    {
+        var handler = new StubHandler
+        {
+            OnSend = req =>
+            {
+                req.Headers.GetValues("X-Api-Key").Should().Equal("key");
+                var uri = req.RequestUri!;
+                if (uri.AbsolutePath == "/proxy/api/v1/request")
+                {
+                    uri.Query.Should().Contain($"filter={filter}");
+                    return uri.Query.Contains("skip=0")
+                        ? Json("""
+                            {"pageInfo":{"pages":2,"pageSize":1,"results":2,"page":1},
+                             "results":[{"type":"tv","is4k":false,"media":{"tmdbId":10,"tvdbId":100}}]}
+                            """)
+                        : Json("""
+                            {"pageInfo":{"pages":2,"pageSize":1,"results":2,"page":2},
+                             "results":[{"type":"tv","status":2,"is4k":true,"media":{"tmdbId":20,"status":5,"status4k":3}}]}
+                            """);
+                }
+                uri.AbsolutePath.Should().Be("/proxy/api/v1/tv/20");
+                return Json("""{"firstAirDate":"2020-01-01","externalIds":{"tvdbId":200}}""");
+            }
+        };
+        using var http = new HttpClient(handler);
+        var result = await new OverseerrRequestFetcher(NullLogger.Instance, http).FetchAsync(
+            new OverseerrConfig
+            {
+                OverseerrURI = "http://seerr.test/proxy/",
+                OverseerrAPIKey = "key",
+                Is4K = true,
+                ApprovedOnly = approvedOnly
+            }, "tv", CancellationToken.None);
+
+        result.TvdbIds.Should().Equal(200);
+        handler.Paths.Should().Equal("/proxy/api/v1/request", "/proxy/api/v1/request", "/proxy/api/v1/tv/20");
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("""{"data":[]}""")]
+    public async Task FetchAsync_AcceptsLegacyListFormats(string body)
+    {
+        using var http = new HttpClient(new StubHandler { OnSend = _ => Json(body) });
+        var result = await new OverseerrRequestFetcher(NullLogger.Instance, http).FetchAsync(
+            new OverseerrConfig { OverseerrURI = "http://overseerr.test", OverseerrAPIKey = "key" },
+            "movie", CancellationToken.None);
+        result.TmdbIds.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.OK)]
+    [InlineData(HttpStatusCode.ServiceUnavailable)]
+    public async Task FetchAsync_RejectsIncompleteLaterPage(HttpStatusCode status)
+    {
+        using var http = new HttpClient(new StubHandler
+        {
+            OnSend = req => req.RequestUri!.Query.Contains("skip=0")
+                ? Json("""
+                    {"pageInfo":{"pages":2,"pageSize":1,"results":2},
+                     "results":[{"type":"tv"}]}
+                    """)
+                : new HttpResponseMessage(status) { Content = new StringContent("""
+                    {"results":[]}
+                    """) }
+        });
+        var fetcher = new OverseerrRequestFetcher(NullLogger.Instance, http);
+        var cfg = new OverseerrConfig { OverseerrURI = "http://seerr.test", OverseerrAPIKey = "key" };
+
+        Func<Task> fetch = () => fetcher.FetchAsync(cfg, "movie", CancellationToken.None);
+        if (status == HttpStatusCode.OK)
+            await fetch.Should().ThrowAsync<Newtonsoft.Json.JsonException>();
+        else
+            await fetch.Should().ThrowAsync<HttpRequestException>();
+    }
+
+    internal static HttpResponseMessage Json(string body) =>
         new(HttpStatusCode.OK) { Content = new StringContent(body) };
 
-    private sealed class StubHandler : HttpMessageHandler
+    internal sealed class StubHandler : HttpMessageHandler
     {
         public Func<HttpRequestMessage, HttpResponseMessage> OnSend { get; set; } = _ => new HttpResponseMessage(HttpStatusCode.OK);
         public List<string> Paths { get; } = new();

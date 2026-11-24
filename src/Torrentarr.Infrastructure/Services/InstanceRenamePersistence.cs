@@ -21,7 +21,8 @@ public static class InstanceRenamePersistence
         "albumfilesmodel", "trackfilesmodel", "artistfilesmodel", "bookfilesmodel", "authorfilesmodel",
         "moviequeuemodel", "episodequeuemodel", "albumqueuemodel", "bookqueuemodel", "filesqueued" }
             .Select(table => (table, "arrinstance")), ("searchactivity", "category"),
-            ("torrentarr_sonarr_search_retries", "ArrInstance"), ("torrentarr_operational_issues", "ArrInstance")];
+            ("torrentarr_sonarr_search_retries", "ArrInstance"), ("torrentarr_operational_issues", "ArrInstance"),
+            ("torrentarr_search_decisions", "Instance")];
     private static string Digest(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
 
     public static void Validate(TorrentarrConfig current, TorrentarrConfig updated, JObject? renames)
@@ -89,6 +90,13 @@ public static class InstanceRenamePersistence
                         throw new ArgumentException($"Stored state already exists for rename destination '{destination}'.");
                     state.Add(new(table, column, rename.Name, destination,
                         await RowsAsync(connection, transaction, table, column, rename.Name, ct)));
+                }
+                if (client == null && await TableExistsAsync(connection, transaction, "torrentarr_maintenance_state", ct))
+                {
+                    if ((await StateRowsAsync(connection, transaction, destination, ct, "search-rest:")).Count > 0)
+                        throw new ArgumentException("Search rest state already exists for the renamed integration.");
+                    state.Add(new("torrentarr_maintenance_state", "Key", rename.Name, destination,
+                        await StateRowsAsync(connection, transaction, rename.Name, ct, "search-rest:")));
                 }
                 if (client != null)
                 {
@@ -219,11 +227,11 @@ public static class InstanceRenamePersistence
         return rows;
     }
 
-    private static async Task<List<long>> StateRowsAsync(DbConnection connection, DbTransaction transaction, string client, CancellationToken ct)
+    private static async Task<List<long>> StateRowsAsync(DbConnection connection, DbTransaction transaction, string client, CancellationToken ct, string? kind = null)
     {
         await using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "SELECT rowid FROM torrentarr_maintenance_state WHERE substr(Key,1,length($prefix))=$prefix";
-        Add(command, "$prefix", client.ToUpperInvariant() + "|");
+        Add(command, "$prefix", client.ToUpperInvariant() + "|" + (kind == null ? "" : "|" + kind));
         var rows = new List<long>();
         await using var reader = await command.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct)) rows.Add(reader.GetInt64(0));

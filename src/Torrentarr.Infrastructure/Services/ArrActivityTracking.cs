@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using RestSharp;
 using Torrentarr.Core.Configuration;
+using Torrentarr.Core.Services;
 using Torrentarr.Infrastructure.Database;
 
 namespace Torrentarr.Infrastructure.Services;
@@ -13,15 +14,16 @@ namespace Torrentarr.Infrastructure.Services;
 internal sealed class ArrActivityTracking : IDisposable
 {
     private sealed record Context(TorrentarrDbContext? Db, ILogger? Logger, string Instance,
-        ArrInstanceConfig? Config, string Kind, string Hash, string Client);
+        ArrInstanceConfig? Config, string Kind, string Hash, string Client, Action<int, long>? Receipt = null);
     private static readonly AsyncLocal<Context?> Current = new();
+    internal static string ClientInstance => Current.Value?.Client ?? "";
     private readonly Context? _previous;
     private ArrActivityTracking(Context value) { _previous = Current.Value; Current.Value = value; }
     internal static IDisposable ForClient(string? client) => new ArrActivityTracking(
         new(null, null, "", null, "", "", client ?? ""));
     internal static IDisposable Begin(TorrentarrDbContext db, ILogger logger, string instance,
-        ArrInstanceConfig config, string kind, string hash = "") => new ArrActivityTracking(
-            new(db, logger, instance, config, kind, hash, Current.Value?.Client ?? ""));
+        ArrInstanceConfig config, string kind, string hash = "", Action<int, long>? receipt = null) => new ArrActivityTracking(
+            new(db, logger, instance, config, kind, hash, Current.Value?.Client ?? "", receipt));
     public void Dispose() => Current.Value = _previous;
     internal static string ServerKey(ArrInstanceConfig config) => Convert.ToHexString(
         SHA256.HashData(Encoding.UTF8.GetBytes(config.URI.TrimEnd('/'))));
@@ -37,6 +39,7 @@ internal sealed class ArrActivityTracking : IDisposable
             if (id <= 0) return;
             var server = ServerKey(context.Config);
             var submitted = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            context.Receipt?.Invoke(id, submitted);
             var hash = context.Hash.ToUpperInvariant();
             var previousTimeout = context.Db.Database.GetCommandTimeout();
             try
@@ -47,6 +50,10 @@ internal sealed class ArrActivityTracking : IDisposable
             }
             finally { context.Db.Database.SetCommandTimeout(previousTimeout); }
         }
-        catch (Exception ex) { context.Logger?.LogDebug(ex, "Activity submission tracking unavailable for {Instance}", context.Instance); }
+        catch (Exception ex)
+        {
+            context.Logger?.LogDebug("Activity submission tracking unavailable for {Instance}; error={ErrorType}",
+                DiagnosticText.Safe(context.Instance), ex.GetType().Name);
+        }
     }
 }

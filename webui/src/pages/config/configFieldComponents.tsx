@@ -1,6 +1,8 @@
+import { FailedTorrentDestinations } from "./FailedTorrentDestinations";
 import { useContext } from "react";
 import { ConfigFieldSearch } from "./ConfigFieldSearch";
-import { PathMappingsEditor } from "./PathMappingsEditor";
+import { SharedFileFilterPreview } from "../../components/SharedFileFilterPreview";
+import { ConfigCollectionEditor } from "./ConfigCollectionEditor";
 import React, {
   useCallback,
   useEffect,
@@ -11,6 +13,7 @@ import React, {
 } from "react";
 import ReactMarkdown from "react-markdown";
 import Select from "react-select";
+import { getToken } from "../../api/client";
 import type { ConfigDocument } from "../../api/types";
 import {
   DURATION_UNITS,
@@ -42,7 +45,7 @@ import {
 } from "./configDocumentUtils";
 import {
   QBIT_SECTION_REGEX,
-  SERVARR_SECTION_REGEX,
+  REDACTED_PLACEHOLDER,
   type FieldDefinition,
   type ValidationError,
 } from "./configTypes";
@@ -554,11 +557,6 @@ export function FieldGroup({
         ? `Enable or disable ${field.label}.`
         : `Set the ${field.label} value.`);
 
-    const isArrInstance =
-      (basePath.length > 0 && SERVARR_SECTION_REGEX.test(basePath[0] ?? "")) ||
-      (!!sectionName && SERVARR_SECTION_REGEX.test(sectionName));
-    const isArrApiKey =
-      isArrInstance && (field.path?.[field.path.length - 1] ?? "") === "APIKey";
     const errorMessage = findFieldErrorMessage(
       validationErrors,
       pathSegments,
@@ -572,6 +570,28 @@ export function FieldGroup({
       .filter(Boolean)
       .join(" ");
 
+    if (pathSegments.join(".") === "Torrent.FailedTorrentDestinations") {
+      if (
+        getValue(state as ConfigDocument, [
+          ...basePath,
+          "Torrent",
+          "FailedTorrentAction",
+        ]) !== "move"
+      )
+        return null;
+      return (
+        <FailedTorrentDestinations
+          key={key}
+          dataPath={dataPath}
+          category={String(
+            getValue(state as ConfigDocument, [...basePath, "Category"]) ?? "",
+          )}
+          value={Array.isArray(rawValue) ? rawValue : []}
+          onChange={(value) => onChange(path, field, value)}
+        />
+      );
+    }
+
     if (field.secure) {
       return (
         <SecureField
@@ -581,7 +601,7 @@ export function FieldGroup({
           description={description}
           value={String(rawValue ?? "")}
           placeholder={field.placeholder}
-          canRefresh={!isArrApiKey}
+          isWebApiToken={key === "WebUI.Token"}
           onChange={(val) => onChange(path, field, val)}
           errorMessage={errorMessage}
           dataFieldPath={dataPath}
@@ -662,21 +682,27 @@ export function FieldGroup({
       }
 
       const optionLabel = (value: string) =>
-        field.path?.at(-1) === "HitAndRunMode"
-          ? hitAndRunModeLabel(value) ?? value
-          : field.path?.at(-1) === "SearchBySeries"
-            ? {
-                smart: "Smart",
-                series: "Series",
-                season: "Season",
-                episode: "Episode",
-              }[value] ?? value
-            : field.path?.at(-1) === "ExecutionMode"
-              ? {
-                  manual: "Manual",
-                  automatic: "Automatic",
-                }[value] ?? value
-              : value;
+        field.path?.at(-1) === "FailedTorrentAction"
+          ? value === "move"
+            ? "Move to a category and keep files"
+            : "Use existing policy"
+          : field.path?.at(-1) === "AuthMode" && value === "api-key"
+            ? "API key"
+            : field.path?.at(-1) === "HitAndRunMode"
+              ? hitAndRunModeLabel(value) ?? value
+              : field.path?.at(-1) === "SearchBySeries"
+                ? {
+                    smart: "Smart",
+                    series: "Series",
+                    season: "Season",
+                    episode: "Episode",
+                  }[value] ?? value
+                : field.path?.at(-1) === "ExecutionMode"
+                  ? {
+                      manual: "Manual",
+                      automatic: "Automatic",
+                    }[value] ?? value
+                  : value;
       return (
         <div key={key} className={fieldClassName} data-field-path={dataPath}>
           <label htmlFor={dataPath} title={tooltip}>
@@ -792,7 +818,7 @@ export function FieldGroup({
     }
     if (field.type === "collection") {
       return (
-        <PathMappingsEditor
+        <ConfigCollectionEditor
           key={key}
           field={field}
           value={rawValue}
@@ -827,17 +853,38 @@ export function FieldGroup({
           <label htmlFor={dataPath} title={tooltip}>
             {field.label}
           </label>
-          <TagInput
-            ariaLabel={field.label}
-            value={tags}
-            onChange={(newTags) => {
-              onChange(path, field, newTags);
-            }}
-            placeholder={field.placeholder}
-          />
+          {field.options?.length ? (
+            <Select
+              isMulti
+              inputId={dataPath}
+              aria-label={field.label}
+              aria-invalid={errorMessage ? true : undefined}
+              options={field.options.map((value) => ({ label: value, value }))}
+              value={tags.map((value) => ({ label: value, value }))}
+              onChange={(selection) =>
+                onChange(
+                  path,
+                  field,
+                  selection.map(({ value }) => value),
+                )
+              }
+              styles={selectStyles}
+            />
+          ) : (
+            <TagInput
+              id={dataPath}
+              invalid={Boolean(errorMessage)}
+              ariaLabel={field.label}
+              value={tags}
+              onChange={(newTags) => onChange(path, field, newTags)}
+              placeholder={field.placeholder}
+            />
+          )}
           {description && (
             <div className="field-description">{description}</div>
           )}
+          {pathSegments.join(".") === "Torrent.SharedFileFilters" &&
+            sectionName && <SharedFileFilterPreview instance={sectionName} />}
           {renderReloadHint(field)}
           <FieldErrorText message={errorMessage} />
         </div>
@@ -1070,7 +1117,7 @@ export interface SecureFieldProps {
   placeholder?: string;
   tooltip?: string;
   description?: string;
-  canRefresh?: boolean;
+  isWebApiToken?: boolean;
   onChange: (value: string) => void;
   errorMessage?: string;
   dataFieldPath?: string;
@@ -1082,19 +1129,67 @@ export function SecureField({
   placeholder,
   tooltip,
   description,
-  canRefresh = true,
+  isWebApiToken = false,
   onChange,
   errorMessage,
   dataFieldPath,
 }: SecureFieldProps): JSX.Element {
   const [showValue, setShowValue] = useState(false);
+  const [savedToken, setSavedToken] = useState("");
+  const [loadingToken, setLoadingToken] = useState(false);
+  const [revealError, setRevealError] = useState<string>();
+  const tokenRequest = useRef({ id: 0 });
+  const isRedacted = value === REDACTED_PLACEHOLDER;
+
+  useEffect(() => {
+    const request = tokenRequest.current;
+    return () => {
+      request.id++;
+    };
+  }, []);
+
+  const updateValue = (nextValue: string) => {
+    tokenRequest.current.id++;
+    setLoadingToken(false);
+    setSavedToken("");
+    setRevealError(undefined);
+    onChange(nextValue);
+  };
+
+  const toggleReveal = async () => {
+    if (showValue) {
+      setShowValue(false);
+      setSavedToken("");
+      return;
+    }
+    if (!isRedacted) {
+      setShowValue(true);
+      return;
+    }
+
+    const id = ++tokenRequest.current.id;
+    setLoadingToken(true);
+    setRevealError(undefined);
+    try {
+      const { token } = await getToken();
+      if (tokenRequest.current.id !== id) return;
+      setSavedToken(token);
+      setShowValue(true);
+    } catch {
+      if (tokenRequest.current.id === id) {
+        setRevealError("Could not load the saved Web API token.");
+      }
+    } finally {
+      if (tokenRequest.current.id === id) setLoadingToken(false);
+    }
+  };
 
   const handleRefresh = () => {
     const bytes = crypto.getRandomValues(new Uint8Array(16));
     const newKey = Array.from(bytes, (byte) =>
       byte.toString(16).padStart(2, "0"),
     ).join("");
-    onChange(newKey);
+    updateValue(newKey);
   };
 
   return (
@@ -1110,32 +1205,40 @@ export function SecureField({
           id={dataFieldPath}
           aria-label={label}
           type={showValue ? "text" : "password"}
-          value={value}
-          placeholder={placeholder}
-          onChange={(event) => onChange(event.target.value)}
+          value={isRedacted ? savedToken : value}
+          placeholder={
+            isRedacted && !showValue
+              ? "Value stored. Enter a replacement."
+              : placeholder
+          }
+          onChange={(event) => updateValue(event.target.value)}
           aria-invalid={errorMessage ? true : undefined}
         />
-        <button
-          type="button"
-          className="btn ghost"
-          aria-label={`${showValue ? "Hide" : "Show"} ${label}`}
-          onClick={() => setShowValue(!showValue)}
-        >
-          <IconImage src={VisibilityIcon} />
-        </button>
-        {canRefresh && (
-          <button
-            type="button"
-            className="btn ghost"
-            aria-label={`Generate ${label}`}
-            onClick={handleRefresh}
-          >
-            <IconImage src={RefreshIcon} />
-          </button>
+        {isWebApiToken && (
+          <>
+            <button
+              type="button"
+              className="btn ghost"
+              aria-label={`${showValue ? "Hide" : "Show"} ${label}`}
+              disabled={loadingToken}
+              onClick={toggleReveal}
+            >
+              <IconImage src={VisibilityIcon} />
+            </button>
+            <button
+              type="button"
+              className="btn ghost"
+              aria-label={`Generate ${label}`}
+              onClick={handleRefresh}
+            >
+              <IconImage src={RefreshIcon} />
+            </button>
+          </>
         )}
       </div>
       {description && <div className="field-description">{description}</div>}
       <FieldErrorText message={errorMessage} />
+      <FieldErrorText message={revealError} />
     </div>
   );
 }

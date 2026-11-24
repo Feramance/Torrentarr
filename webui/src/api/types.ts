@@ -5,6 +5,10 @@ export interface WorkerLoopProgress {
   startedAt: string;
   wakeAt?: string | null;
   lastSuccess?: string | null;
+  currentAction?: string | null;
+  currentActionAt?: string | null;
+  lastAction?: string | null;
+  lastActionAt?: string | null;
 }
 
 export interface ProcessInfo {
@@ -39,6 +43,37 @@ export interface ProcessInfo {
 
 export interface ProcessesResponse {
   processes: ProcessInfo[];
+}
+
+export interface SearchDecisionItem {
+  id: number;
+  type: string;
+  seriesId: number | null;
+  season: number | null;
+  artistId: number | null;
+  authorId: number | null;
+  reason: string;
+  scope: string;
+}
+
+export interface SearchDecisionResponse {
+  preview: {
+    observedAt: string;
+    ageSeconds: number;
+    candidateCount: number;
+    items: SearchDecisionItem[];
+    deferred: { item: SearchDecisionItem; reason: string }[];
+  } | null;
+  history: {
+    item: SearchDecisionItem;
+    outcome: string;
+    cycleId: string;
+    observedAt: string;
+    completedAt: string | null;
+    grabbedAt: string | null;
+    noGrabAt?: string | null;
+    occurrences: number;
+  }[];
 }
 
 export interface ArrInfo {
@@ -807,6 +842,28 @@ export interface TorrentAutomationStatus {
   inspections: NonNullable<MaintenanceStatus["inspections"]>;
 }
 
+export interface IssueEvidence {
+  detail?: string | null;
+  removal?: {
+    name: string;
+    category: string;
+    intent: string;
+    context?: string | null;
+    blockers: { code: string; reason: string; remediation: string }[];
+  } | null;
+  operations?: string[] | null;
+  affectedFiles?: number | null;
+  affectedTorrents?: number | null;
+  files?:
+    | {
+        torrentHash: string | null;
+        torrentName: string | null;
+        clientPath: string | null;
+        localPath: string | null;
+      }[]
+    | null;
+}
+
 export interface OperationalIssue {
   id: number;
   code: string;
@@ -817,6 +874,8 @@ export interface OperationalIssue {
   subjectId: string;
   subjectName?: string | null;
   subjectCategory?: string | null;
+  relatedLogStream?: string | null;
+  evidence?: IssueEvidence | null;
   severity: "warning" | "error";
   title: string;
   impact: string;
@@ -830,6 +889,7 @@ export interface OperationalIssue {
 }
 export interface OperationalIssueGroup extends OperationalIssue {
   affected: number;
+  hasResolvedItems?: boolean;
   examples: OperationalIssue[];
 }
 export interface PendingOperationalIssue {
@@ -894,4 +954,30 @@ export interface ArrActivityHistory {
   bucketMinutes: number;
   generatedAt: string;
   series: ArrActivitySeries[];
+}
+
+export interface WorkerHistoryEvent {
+  logStream?: string;
+  runId?: string;
+  id: number;
+  timestamp: string;
+  instance: string;
+  loop: string;
+  type: string;
+  source: "worker" | "observed";
+  subjectType: string;
+  subjectId: string;
+  summary: string;
+  outcome: string;
+  details: string;
+  clientInstance: string;
+  commandId: number | null;
+  completedAt: string | null;
+}
+
+export interface WorkerHistoryResponse {
+  entries: WorkerHistoryEvent[];
+  workers: string[];
+  types: string[];
+  nextCursor: number | null;
 }

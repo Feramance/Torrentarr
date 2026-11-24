@@ -56,6 +56,7 @@ import {
   ensureArrDefaults,
   flatten,
   focusFirstValidationError,
+  revealConfigTarget,
   formatValidationErrors,
   getValue,
   parseFieldValue,
@@ -396,6 +397,7 @@ export function ConfigView(props?: ConfigViewProps): JSX.Element {
           )
         : undefined;
     const target = row || field || editor;
+    revealConfigTarget(target);
     const focus =
       requested?.monitorPath && !row
         ? field?.querySelector<HTMLElement>(".config-section__heading")

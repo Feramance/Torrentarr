@@ -2,68 +2,337 @@ import { STATISTICS_UPDATED } from "../hooks/useStatisticsUpdates";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getIssueDetails, getIssues, getIssuesSummary } from "../api/client";
 import type {
+  IssueEvidence,
   IssuesResponse,
   OperationalIssue,
   OperationalIssueGroup,
 } from "../api/types";
 import { PersistentDetails } from "../components/PersistentDetails";
+import { issueGuidance } from "./issueGuidance";
+import { CopyButton } from "../components/CopyButton";
 import {
   requestNavigateTab,
   type ConfigDestination,
   type NavigableTab,
 } from "../utils/navigateTab";
 
-function IssueDetails({ group }: { group: OperationalIssueGroup }) {
-  const [items, setItems] = useState<OperationalIssue[]>(group.examples);
-  const [page, setPage] = useState(0);
-  const [total, setTotal] = useState(group.affected);
-  const [error, setError] = useState<string>();
+const issueTitle = (issue: Pick<OperationalIssue, "code" | "title">) =>
+  issueGuidance(issue.code)?.[0] ?? issue.title;
+
+const countLabel = (count: number, noun: string) =>
+  `${count} ${noun}${count === 1 ? "" : "s"}`;
+
+function subjectNoun(group: OperationalIssueGroup) {
+  if (group.code === "storage.reserve") return "storage monitor";
+  if (group.code.startsWith("maintenance.preview."))
+    return "maintenance preview";
+  if (
+    group.examples.length > 0 &&
+    group.examples.length === group.affected &&
+    group.examples.every((item) => item.subjectType === "torrent")
+  )
+    return "torrent";
+  return "item";
+}
+
+function subjectName(item: OperationalIssue) {
+  switch (item.subjectType) {
+    case "preview":
+      return "Maintenance preview";
+    case "torrent":
+      return item.subjectName || item.subjectId || "Torrent name unavailable";
+    default:
+      return item.subjectId || "Application";
+  }
+}
+
+function removalEvidence(item: OperationalIssue): IssueEvidence["removal"] {
+  if (item.evidence?.removal) return item.evidence.removal;
+  if (!item.code.startsWith("torrent.removal.")) return undefined;
+
+  // Older reports use this exact envelope. Keep unfamiliar text visible as-is.
+  const legacy =
+    /^Torrent=(.*?); hash=([^;]+); client=([^;]*); category=(.*?); intent=(\w+)\. (.+)$/s.exec(
+      item.impact,
+    );
+  if (
+    !legacy ||
+    legacy[2] !== item.subjectId ||
+    legacy[3] !== item.clientInstance
+  )
+    return undefined;
+  const [, name, , , category, intent, detail] = legacy;
+  const parts = detail.split(
+    /; (?=[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)+: .*? Next: )/s,
+  );
+  const blockers = parts.map((part) =>
+    /^([\w.-]+): (.*?) Next: (.+)$/s.exec(part),
+  );
+  return blockers.every((match) => match !== null)
+    ? {
+        name,
+        category,
+        intent,
+        blockers: blockers.map((match) => ({
+          code: match![1],
+          reason: match![2],
+          remediation: match![3],
+        })),
+      }
+    : { name, category, intent, context: detail, blockers: [] };
+}
+
+function IssueTechnicalDetails({
+  item,
+  summary,
+}: {
+  item: OperationalIssue;
+  summary?: string;
+}) {
+  const evidence = item.evidence;
+  const removal = removalEvidence(item);
+  const hasPaths = evidence?.files?.some(
+    (file) => file.clientPath || file.localPath,
+  );
+  const operations = evidence?.operations?.map((operation) =>
+    operation.replace(/([a-z])([A-Z])/g, "$1 $2"),
+  );
+  const filesByTorrent = new Map<string, NonNullable<IssueEvidence["files"]>>();
+  for (const file of evidence?.files ?? []) {
+    const key = file.torrentHash || file.torrentName || "Torrent";
+    const files = filesByTorrent.get(key) ?? [];
+    files.push(file);
+    filesByTorrent.set(key, files);
+  }
+  const copyText = [
+    `Issue ${item.id} · ${item.code}`,
+    issueTitle(item),
+    `${item.resolvedAt ? "Resolved" : "Active"} · ${item.lastObserved}`,
+    item.subjectId,
+    item.impact,
+    item.remediation,
+    evidence?.detail,
+    operations?.join(", "),
+    ...Array.from(filesByTorrent, ([torrent, files]) =>
+      [
+        torrent,
+        ...files.map((file) =>
+          [file.clientPath, file.localPath].filter(Boolean).join(" → "),
+        ),
+      ].join("\n"),
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return (
+    <>
+      {!!operations?.length && (
+        <p>
+          <strong>Affected operations</strong> {operations.join(", ")}
+        </p>
+      )}
+      {(!!evidence?.affectedFiles || !!evidence?.affectedTorrents) && (
+        <p>
+          {[
+            evidence.affectedFiles
+              ? countLabel(evidence.affectedFiles, "file")
+              : "",
+            evidence.affectedTorrents
+              ? countLabel(evidence.affectedTorrents, "torrent")
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      )}
+      {filesByTorrent.size > 0 && (
+        <div className="issue-file-examples">
+          <strong>{hasPaths ? "File examples" : "Torrent examples"}</strong>
+          {Array.from(filesByTorrent, ([torrent, files]) => (
+            <div key={torrent}>
+              <p>{files[0].torrentName || torrent}</p>
+              {files.some((file) => file.clientPath || file.localPath) && (
+                <ul>
+                  {files
+                    .filter((file) => file.clientPath || file.localPath)
+                    .map((file, index) => (
+                      <li key={index}>
+                        <details>
+                          <summary>
+                            {(file.clientPath || file.localPath)
+                              ?.split(/[/\\]/)
+                              .pop() || "File path unavailable"}
+                          </summary>
+                          <dl className="issue-paths">
+                            <dt>Client path</dt>
+                            <dd>{file.clientPath || "Unavailable"}</dd>
+                            <dt>Path Torrentarr checked</dt>
+                            <dd>{file.localPath || "Unavailable"}</dd>
+                          </dl>
+                        </details>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <details className="issue-technical">
+        <summary>Technical details</summary>
+        {removal ? (
+          <>
+            <ul>
+              <li>
+                <strong>Torrent</strong> {removal.name}
+              </li>
+              <li>
+                <strong>Hash</strong> {item.subjectId}
+              </li>
+              <li>
+                <strong>Client</strong> {item.clientInstance}
+              </li>
+              <li>
+                <strong>Category</strong> {removal.category || "Uncategorized"}
+              </li>
+              <li>
+                <strong>Removal rule</strong>{" "}
+                {removal.intent.replace(/([a-z])([A-Z])/g, "$1 $2")}
+              </li>
+            </ul>
+            {removal.context && <p>{removal.context}</p>}
+            {removal.blockers.length > 0 && (
+              <>
+                <strong>Removal blockers</strong>
+                <ul>
+                  {removal.blockers.map((blocker, index) => (
+                    <li key={`${blocker.code}-${index}`}>
+                      <strong>{blocker.code}</strong>
+                      <p>{blocker.reason}</p>
+                      <p>
+                        <strong>Next step</strong> {blocker.remediation}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </>
+        ) : (
+          item.impact && item.impact !== summary && <p>{item.impact}</p>
+        )}
+        {evidence?.detail && <p>{evidence.detail}</p>}
+        {!issueGuidance(item.code) && item.remediation && (
+          <p>{item.remediation}</p>
+        )}
+        <p className="muted">
+          Issue {item.id} · {item.code}
+          {item.subjectId && !removal ? ` · ${item.subjectId}` : ""}
+        </p>
+        <CopyButton label="Copy details" text={copyText} />
+      </details>
+    </>
+  );
+}
+
+function IssueDetails({
+  group,
+  state,
+  severity,
+  instance,
+  search,
+  refresh,
+}: {
+  group: OperationalIssueGroup;
+  state: string;
+  severity: string;
+  instance: string;
+  search: string;
+  refresh: () => Promise<void>;
+}) {
+  type ItemPage = NonNullable<Awaited<ReturnType<typeof getIssueDetails>>>;
+  const [current, setCurrent] = useState<{ state: string; result: ItemPage }>();
+  const [failed, setFailed] = useState<{ state: string; page: number }>();
   const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [changed, setChanged] = useState(false);
   const request = useRef(0);
-  useEffect(() => {
-    if (!loaded && page === 0) {
-      setItems(group.examples);
-      setTotal(group.affected);
-    }
-  }, [group.examples, group.affected, page, loaded]);
+  const loaded =
+    current && (current.state === state || group.hasResolvedItems)
+      ? current
+      : undefined;
+  const items = loaded?.result.items ?? group.examples;
+  const total = loaded?.result.total ?? group.affected;
+  const page = loaded?.result.page ?? 0;
+  const pageSize = loaded?.result.pageSize ?? items.length;
+  const showingResolved = state === "active" && loaded?.state === "resolved";
   const load = useCallback(
-    async (next: number) => {
+    async (itemState: string, next: number) => {
       const revision = ++request.current;
+      const filters = {
+        state: itemState,
+        category: group.category,
+        severity,
+        instance,
+        q: search,
+      };
       setLoading(true);
+      setFailed(undefined);
       try {
-        const result = await getIssueDetails(group.id, next);
+        let result = await getIssueDetails(group.id, next, filters);
         if (request.current !== revision) return;
-        const lastPage = Math.max(0, Math.ceil(result.total / 50) - 1);
-        if (next > lastPage) {
-          setPage(lastPage);
+        if (result && next > 0 && !result.items.length) {
+          result = await getIssueDetails(
+            group.id,
+            Math.max(0, Math.ceil(result.total / result.pageSize) - 1),
+            filters,
+          );
+        }
+        if (request.current !== revision) return;
+        if (result && !result.available)
+          throw new Error("Issue items unavailable");
+        if (!result || !result.total) {
+          setChanged(true);
+          setCurrent(undefined);
+          await refresh();
           return;
         }
-        setLoaded(true);
-        setItems(result.items);
-        setTotal(result.total);
-        setPage(next);
-        setError(undefined);
+        setChanged(false);
+        setCurrent({ state: itemState, result });
       } catch {
-        if (request.current !== revision) return;
-        setError(
-          "Affected subjects could not be loaded. The last confirmed examples are shown.",
-        );
+        if (request.current === revision)
+          setFailed({ state: itemState, page: next });
       } finally {
         if (request.current === revision) setLoading(false);
       }
     },
-    [group.id],
+    [group.id, group.category, severity, instance, search, refresh],
   );
+
   useEffect(
     () => () => {
       request.current++;
     },
-    [load],
+    [],
   );
+
+  const snapshot = JSON.stringify([
+    group.id,
+    group.lastObserved,
+    group.affected,
+    group.hasResolvedItems,
+  ]);
+  const previousSnapshot = useRef(snapshot);
   useEffect(() => {
-    if (loaded) void load(page);
-  }, [loaded, page, load, group]);
+    if (loading || snapshot === previousSnapshot.current) return;
+    previousSnapshot.current = snapshot;
+    if (loaded) void load(loaded.state, loaded.result.page);
+  }, [loading, snapshot, loaded, load]);
+
+  const guidance = issueGuidance(group.code);
+  const description = guidance?.[1] ?? group.impact;
+  const checks =
+    guidance?.[2] ?? (group.remediation ? [group.remediation] : []);
   const configAction = (issue: OperationalIssue, exactSubject: boolean) => {
     const destination: ConfigDestination = {
       client: issue.clientInstance || undefined,
@@ -82,6 +351,7 @@ function IssueDetails({ group }: { group: OperationalIssueGroup }) {
         destination.field = "Maintenance.PathMappings";
         label = "Edit path mappings";
         break;
+      case "config.migration-action-required":
       case "config.migration":
         destination.field = "DownloadPath";
         label = "Check download location";
@@ -138,80 +408,190 @@ function IssueDetails({ group }: { group: OperationalIssueGroup }) {
   ) as NavigableTab;
   return (
     <div className="issue-details">
-      <p>
-        <strong>Impact:</strong> {group.impact}
-      </p>
-      <p>
-        <strong>How to fix:</strong> {group.remediation}
-      </p>
-      <p className="muted">
-        First observed {new Date(group.firstObserved).toLocaleString()} ·{" "}
-        {group.occurrences} observations
-      </p>
-      {target === "config" ? (
-        configAction(
-          group.affected === 1 ? group.examples[0] ?? group : group,
-          group.affected === 1,
-        )
-      ) : (
-        <button
-          type="button"
-          className="btn small"
-          onClick={() =>
-            requestNavigateTab({
-              tab: target,
-              manageClientId: group.clientInstance || undefined,
-            })
-          }
-        >
-          Open {target === "maintenance" ? "Manage" : target}
-        </button>
-      )}
-      {error && <p role="alert">{error}</p>}
-      <ul>
-        {items.map((item) => (
-          <li key={item.id}>
-            <strong>{item.subjectType}</strong>
-            {item.subjectType === "torrent"
-              ? `: ${item.subjectName || item.subjectId || "Name unavailable"} · Category: ${item.subjectCategory === "" ? "Uncategorized" : item.subjectCategory ?? "unavailable"}`
-              : item.subjectId
-                ? `: ${item.subjectId}`
-                : ""}{" "}
-            — {item.resolvedAt ? item.resolution ?? "Recovered" : "Active"}
-            <p>
-              <strong>What happened:</strong> {item.title}
-            </p>
-            <p>
-              <strong>Evidence and impact:</strong> {item.impact}
-            </p>
-            <p>
-              <strong>How to fix:</strong> {item.remediation}
-            </p>
-            {target === "config" &&
-              group.affected > 1 &&
-              item.code === "storage.reserve" &&
-              configAction(item, true)}
-          </li>
-        ))}
-      </ul>
-      {(!loaded || total > 50) && (
-        <div className="actions">
-          <button
-            className="btn small ghost"
-            disabled={loading || page === 0}
-            onClick={() => void load(page - 1)}
-          >
-            Previous subjects
-          </button>
-          <button
-            className="btn small ghost"
-            disabled={loading || (loaded && page * 50 + items.length >= total)}
-            onClick={() => void load(!loaded ? 0 : page + 1)}
-          >
-            {!loaded ? "View affected subjects and history" : "Next subjects"}
-          </button>
+      <section>
+        <h4>What happened</h4>
+        {description && <p>{description}</p>}
+        {!!checks.length && (
+          <>
+            <h4>What to check</h4>
+            <ol>
+              {checks.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          </>
+        )}
+        {guidance && (
+          <>
+            <h4>How to verify</h4>
+            <p>{guidance[3]}</p>
+          </>
+        )}
+        <div className="actions issue-actions">
+          {target === "config" ? (
+            configAction(
+              group.examples[0] && group.affected === 1
+                ? group.examples[0]
+                : group,
+              group.affected === 1,
+            )
+          ) : (
+            <button
+              type="button"
+              className="btn small"
+              onClick={() =>
+                requestNavigateTab({
+                  tab: target,
+                  manageClientId: group.clientInstance || undefined,
+                })
+              }
+            >
+              {target === "maintenance"
+                ? `Open Manage${group.clientInstance ? ` for ${group.clientInstance}` : ""}`
+                : target === "processes"
+                  ? "Check worker in Processes"
+                  : target === "logs"
+                    ? "Browse application logs"
+                    : `Open ${target}`}
+            </button>
+          )}
+          {group.code === "maintenance.preview.missing-file" &&
+            group.clientInstance &&
+            configAction({ ...group, code: "config.storage" }, false)}
         </div>
-      )}
+      </section>
+      <section className="issue-items" aria-busy={loading}>
+        <h4>
+          {showingResolved || state === "resolved"
+            ? "Resolved items"
+            : "Affected items"}
+        </h4>
+        {loading && <p role="status">Loading issue items…</p>}
+        {failed && (
+          <p role="alert">
+            Issue items could not be loaded.{" "}
+            <button
+              type="button"
+              className="btn small"
+              onClick={() => void load(failed.state, failed.page)}
+            >
+              Retry
+            </button>
+          </p>
+        )}
+        {changed && (
+          <p role="status">
+            The matching items changed. The list has been refreshed.
+          </p>
+        )}
+        {!items.length && !loading && <p>No matching items.</p>}
+        {items.length > 0 && total > items.length && (
+          <p className="muted">
+            {loaded
+              ? `Showing ${page * pageSize + 1}–${page * pageSize + items.length} of ${total}`
+              : `Showing ${items.length} examples of ${total}`}
+          </p>
+        )}
+        <ul className="issue-item-list">
+          {items.map((item) => (
+            <li key={item.id}>
+              <strong>{subjectName(item)}</strong>
+              {item.subjectType === "torrent" && (
+                <span>
+                  {" "}
+                  · Category:{" "}
+                  {item.subjectCategory === ""
+                    ? "Uncategorized"
+                    : item.subjectCategory ?? "unavailable"}
+                </span>
+              )}
+              <p className="muted">
+                {item.resolvedAt
+                  ? `Resolved ${new Date(item.resolvedAt).toLocaleString()} · ${item.resolution ?? "Recovered"}`
+                  : `First observed ${new Date(item.firstObserved).toLocaleString()} · Last observed ${new Date(item.lastObserved).toLocaleString()}`}
+              </p>
+              <IssueTechnicalDetails item={item} summary={description} />
+              <div className="actions issue-actions">
+                {item.relatedLogStream && (
+                  <button
+                    type="button"
+                    className="btn ghost small"
+                    onClick={() =>
+                      requestNavigateTab({
+                        tab: "logs",
+                        relatedLogs: { stream: item.relatedLogStream! },
+                      })
+                    }
+                  >
+                    Browse worker logs
+                  </button>
+                )}
+                {target === "config" &&
+                  group.affected > 1 &&
+                  item.code === "storage.reserve" &&
+                  configAction(item, true)}
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="actions issue-pagination">
+          {!loaded && items.length < total && (
+            <button
+              type="button"
+              className="btn small"
+              disabled={loading}
+              onClick={() => void load(state, 0)}
+            >
+              Show all {state === "resolved" ? "resolved" : "affected"} items
+            </button>
+          )}
+          {loaded && page > 0 && (
+            <button
+              type="button"
+              className="btn small"
+              disabled={loading}
+              onClick={() => void load(loaded.state, page - 1)}
+            >
+              Previous page
+            </button>
+          )}
+          {loaded && page * pageSize + items.length < total && (
+            <button
+              type="button"
+              className="btn small"
+              disabled={loading}
+              onClick={() => void load(loaded.state, page + 1)}
+            >
+              Next page
+            </button>
+          )}
+          {showingResolved ? (
+            <button
+              type="button"
+              className="btn small"
+              disabled={loading}
+              onClick={() => {
+                setCurrent(undefined);
+                setFailed(undefined);
+              }}
+            >
+              Back to affected items
+            </button>
+          ) : (
+            state === "active" &&
+            group.hasResolvedItems && (
+              <button
+                type="button"
+                className="btn small"
+                disabled={loading}
+                onClick={() => void load("resolved", 0)}
+              >
+                View resolved items
+              </button>
+            )
+          )}
+        </div>
+      </section>
     </div>
   );
 }
@@ -234,6 +614,9 @@ export function IssuesView({
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
   const request = useRef(0);
+  const invalidateRequest = useCallback(() => {
+    request.current++;
+  }, []);
   useEffect(() => {
     if (!selection) return;
     setInstance(selection.instance);
@@ -258,6 +641,16 @@ export function IssuesView({
         ...(search ? { q: search } : {}),
       });
       if (request.current !== revision) return;
+      if (result.available && result.total !== null) {
+        const lastPage = Math.max(
+          0,
+          Math.ceil(result.total / result.pageSize) - 1,
+        );
+        if (page > lastPage) {
+          setPage(lastPage);
+          return;
+        }
+      }
       setData(result);
       setError(undefined);
       setLoading(false);
@@ -279,6 +672,7 @@ export function IssuesView({
       busy = true;
       try {
         await load();
+        if (stopped) return;
         const summary = await getIssuesSummary();
         if (!stopped)
           setInstances((previous) =>
@@ -307,12 +701,12 @@ export function IssuesView({
     window.addEventListener(STATISTICS_UPDATED, visible);
     return () => {
       stopped = true;
-      request.current++;
+      invalidateRequest();
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", visible);
       window.removeEventListener(STATISTICS_UPDATED, visible);
     };
-  }, [active, load]);
+  }, [active, invalidateRequest, load]);
   const change = (set: (value: string) => void, value: string) => {
     set(value);
     setPage(0);
@@ -454,9 +848,15 @@ export function IssuesView({
             )
             .map((p, i) => (
               <div className="issue-row" key={`${p.report.code}-${i}`}>
-                <strong>{p.report.title}</strong>
-                <p>{p.report.impact}</p>
-                <p>{p.report.remediation}</p>
+                <strong>{issueTitle(p.report)}</strong>
+                <p>{issueGuidance(p.report.code)?.[1] ?? p.report.impact}</p>
+                <ol>
+                  {(issueGuidance(p.report.code)?.[2] ?? [p.report.remediation])
+                    .filter(Boolean)
+                    .map((step) => (
+                      <li key={step}>{step}</li>
+                    ))}
+                </ol>
                 <span className="muted">Pending persistence</span>
               </div>
             ))}
@@ -483,41 +883,55 @@ export function IssuesView({
                 >
                   {group.severity === "error" ? "Error" : "Warning"}
                 </span>
-                <strong>{group.title}</strong>
+                <strong>{issueTitle(group)}</strong>
                 <span>
-                  {group.arrInstance || group.clientInstance || "Application"} ·{" "}
-                  {group.affected} affected
+                  {[group.arrInstance, group.clientInstance]
+                    .filter(Boolean)
+                    .join(" · ") || "Application"}{" "}
+                  · {countLabel(group.affected, subjectNoun(group))} ·{" "}
+                  {state === "resolved" ? "Resolved" : "Active"}
                 </span>
                 <time dateTime={group.lastObserved}>
                   {new Date(group.lastObserved).toLocaleString()}
                 </time>
               </summary>
-              <IssueDetails group={group} />
+              <IssueDetails
+                key={JSON.stringify([state, severity, instance, search])}
+                group={group}
+                state={state}
+                severity={severity}
+                instance={instance}
+                search={search}
+                refresh={load}
+              />
             </PersistentDetails>
           ))}
-          {data?.available && (
-            <div className="actions issue-pagination">
-              <button
-                type="button"
-                className="btn small ghost"
-                disabled={page === 0}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                Previous
-              </button>
-              <span>
-                Page {page + 1} · {data.total} groups
-              </span>
-              <button
-                type="button"
-                className="btn small ghost"
-                disabled={(page + 1) * data.pageSize >= (data.total ?? 0)}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                Next
-              </button>
-            </div>
-          )}
+          {data?.available &&
+            (page > 0 || (data.total ?? 0) > data.pageSize) && (
+              <div className="actions issue-pagination">
+                {page > 0 && (
+                  <button
+                    type="button"
+                    className="btn small ghost"
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    Previous group page
+                  </button>
+                )}
+                <span>
+                  Page {data.page + 1} · {data.total} groups
+                </span>
+                {(page + 1) * data.pageSize < (data.total ?? 0) && (
+                  <button
+                    type="button"
+                    className="btn small ghost"
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    Next group page
+                  </button>
+                )}
+              </div>
+            )}
         </div>
       </div>
     </section>

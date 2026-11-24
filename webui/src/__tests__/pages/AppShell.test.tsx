@@ -225,9 +225,51 @@ it("opens Display inside the navigation drawer and closes it first on Escape", (
   );
   expect(display).not.toBeInTheDocument();
   expect(drawer).toBeInTheDocument();
+  expect(document.documentElement.style.overflow).toBe("hidden");
+  expect(document.body.style.overflow).toBe("hidden");
   expect(trigger).toHaveAttribute("aria-expanded", "false");
   expect(trigger).toHaveFocus();
 });
+
+it.each(["close", "escape", "navigation", "unmount"])(
+  "restores scrolling after navigation drawer %s",
+  (action) => {
+    const rootOverflow = document.documentElement.style.overflow;
+    const bodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = "auto";
+    document.body.style.overflow = "scroll";
+    const { unmount } = view();
+    try {
+      const trigger = screen.getByRole("button", { name: "Menu", exact: true });
+      trigger.focus();
+      const focus = vi.spyOn(trigger, "focus");
+      fireEvent.click(trigger);
+      const drawer = screen.getByRole("dialog", { name: "Navigation" });
+      expect(document.documentElement.style.overflow).toBe("hidden");
+      expect(document.body.style.overflow).toBe("hidden");
+      if (action === "unmount") unmount();
+      else if (action === "escape")
+        fireEvent(drawer, new Event("cancel", { cancelable: true }));
+      else
+        fireEvent.click(
+          within(drawer).getByRole("button", {
+            name: action === "close" ? "Close Navigation" : "History",
+            exact: true,
+          }),
+        );
+      expect(
+        screen.queryByRole("dialog", { name: "Navigation" }),
+      ).not.toBeInTheDocument();
+      expect(document.documentElement.style.overflow).toBe("auto");
+      expect(document.body.style.overflow).toBe("scroll");
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    } finally {
+      unmount();
+      document.documentElement.style.overflow = rootOverflow;
+      document.body.style.overflow = bodyOverflow;
+    }
+  },
+);
 
 it("closes the navigation drawer after switching pages and on Escape", async () => {
   view();
@@ -518,7 +560,7 @@ it("reveals Settings from the icon rail and opens General from the number shortc
   expect(
     await screen.findByRole("heading", { name: "Interface & Access" }),
   ).toBeInTheDocument();
-  fireEvent.keyDown(window, { key: "4" });
+  fireEvent.keyDown(window, { key: "5" });
   expect(
     await screen.findByRole("heading", { name: "General" }),
   ).toBeInTheDocument();
@@ -565,7 +607,7 @@ it("opens Maintenance as a sibling of Settings from the mobile drawer and keyboa
     "aria-current",
     "page",
   );
-  fireEvent.keyDown(window, { key: "5" });
+  fireEvent.keyDown(window, { key: "6" });
   expect(
     await screen.findByRole("heading", { name: "Shared Settings" }),
   ).toBeVisible();

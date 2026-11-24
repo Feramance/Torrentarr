@@ -48,7 +48,18 @@ function groupFields(
 export function clientGroups(fields: FieldDefinition[]): ConfigFieldGroup[] {
   return groupFields(fields, [
     ["General", ["__name", "Type", "Disabled"]],
-    ["Connection", ["Host", "Port", "UserName", "Password", "SkipTLSVerify"]],
+    [
+      "Connection",
+      [
+        "Host",
+        "Port",
+        "AuthMode",
+        "UserName",
+        "Password",
+        "APIKey",
+        "SkipTLSVerify",
+      ],
+    ],
     [
       "Torrent scope",
       ["TorrentScanIntervalSeconds", "ManagedCategories", "MatchSubcategories"],
@@ -112,6 +123,77 @@ export function arrGeneralGroups(
   ]);
 }
 
+export function arrSearchGroups(fields: FieldDefinition[]): ConfigFieldGroup[] {
+  return groupFields(fields, [
+    [
+      "Entry Search",
+      fields
+        .map((field) => field.path?.join(".") ?? "")
+        .filter(
+          (key) =>
+            !key.startsWith("EntrySearch.QuietHours") &&
+            !proactiveSearchKeys.includes(key),
+        ),
+    ],
+    ["Proactive search controls", proactiveSearchKeys],
+    [
+      "Quiet hours",
+      [
+        "EntrySearch.QuietHoursEnabled",
+        "EntrySearch.QuietHoursStart",
+        "EntrySearch.QuietHoursEnd",
+        "EntrySearch.QuietHoursTimeZone",
+      ],
+    ],
+  ]);
+}
+
+const proactiveSearchKeys = [
+  "EntrySearch.RecentGrabCooldownMinutes",
+  "EntrySearch.ActiveDownloadCeiling",
+  "EntrySearch.UnsuccessfulSearchRestMinutes",
+  "EntrySearch.IncludeTags",
+  "EntrySearch.ExcludeTags",
+  "EntrySearch.RequireRadarrAvailability",
+];
+
+export function arrTorrentGroups(
+  fields: FieldDefinition[],
+): ConfigFieldGroup[] {
+  return groupFields(fields, [
+    [
+      "Failed torrents and import rescue",
+      [
+        "Torrent.FailedTorrentAction",
+        "Torrent.FailedTorrentDestinations",
+        "Torrent.RescueBlockedImports",
+      ],
+    ],
+    [
+      "Stall safeguards",
+      [
+        "Torrent.DoNotRemoveSlow",
+        "Torrent.StalledDelay",
+        "Torrent.ReSearchStalled",
+        "Torrent.MetadataStallMinutes",
+        "Torrent.ResetStallOnDownloadProgress",
+        "Torrent.RespectAlternateSpeedLimits",
+      ],
+    ],
+    [
+      "File filtering",
+      [
+        "Torrent.CaseSensitiveMatches",
+        "Torrent.FolderExclusionRegex",
+        "Torrent.FileNameExclusionRegex",
+        "Torrent.FileExtensionAllowlist",
+        "Torrent.SharedFileFilters",
+      ],
+    ],
+    ["Torrent Handling", ["Torrent.*"]],
+  ]);
+}
+
 export function simpleGroups(
   section: SimpleConfigSection,
   fields: FieldDefinition[],
@@ -119,6 +201,16 @@ export function simpleGroups(
   if (section === "general")
     return groupFields(fields, [
       ["Logging", ["Settings.ConsoleLevel", "Settings.Logging"]],
+      ["History", ["Settings.HistoryRetentionDays"]],
+      ["Shared file filters", ["Settings.SharedFileFilters"]],
+      [
+        "Issue alerts",
+        [
+          "Settings.IssueAlertsEnabled",
+          "Settings.IssueAlertsSecretUrl",
+          "Settings.IssueAlertTypes",
+        ],
+      ],
       [
         "Processing and categories",
         [

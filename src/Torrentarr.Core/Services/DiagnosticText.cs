@@ -17,6 +17,7 @@ public static partial class DiagnosticText
             ? $"{uri.Scheme}://{uri.Host}:{uri.Port}/[redacted]" : "[redacted URL]");
         text = Secret().Replace(text, "$1=[redacted]");
         text = Bearer().Replace(text, "Bearer [redacted]");
+        text = QBitKey().Replace(text, "[redacted]");
         return ControlCharacters().Replace(text, " ");
     }
 
@@ -45,6 +46,8 @@ public static partial class DiagnosticText
     private static partial Regex Secret();
     [GeneratedRegex(@"\bBearer\s+[^\s;,]+", RegexOptions.IgnoreCase | RegexOptions.NonBacktracking)]
     private static partial Regex Bearer();
+    [GeneratedRegex(@"qbt_[A-Za-z0-9]{28}", RegexOptions.NonBacktracking)]
+    private static partial Regex QBitKey();
     [GeneratedRegex(@"[\x00-\x1f\x7f-\x9f\u2028\u2029]", RegexOptions.NonBacktracking)]
     private static partial Regex ControlCharacters();
 }

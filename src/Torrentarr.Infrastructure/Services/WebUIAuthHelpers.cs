@@ -2,6 +2,8 @@ using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
+using Newtonsoft.Json.Linq;
+using System.Text.RegularExpressions;
 using Torrentarr.Core.Configuration;
 
 namespace Torrentarr.Infrastructure.Services;
@@ -10,6 +12,23 @@ namespace Torrentarr.Infrastructure.Services;
 public static class WebUIAuthHelpers
 {
     public const string RedactedPlaceholder = "[redacted]";
+    public const string SensitiveKeyPattern = @"(apikey|api_key|token|password|secret|passkey|credential)";
+
+    public static JObject RedactConfigResponse(JObject config, bool redactEmptyValues = true)
+    {
+        foreach (var property in config.Descendants().OfType<JProperty>())
+        {
+            if (property.Value.Type != JTokenType.String ||
+                property.Path.Equals("Settings.IssueAlertsSecretUrl", StringComparison.OrdinalIgnoreCase) ||
+                !Regex.IsMatch(property.Name, SensitiveKeyPattern, RegexOptions.IgnoreCase))
+                continue;
+
+            var value = property.Value.ToString().Trim();
+            if (redactEmptyValues || (value.Length > 0 && value != "CHANGE_ME"))
+                property.Value = RedactedPlaceholder;
+        }
+        return config;
+    }
 
     /// <summary>
     /// Config APIs must not accept direct PasswordHash writes (including clearing to empty).

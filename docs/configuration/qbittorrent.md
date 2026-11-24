@@ -89,6 +89,27 @@ Password = ""      # Leave empty
 !!! danger "Security Warning"
     Bypassing authentication is **only safe** if qBittorrent's Web UI is not exposed to the internet or your local network. Only use this for single-machine setups.
 
+### API key authentication
+
+qBittorrent 5.2.0 and WebAPI 2.14.1 or later support bearer API keys. Generate
+the key in qBittorrent under **Preferences → WebUI → API Key**, then select
+**API key** authentication in the Torrentarr client's **Connection** settings.
+[qBittorrent API key documentation](https://github.com/qbittorrent/qBittorrent/wiki/API-Key-Authentication-%28%E2%89%A5v5.2.0%29)
+
+```toml
+[qBit]
+Host = "https://qbittorrent.example"
+Port = 443
+AuthMode = "api-key"
+APIKey = "qbt_..."
+```
+
+The same keys work in `[TorrentClient.<id>]`. The default `AuthMode = "legacy"`
+keeps existing username/password and bypass behavior. When rotating a key, replace
+it in Torrentarr and reconnect. To clear it, switch to legacy authentication or
+disable the client, then clear the key field. Config reads redact the stored key.
+If qBittorrent responds with HTTP 403, check both the server version and the key.
+
 ---
 
 ## Headless Mode

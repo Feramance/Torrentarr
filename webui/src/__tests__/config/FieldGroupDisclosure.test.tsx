@@ -116,3 +116,63 @@ it("separates the scrollable client summary and fields from dialog actions", asy
   await userEvent.click(close);
   expect(onClose).toHaveBeenCalledOnce();
 });
+
+it("only reveals and generates the Web API token", () => {
+  const webhook = "https://alerts.example/webhook";
+  render(
+    <FieldGroup
+      fields={[
+        {
+          path: ["TorrentClient", "seedbox", "Password"],
+          label: "Client password",
+          type: "password",
+          secure: true,
+        },
+        {
+          path: ["Radarr", "APIKey"],
+          label: "API key",
+          type: "password",
+          secure: true,
+        },
+        {
+          path: ["Integration", "Token"],
+          label: "Integration token",
+          type: "password",
+          secure: true,
+        },
+        {
+          path: ["Settings", "IssueAlertsSecretUrl"],
+          label: "Webhook destination",
+          type: "text",
+        },
+        {
+          path: ["WebUI", "Token"],
+          label: "Web API token",
+          type: "password",
+          secure: true,
+        },
+      ]}
+      basePath={[]}
+      state={{
+        TorrentClient: { seedbox: { Password: "[redacted]" } },
+        Settings: { IssueAlertsSecretUrl: webhook },
+      }}
+      onChange={vi.fn()}
+    />,
+  );
+
+  expect(screen.getByLabelText("Client password")).toHaveValue("");
+  expect(screen.getByLabelText("Client password")).toHaveAttribute(
+    "type",
+    "password",
+  );
+  expect(
+    screen.getByRole("textbox", { name: "Webhook destination" }),
+  ).toHaveValue(webhook);
+  expect(screen.getAllByRole("button", { name: /^Show / })).toEqual([
+    screen.getByRole("button", { name: "Show Web API token" }),
+  ]);
+  expect(screen.getAllByRole("button", { name: /^Generate / })).toEqual([
+    screen.getByRole("button", { name: "Generate Web API token" }),
+  ]);
+});

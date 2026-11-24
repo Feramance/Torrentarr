@@ -157,6 +157,8 @@ builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
 builder.Services.AddSingleton<OperationalIssueReporter>();
 builder.Services.AddSingleton<IOperationalIssueReporter>(sp => sp.GetRequiredService<OperationalIssueReporter>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<OperationalIssueReporter>());
+builder.Services.AddSingleton<SharedFileFilterService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SharedFileFilterService>());
 builder.Services.AddHostedService<OperationalIssueMonitor>();
 builder.Services.AddSingleton<ITorrentClientFactory, QBittorrentTorrentClientFactory>();
 builder.Services.AddSingleton<QBittorrentConnectionManager>();
@@ -171,6 +173,13 @@ builder.Services.AddSingleton<ISafeDeletionService, SafeDeletionService>();
 builder.Services.AddSingleton<IMaintenanceCoordinator, MaintenanceCoordinator>();
 builder.Services.AddSingleton<TorrentAutomationService>();
 builder.Services.AddScoped<ISeedingService, SeedingService>();
+builder.Services.AddSingleton<DatabaseRestartCoordinator>();
+builder.Services.AddSingleton<SearchSubmissionTiming>();
+builder.Services.AddScoped<ArrSyncService>();
+builder.Services.AddScoped<QualityProfileSwitcherService>();
+builder.Services.AddScoped<ISearchExecutor, SearchExecutor>();
+builder.Services.AddScoped<IArrMediaService, ArrMediaService>();
+
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddHttpClient("ArrOpenSkipTls").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -414,6 +423,7 @@ static bool WebUIAuthRequired(TorrentarrConfig c) => !c.WebUI.AuthDisabled;
 
 app.MapOperationalIssueEndpoints("/web");
 app.MapOperationalIssueEndpoints("/api");
+app.MapIssueAlertTest("/web");
 
 // Health check endpoint
 app.MapGet("/health", () => Results.Ok(new
@@ -428,6 +438,7 @@ app.MapGet("/web/token", (TorrentarrConfig cfg, HttpContext ctx) =>
     var isAuthenticated = ctx.User?.Identity?.IsAuthenticated == true;
     if (!isAuthenticated && WebUIAuthRequired(cfg))
         return Results.Json(new { token = "" }, statusCode: 401);
+    ctx.Response.Headers.CacheControl = "no-store";
     return Results.Ok(new { token = cfg.WebUI.Token });
 });
 
@@ -829,6 +840,7 @@ app.MapPost("/web/config", async (HttpContext ctx, TorrentarrConfig config, Conf
         var renames = body?["renames"] as Newtonsoft.Json.Linq.JObject;
         InstanceRenamePersistence.Validate(config, updatedConfig, renames);
         TrackerRules.RenameReferences(config, updatedConfig, renames);
+        FailedTorrentRouting.RenameReferences(config, updatedConfig, renames);
         var savePasswordHashError = WebUIAuthHelpers.ValidatePasswordHashForConfigApiSave(config, updatedConfig);
         if (savePasswordHashError != null)
             return Results.Json(new { error = savePasswordHashError }, statusCode: 403);
@@ -919,27 +931,19 @@ static void ApplyDotPathChange(Newtonsoft.Json.Linq.JObject root, string dotPath
 static Newtonsoft.Json.Linq.JObject BuildFlatConfig(TorrentarrConfig config, bool redactSensitive)
 {
     var flat = new Newtonsoft.Json.Linq.JObject();
-    flat["Settings"] = Newtonsoft.Json.Linq.JObject.FromObject(config.Settings);
+    var settings = Newtonsoft.Json.Linq.JObject.FromObject(config.Settings);
+    flat["Settings"] = settings;
 
     var webuiObj = Newtonsoft.Json.Linq.JObject.FromObject(config.WebUI);
-    if (redactSensitive)
-    {
-        RedactFlatField(webuiObj, "Token");
-        RedactFlatField(webuiObj, "PasswordHash");
-    }
     flat["WebUI"] = webuiObj;
 
     foreach (var (name, qbit) in config.QBitInstances)
     {
         var qbitObj = Newtonsoft.Json.Linq.JObject.FromObject(qbit);
-        if (redactSensitive) RedactSensitiveFields(qbitObj);
         flat[name] = qbitObj;
     }
 
     var canonical = Newtonsoft.Json.Linq.JObject.FromObject(config.TorrentClients);
-    if (redactSensitive)
-        foreach (var property in canonical.Properties().OfType<Newtonsoft.Json.Linq.JProperty>())
-            if (property.Value is Newtonsoft.Json.Linq.JObject clientObj) RedactSensitiveFields(clientObj);
     flat["TorrentClient"] = canonical;
     flat["Trackers"] = Newtonsoft.Json.Linq.JArray.FromObject(config.Trackers);
 
@@ -954,50 +958,10 @@ static Newtonsoft.Json.Linq.JObject BuildFlatConfig(TorrentarrConfig config, boo
             arrObj["EntrySearch"] = searchProp.Value;
             searchProp.Remove();
         }
-        if (redactSensitive) RedactFlatField(arrObj, "APIKey");
         flat[name] = arrObj;
     }
 
-    return flat;
-}
-
-static void RedactFlatField(Newtonsoft.Json.Linq.JObject obj, string key)
-{
-    var prop = obj.Properties()
-        .FirstOrDefault(p => p.Name.Equals(key, StringComparison.OrdinalIgnoreCase));
-    if (prop != null
-        && prop.Value.Type == Newtonsoft.Json.Linq.JTokenType.String
-        && !string.IsNullOrWhiteSpace(prop.Value.ToString())
-        && prop.Value.ToString().Trim() != "CHANGE_ME")
-    {
-        prop.Value = "[redacted]";
-    }
-}
-
-static void RedactSensitiveFields(Newtonsoft.Json.Linq.JToken token)
-{
-    if (token is Newtonsoft.Json.Linq.JObject obj)
-    {
-        foreach (var property in obj.Properties().ToList())
-        {
-            if (property.Value.Type == Newtonsoft.Json.Linq.JTokenType.String
-                && (property.Name.Equals("Password", StringComparison.OrdinalIgnoreCase)
-                    || property.Name.Equals("Token", StringComparison.OrdinalIgnoreCase)
-                    || property.Name.Equals("APIKey", StringComparison.OrdinalIgnoreCase)))
-            {
-                if (!string.IsNullOrWhiteSpace(property.Value.ToString()) && property.Value.ToString() != "CHANGE_ME")
-                    property.Value = "[redacted]";
-            }
-            else
-            {
-                RedactSensitiveFields(property.Value);
-            }
-        }
-    }
-    else if (token is Newtonsoft.Json.Linq.JArray array)
-    {
-        foreach (var item in array) RedactSensitiveFields(item);
-    }
+    return redactSensitive ? WebUIAuthHelpers.RedactConfigResponse(flat, redactEmptyValues: false) : flat;
 }
 
 // Helper: convert a flat config JObject back to TorrentarrConfig.
@@ -1011,6 +975,8 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
         ? settingsObj.ToObject<SettingsConfig>() ?? current.Settings
         : current.Settings;
     result.Settings.ConfigVersion = current.Settings.ConfigVersion;
+    if (result.Settings.IssueAlertsSecretUrl == "[redacted]")
+        result.Settings.IssueAlertsSecretUrl = current.Settings.IssueAlertsSecretUrl;
 
     // WebUI — restore redacted sensitive fields
     if (flat["WebUI"] is Newtonsoft.Json.Linq.JObject webuiObj)
@@ -1036,6 +1002,7 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
                 if (current.TorrentClients.TryGetValue(clientProp.Name, out var existing))
                 {
                     if (client.Password == "[redacted]") client.Password = existing.Password;
+                    if (client.APIKey == "[redacted]") client.APIKey = existing.APIKey;
                 }
                 result.TorrentClients[clientProp.Name] = client;
             }
@@ -1052,6 +1019,7 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
             if (current.QBitInstances.TryGetValue(prop.Name, out var existingQBit))
             {
                 if (qbit.Password == "[redacted]") qbit.Password = existingQBit.Password;
+                if (qbit.APIKey == "[redacted]") qbit.APIKey = existingQBit.APIKey;
             }
             result.QBitInstances[prop.Name] = qbit;
         }
@@ -1072,9 +1040,10 @@ static TorrentarrConfig FlatToConfig(Newtonsoft.Json.Linq.JObject flat, Torrenta
 }
 
 // Processes endpoint - list all processes with status
-app.MapGet("/web/processes", (TorrentarrConfig config) =>
+app.MapGet("/web/processes", async (TorrentarrConfig config, TorrentarrDbContext db) =>
 {
     var processes = new List<object>();
+    var lastActions = await WorkerHistory.LastActionsAsync(db, config.ArrInstances.Keys);
 
     foreach (var arr in config.ArrInstances)
     {
@@ -1086,8 +1055,8 @@ app.MapGet("/web/processes", (TorrentarrConfig config) =>
             kind = "worker",
             restartable = false,
             status = "Supervisor unavailable",
-            torrent = (WorkerLoopProgress?)null,
-            search = (WorkerLoopProgress?)null,
+            torrent = WorkerHistory.RestoreLast(null, false, arr.Key, "torrent", lastActions),
+            search = WorkerHistory.RestoreLast(null, false, arr.Key, "search", lastActions),
             alive = false,
             pid = (int?)null,
             uptime = (long?)null
@@ -1565,12 +1534,14 @@ app.MapGet("/web/qbit/categories", async (TorrentarrConfig config, ITorrentClien
     return Results.Ok(new { categories, ready = true, observations = snapshots.Describe(config, registry) });
 });
 
-app.MapGet("/web/config/full", (TorrentarrConfig config, IConfigReloader reloader) =>
+app.MapGet("/web/config/full", (TorrentarrConfig config, IConfigReloader reloader,
+    Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions> jsonOptions) =>
 {
-    return Results.Ok(new
+    var response = new
     {
         configPath = reloader.ConfigPath,
-        settings = config.Settings,
+        settings = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
+            Newtonsoft.Json.Linq.JObject.FromObject(config.Settings).ToString(Newtonsoft.Json.Formatting.None)),
         webui = config.WebUI,
         qbitInstances = config.GetAllTorrentClients().ToDictionary(
             kv => kv.Key,
@@ -1594,7 +1565,14 @@ app.MapGet("/web/config/full", (TorrentarrConfig config, IConfigReloader reloade
                 kv.Value.ProcessingOnly,
                 kv.Value.Search
             })
-    });
+    };
+    var json = System.Text.Json.JsonSerializer.Serialize(response, jsonOptions.Value.SerializerOptions);
+    using var reader = new Newtonsoft.Json.JsonTextReader(new StringReader(json))
+    {
+        DateParseHandling = Newtonsoft.Json.DateParseHandling.None
+    };
+    var redacted = WebUIAuthHelpers.RedactConfigResponse(Newtonsoft.Json.Linq.JObject.Load(reader), redactEmptyValues: false);
+    return Results.Content(redacted.ToString(Newtonsoft.Json.Formatting.None), "application/json");
 });
 
 app.MapPost("/web/config/reload", (IConfigReloader reloader) =>
@@ -1614,6 +1592,8 @@ app.MapPost("/web/config/save", async (TorrentarrConfig updatedConfig, Torrentar
             return Results.Json(new { error = passwordHashError }, statusCode: 403);
 
         TrackerRules.NormalizeNested(updatedConfig);
+        if (updatedConfig.Settings.IssueAlertsSecretUrl == "[redacted]")
+            updatedConfig.Settings.IssueAlertsSecretUrl = config.Settings.IssueAlertsSecretUrl;
         var liveValidation = reloader.Validate(updatedConfig);
         if (!liveValidation.Ok) return Results.BadRequest(new { error = liveValidation.Error });
         await InstanceRenamePersistence.SaveAsync(config, updatedConfig, null, loader, db, reloader.ConfigPath);
@@ -1640,6 +1620,10 @@ app.MapGet("/web/config/path", (IConfigReloader reloader) =>
 app.MapStatisticsEndpoints();
 app.MapTransferHistory();
 app.MapArrActivity();
+app.MapSearchDecisions("/web");
+app.MapWorkerHistory("/web");
+app.MapSharedFileFilters("/web");
+app.MapFailedTorrentDestinations("/web");
 app.MapArrCatalogEndpoints();
 
 // Meta info — matches frontend MetaResponse interface (includes auth flags)
@@ -1701,9 +1685,8 @@ Log.Information("Torrentarr WebUI starting on {Host}:{Port}",
 
 static bool IsSensitiveDottedKey(string dottedKey)
 {
-    const string pattern = @"(apikey|api_key|token|password|secret|passkey|credential)";
     var lastPart = dottedKey.Contains('.') ? dottedKey[(dottedKey.LastIndexOf('.') + 1)..] : dottedKey;
-    return System.Text.RegularExpressions.Regex.IsMatch(lastPart, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    return System.Text.RegularExpressions.Regex.IsMatch(lastPart, WebUIAuthHelpers.SensitiveKeyPattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 }
 
 app.Run();

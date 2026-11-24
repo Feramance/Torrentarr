@@ -12,6 +12,7 @@ import type {
   LogsListResponse,
   LogFileInfo,
   ProcessesResponse,
+  SearchDecisionResponse,
   QbitCategoriesResponse,
   RadarrMoviesResponse,
   RestartResponse,
@@ -34,6 +35,39 @@ import type {
 } from "./types";
 
 export type { LogFileInfo };
+
+export function sendIssueAlertTest(): Promise<{ success: boolean }> {
+  return fetchJson("/web/issues/alerts/test", { method: "POST" });
+}
+
+export interface FileFilterPreview {
+  available: boolean;
+  reason: string | null;
+  lists: {
+    name: string;
+    source: string | null;
+    loadedAt: string | null;
+    checkedAt: string | null;
+    error: string | null;
+  }[];
+}
+
+export function getFileFilterPreview(
+  instance: string,
+  path: string,
+): Promise<FileFilterPreview> {
+  return fetchJson(
+    `/web/file-filters/preview?instance=${encodeURIComponent(instance)}&path=${encodeURIComponent(path)}`,
+  );
+}
+
+export function getSearchDecisions(
+  instance: string,
+): Promise<SearchDecisionResponse> {
+  return fetchJson(
+    `/web/processes/${encodeURIComponent(instance)}/search-activity`,
+  );
+}
 export class AuthError extends Error {
   code?: string;
   constructor(message: string, code?: string) {
@@ -394,6 +428,22 @@ export async function getStatus(): Promise<StatusResponse> {
   return fetchJson<StatusResponse>("/web/status");
 }
 
+export function getFailedTorrentDestinations(category: string) {
+  return fetchJson<
+    {
+      client: string;
+      available: boolean;
+      categories: {
+        name: string;
+        arrOwner: string | null;
+        unavailableReason: string | null;
+      }[];
+    }[]
+  >(
+    `/web/config/failed-torrent-destinations?category=${encodeURIComponent(category)}`,
+  );
+}
+
 export async function getQbitCategories(): Promise<QbitCategoriesResponse> {
   return fetchJson<QbitCategoriesResponse>("/web/qbit/categories");
 }
@@ -504,6 +554,7 @@ export async function searchLogs(
     maxMatches?: number;
     context?: number;
     includeRotated?: boolean;
+    includeDates?: boolean;
   },
 ): Promise<LogSearchResponse> {
   const params = new URLSearchParams();
@@ -514,6 +565,7 @@ export async function searchLogs(
     params.set("max_matches", String(options.maxMatches));
   if (options?.context != null) params.set("context", String(options.context));
   if (options?.includeRotated === false) params.set("include_rotated", "0");
+  if (options?.includeDates) params.set("include_dates", "1");
   return fetchJson<LogSearchResponse>(
     `/web/logs/${encodeURIComponent(name)}/search?${params}`,
   );
@@ -984,14 +1036,29 @@ export async function getIssuesSummary(): Promise<
 export async function getIssueDetails(
   id: number,
   page = 0,
+  filters: {
+    state?: string;
+    category?: string;
+    severity?: string;
+    instance?: string;
+    q?: string;
+  } = {},
 ): Promise<{
   available: boolean;
   total: number;
   items: import("./types").OperationalIssue[];
   page: number;
   pageSize: number;
-}> {
-  return fetchJson(`/web/issues/${id}?page=${page}`);
+} | null> {
+  const params = new URLSearchParams({ page: String(page) });
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value) params.set(key, value);
+  });
+  return fetchWithAuthRetry(
+    `/web/issues/${id}?${params}`,
+    undefined,
+    async (response) => (response.status === 404 ? null : handleJson(response)),
+  );
 }
 
 export function watchStatistics(
@@ -1037,5 +1104,15 @@ export function getArrActivity(
   if (worker) params.set("worker", worker);
   return fetchJson<import("./types").ArrActivityHistory>(
     `/web/statistics/arr-activity?${params}`,
+  );
+}
+
+export function getWorkerHistory(worker = "", type = "", cursor?: number) {
+  const params = new URLSearchParams();
+  if (worker) params.set("worker", worker);
+  if (type) params.set("type", type);
+  if (cursor != null) params.set("cursor", String(cursor));
+  return fetchJson<import("./types").WorkerHistoryResponse>(
+    `/web/history?${params}`,
   );
 }

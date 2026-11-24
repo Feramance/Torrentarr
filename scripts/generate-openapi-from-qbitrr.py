@@ -11,6 +11,7 @@ from copy import deepcopy
 from openapi_status import STATUS_SCHEMA
 from openapi_statistics import EXTENSION_PATHS as STATISTICS_PATHS, apply as apply_statistics
 from openapi_maintenance import apply as apply_maintenance
+from openapi_roadmap import apply as apply_roadmap
 
 QBITRR_REF = os.environ.get("QBITRR_OPENAPI_REF", "v5.14.6-1")
 OUT_PATH = "docs/assets/openapi.json"
@@ -183,6 +184,7 @@ def main() -> int:
 
     apply_maintenance(spec)
     apply_statistics(spec)
+    apply_roadmap(spec)
 
     out = sys.argv[1] if len(sys.argv) > 1 else OUT_PATH
     with open(out, "w", encoding="utf-8") as f:

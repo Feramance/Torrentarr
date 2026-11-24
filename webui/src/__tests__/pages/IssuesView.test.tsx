@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
@@ -25,6 +25,9 @@ const group = {
   examples: [
     {
       id: 1,
+      code: "profile.prepare",
+      firstObserved: "2026-10-29T10:00:00Z",
+      lastObserved: "2026-10-29T10:01:00Z",
       subjectType: "profile",
       subjectId: "42",
       resolvedAt: null,
@@ -44,7 +47,14 @@ const server = setupServer(
       pending: [],
       items:
         new URL(request.url).searchParams.get("category") === "system"
-          ? [{ ...group, category: "system", title: "Worker timed out" }]
+          ? [
+              {
+                ...group,
+                code: "worker.legacy",
+                category: "system",
+                title: "Worker timed out",
+              },
+            ]
           : [group],
     }),
   ),
@@ -65,15 +75,20 @@ describe("Issues view", () => {
   it("groups issues, expands actionable details and switches inner tabs", async () => {
     const user = userEvent.setup();
     render(<IssuesView />);
-    await screen.findByText("Search skipped");
-    expect(screen.getByText(/2 affected/)).toBeInTheDocument();
-    await user.click(screen.getByText("Search skipped"));
-    expect(screen.getByText("Check Arr profile mappings")).toBeVisible();
+    await screen.findByText("Temporary quality profile could not be prepared");
+    expect(screen.getByText(/2 items · Active/)).toBeInTheDocument();
+    await user.click(
+      screen.getByText("Temporary quality profile could not be prepared"),
+    );
     expect(
-      screen.getByText(/Observed profile 7; expected profile 9/),
+      screen.getByText(/Verify the configured original and temporary profiles/),
     ).toBeVisible();
     expect(
-      screen.getByText(/Restore profile 9 before searching/),
+      screen.getByText(/Observed profile 7; expected profile 9/),
+    ).not.toBeVisible();
+    await user.click(screen.getByText("Technical details"));
+    expect(
+      screen.getByText(/Observed profile 7; expected profile 9/),
     ).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Check quality profile mappings" }),
@@ -96,7 +111,7 @@ describe("Issues view", () => {
           items: [
             {
               ...group,
-              title: "Import owner is unresolved",
+              code: "import.ownership",
               examples: [
                 {
                   ...group.examples[0],
@@ -127,18 +142,15 @@ describe("Issues view", () => {
     );
     render(<IssuesView />);
     await userEvent.click(
-      await screen.findByText("Import owner is unresolved"),
+      await screen.findByText("Import owner could not be determined"),
     );
+    expect(screen.getByText("Anime S02E04")).toBeVisible();
     expect(
-      screen.getByText(/Anime S02E04 · Category: sonarr-anime/),
+      screen.getByText("missinghash", { selector: "strong" }),
     ).toBeVisible();
-    expect(
-      screen.getByText(/missinghash · Category: unavailable/),
-    ).toBeVisible();
-    expect(screen.getByText(/Movie · Category: Uncategorized/)).toBeVisible();
-    expect(
-      screen.queryByText(/deadbeef|uncategorizedhash/),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText("Movie")).toBeVisible();
+    for (const id of screen.getAllByText(/deadbeef|uncategorizedhash/))
+      expect(id).not.toBeVisible();
   });
   it("does not claim healthy when history is unavailable", async () => {
     server.use(
@@ -177,7 +189,7 @@ it("opens scoped system issues and supports arrow-key tabs", async () => {
   );
   await user.click(screen.getByRole("tab", { name: "System & services" }));
   await user.keyboard("{ArrowLeft}");
-  await screen.findByText("Search skipped");
+  await screen.findByText("Temporary quality profile could not be prepared");
   expect(
     screen.getByRole("tab", { name: "Automation & safety" }),
   ).toHaveFocus();
@@ -186,60 +198,9 @@ it("opens scoped system issues and supports arrow-key tabs", async () => {
   );
 });
 
-it("keeps loaded subject history visible when the grouped list refreshes", async () => {
-  let loads = 0;
-  server.use(
-    http.get("/web/issues", () =>
-      HttpResponse.json({
-        available: true,
-        total: 1,
-        page: 0,
-        pageSize: 50,
-        pending: [],
-        items: [
-          {
-            ...group,
-            title: ++loads > 1 ? "Search skipped (refreshed)" : group.title,
-            id: loads > 1 ? 2 : 1,
-          },
-        ],
-      }),
-    ),
-    http.get(/\/web\/issues\/\d+$/, () =>
-      HttpResponse.json({
-        available: true,
-        total: 2,
-        page: 0,
-        pageSize: 50,
-        items: [
-          ...group.examples,
-          {
-            id: 2,
-            subjectType: "profile",
-            subjectId: "43",
-            resolvedAt: "2026-10-29T10:02:00Z",
-            resolution: "Verified recovery",
-          },
-        ],
-      }),
-    ),
-  );
-  const user = userEvent.setup();
-  render(<IssuesView />);
-  await user.click(await screen.findByText("Search skipped"));
-  await user.click(
-    screen.getByRole("button", { name: "View affected subjects and history" }),
-  );
-  await screen.findByText(/43.*Verified recovery/);
-  await user.click(
-    screen.getByRole("button", { name: "Refresh", exact: true }),
-  );
-  await screen.findByText("Search skipped (refreshed)");
-  expect(screen.getByText(/43.*Verified recovery/)).toBeVisible();
-});
-
-it("refreshes loaded subjects after recovery without collapsing the row", async () => {
+it("opens recovered items only when available and keeps the card open when an item recovers", async () => {
   let recovered = false;
+  const second = { ...group.examples[0], id: 2, subjectId: "43" };
   server.use(
     http.get("/web/issues", () =>
       HttpResponse.json({
@@ -252,48 +213,110 @@ it("refreshes loaded subjects after recovery without collapsing the row", async 
           {
             ...group,
             affected: recovered ? 1 : 2,
-            occurrences: recovered ? 4 : 3,
+            hasResolvedItems: recovered,
           },
         ],
       }),
     ),
-    http.get(/\/web\/issues\/\d+$/, () =>
-      HttpResponse.json({
+    http.get(/\/web\/issues\/\d+$/, ({ request }) => {
+      const state = new URL(request.url).searchParams.get("state");
+      const items =
+        state === "resolved"
+          ? [
+              {
+                ...second,
+                resolvedAt: "2026-10-29T11:00:00Z",
+                resolution: "Verified recovery",
+              },
+            ]
+          : recovered
+            ? group.examples
+            : [...group.examples, second];
+      return HttpResponse.json({
         available: true,
-        total: 2,
+        total: items.length,
         page: 0,
         pageSize: 50,
-        items: [
-          group.examples[0],
-          {
-            id: 2,
-            subjectType: "profile",
-            subjectId: "43",
-            resolvedAt: recovered ? "2026-10-29T11:00:00Z" : null,
-            resolution: recovered ? "Verified recovery" : null,
-          },
-        ],
-      }),
-    ),
+        items,
+      });
+    }),
   );
   const user = userEvent.setup();
   render(<IssuesView />);
-  await user.click(await screen.findByText("Search skipped"));
   await user.click(
-    screen.getByRole("button", { name: "View affected subjects and history" }),
+    await screen.findByText("Temporary quality profile could not be prepared"),
   );
-  expect(await screen.findByText(/43.*Active/)).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: "View resolved items" }),
+  ).toBeNull();
+  await user.click(
+    screen.getByRole("button", { name: "Show all affected items" }),
+  );
+  expect(await screen.findByText("43")).toBeVisible();
   recovered = true;
   await user.click(
     screen.getByRole("button", { name: "Refresh", exact: true }),
   );
-  expect(await screen.findByText(/43.*Verified recovery/)).toBeVisible();
-  expect(screen.getByText(/1 affected/)).toBeVisible();
+  await user.click(
+    await screen.findByRole("button", { name: "View resolved items" }),
+  );
+  expect(await screen.findByText(/Verified recovery/)).toBeVisible();
+  await user.click(
+    screen.getByRole("button", { name: "Back to affected items" }),
+  );
+  expect(screen.queryByText("43")).toBeNull();
+  expect(screen.getByText("42")).toBeVisible();
 });
 
-it("shows stale detail errors and retries them on the next group refresh", async () => {
-  let fail = false;
-  let revision = 3;
+it("retains the current item page on failure and retries a page that shrank", async () => {
+  let fail = true;
+  let shrank = false;
+  const requests: number[] = [];
+  server.use(
+    http.get(/\/web\/issues\/\d+$/, ({ request }) => {
+      const page = Number(new URL(request.url).searchParams.get("page"));
+      requests.push(page);
+      if (page === 1 && fail) return new HttpResponse(null, { status: 503 });
+      return HttpResponse.json({
+        available: true,
+        total: shrank ? 1 : 2,
+        page,
+        pageSize: 1,
+        items: page === 1 ? [] : group.examples,
+      });
+    }),
+  );
+  const user = userEvent.setup();
+  render(<IssuesView />);
+  await user.click(
+    await screen.findByText("Temporary quality profile could not be prepared"),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Show all affected items" }),
+  );
+  await user.click(await screen.findByRole("button", { name: "Next page" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Issue items could not be loaded",
+  );
+  expect(screen.getByText("42")).toBeVisible();
+  fail = false;
+  shrank = true;
+  await user.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByText("42");
+  expect(screen.queryByRole("button", { name: "Previous page" })).toBeNull();
+  await waitFor(() => expect(requests).toEqual([0, 1, 1, 0]));
+});
+
+it("shows a missing-file warning with grouped examples and inspectable paths", async () => {
+  const preview = {
+    ...group,
+    code: "maintenance.preview.missing-file",
+    arrInstance: "",
+    clientInstance: "qBit-General",
+    target: "maintenance",
+    severity: "warning",
+    affected: 1,
+  };
   server.use(
     http.get("/web/issues", () =>
       HttpResponse.json({
@@ -302,43 +325,52 @@ it("shows stale detail errors and retries them on the next group refresh", async
         page: 0,
         pageSize: 50,
         pending: [],
-        items: [{ ...group, occurrences: revision }],
+        items: [
+          {
+            ...preview,
+            examples: [
+              {
+                ...preview,
+                subjectType: "preview",
+                subjectId: "OrphanScan",
+                evidence: {
+                  affectedFiles: 7,
+                  affectedTorrents: 1,
+                  operations: ["OrphanScan"],
+                  files: ["episode-1.mkv", "episode-2.mkv"].map((name) => ({
+                    torrentHash: "123",
+                    torrentName: "Season one",
+                    clientPath: `/client/${name}`,
+                    localPath: `/local/${name}`,
+                  })),
+                },
+              },
+            ],
+          },
+        ],
       }),
-    ),
-    http.get(/\/web\/issues\/\d+$/, () =>
-      fail
-        ? new HttpResponse(null, { status: 503 })
-        : HttpResponse.json({
-            available: true,
-            total: 1,
-            page: 0,
-            pageSize: 50,
-            items: group.examples,
-          }),
     ),
   );
   const user = userEvent.setup();
   render(<IssuesView />);
-  await user.click(await screen.findByText("Search skipped"));
   await user.click(
-    screen.getByRole("button", { name: "View affected subjects and history" }),
+    await screen.findByText(
+      "Torrentarr couldn’t find files at their mapped paths",
+    ),
   );
-  await screen.findByText(/42.*Active/);
-  fail = true;
-  revision++;
-  await user.click(
-    screen.getByRole("button", { name: "Refresh", exact: true }),
-  );
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Affected subjects could not be loaded",
-  );
-  expect(screen.getByText(/42.*Active/)).toBeVisible();
-  fail = false;
-  revision++;
-  await user.click(
-    screen.getByRole("button", { name: "Refresh", exact: true }),
-  );
-  await screen.findByText(/42.*Active/);
+  expect(screen.getByText("7 files · 1 torrent")).toBeVisible();
+  expect(screen.getByText("Orphan Scan")).toBeVisible();
+  expect(screen.getByText("Season one")).toBeVisible();
+  expect(screen.getByText(/selected and fully downloaded/)).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: "Show all affected items" }),
+  ).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "View resolved items" }),
+  ).toBeNull();
+  await user.click(screen.getByText("episode-1.mkv"));
+  expect(screen.getByText("/client/episode-1.mkv")).toBeVisible();
+  expect(screen.getByText("/local/episode-1.mkv")).toBeVisible();
 });
 
 it("removes a recovered group on automatic refresh", async () => {
@@ -356,12 +388,14 @@ it("removes a recovered group on automatic refresh", async () => {
     ),
   );
   render(<IssuesView />);
-  await screen.findByText("Search skipped");
+  await screen.findByText("Temporary quality profile could not be prepared");
   recovered = true;
   await screen.findByText("No active issues match these filters.", undefined, {
     timeout: 8000,
   });
-  expect(screen.queryByText("Search skipped")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("Temporary quality profile could not be prepared"),
+  ).not.toBeInTheDocument();
 }, 10000);
 
 it("links grouped storage issues to each affected monitor", async () => {
@@ -370,7 +404,7 @@ it("links grouped storage issues to each affected monitor", async () => {
     code: "storage.reserve",
     arrInstance: "",
     clientInstance: "qBit-General",
-    title: "Download storage needs attention",
+    title: "Download storage reserve needs attention",
   };
   server.use(
     http.get("/web/issues", () =>
@@ -423,3 +457,79 @@ it("links grouped storage issues to each affected monitor", async () => {
     window.removeEventListener(NAVIGATE_TAB_EVENT, capture);
   }
 });
+
+it.each([false, true])(
+  "lists torrent metadata and blockers for a removal report (structured: %s)",
+  async (structured) => {
+    const blockers = [
+      {
+        code: "torrent.protected-tag",
+        reason: "Blocking tag 'free_space_paused' is present",
+        remediation: "Resolve the free-space policy.",
+      },
+      {
+        code: "stalled.grace",
+        reason: "StalledDelay=1440min; idle=696s; required=86400s",
+        remediation:
+          "Wait for the stalled grace; a negative delay disables removal.",
+      },
+    ];
+    const issue = {
+      ...group.examples[0],
+      code: "torrent.removal.SeedingLimit",
+      subjectType: "torrent",
+      subjectId: "deadbeef",
+      subjectName: "Season pack",
+      clientInstance: "qBit-General",
+      impact:
+        "Torrent=Season pack; hash=deadbeef; client=qBit-General; category=sonarranime; intent=SeedingLimit. " +
+        blockers
+          .map(
+            ({ code, reason, remediation }) =>
+              `${code}: ${reason} Next: ${remediation}`,
+          )
+          .join("; "),
+      evidence: structured
+        ? {
+            removal: {
+              name: "Season pack",
+              category: "sonarranime",
+              intent: "SeedingLimit",
+              blockers,
+            },
+          }
+        : undefined,
+    };
+    server.use(
+      http.get("/web/issues", () =>
+        HttpResponse.json({
+          available: true,
+          total: 1,
+          page: 0,
+          pageSize: 50,
+          pending: [],
+          items: [
+            { ...group, code: issue.code, affected: 1, examples: [issue] },
+          ],
+        }),
+      ),
+    );
+    const user = userEvent.setup();
+    render(<IssuesView />);
+    await user.click(await screen.findByText("Torrent removal was blocked"));
+    await user.click(screen.getByText("Technical details"));
+    expect(screen.getByText("Removal rule").closest("li")).toHaveTextContent(
+      "Seeding Limit",
+    );
+    expect(screen.getByText("Hash").closest("li")).toHaveTextContent(
+      "deadbeef",
+    );
+    for (const blocker of blockers) {
+      const bullet = screen
+        .getByText(blocker.code, { selector: "li strong" })
+        .closest("li");
+      expect(bullet).toHaveTextContent(blocker.reason);
+      expect(bullet).toHaveTextContent(blocker.remediation);
+    }
+  },
+);

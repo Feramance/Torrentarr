@@ -72,7 +72,8 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
                         operation.Outcome = "expired";
                     else eligible.Add(operation);
                 }
-                if (eligible.Count > 0)
+                var historyPending = await db.WorkerHistory.Where(e => e.Instance == name && e.Outcome == "submitted" && e.CommandId != null).ToListAsync(ct);
+                if (eligible.Count > 0 || historyPending.Count > 0)
                 {
                     using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                     timeout.CancelAfter(TimeSpan.FromSeconds(20));
@@ -85,6 +86,28 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
                         history = await read(settings, $"history/since?date={Uri.EscapeDataString(since.ToString("O"))}&eventType={eventType}", timeout.Token);
                     }
                     await ReconcileAsync(db, eligible, commands, history, now, ct);
+                    var server = ArrActivityTracking.ServerKey(settings);
+                    var planRows = await db.MaintenanceState.FromSqlInterpolated($"""
+                        SELECT Key, Data FROM torrentarr_maintenance_state
+                        WHERE substr(Key, -12) = '|import-plan'
+                            AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Instance') END = {name}
+                            AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.Server') END = {server}
+                        """).AsNoTracking().ToListAsync(ct);
+                    var importPlans = new List<ImportPlanReceipt>();
+                    foreach (var row in planRows)
+                    {
+                        try { importPlans.Add(ImportPlanReceipt.Parse(row.Data)); }
+                        catch (Exception ex) when (ex is Newtonsoft.Json.JsonException or InvalidDataException)
+                        { logger.LogDebug("Import history receipt is unavailable for {Instance}", name); }
+                    }
+                    ReconcileHistory(historyPending, eligible, commands, ArrActivityTracking.ServerKey(settings), now, importPlans);
+                }
+                try { await ObserveSearchGrabsAsync(db, name, settings, now, read, ct); }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+                catch (Exception ex)
+                {
+                    logger.LogDebug("Search grab evidence unavailable for {Instance}: {Error}", name,
+                    Torrentarr.Core.Services.DiagnosticText.Error(ex));
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
@@ -101,14 +124,154 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
         }
         if (minute - _lastPrune >= 60)
         {
+            var staleHistory = now.AddDays(-7);
+            await db.WorkerHistory.Where(e => e.Outcome == "submitted" && e.Timestamp < staleHistory)
+                .ExecuteUpdateAsync(update => update.SetProperty(e => e.Outcome, "unknown"), ct);
             var oldestMinute = minute / ArrActivityApi.HourBucketMinutes * ArrActivityApi.HourBucketMinutes - ArrActivityApi.WeekMinutes;
             await db.ArrActivitySamples.Where(s => s.Minute < oldestMinute).ExecuteDeleteAsync(ct);
             var expiredSubmission = now.ToUnixTimeSeconds() - ArrActivityApi.WeekMinutes * 60;
             await db.ArrActivityOperations.Where(o => o.ConfirmedAt != null
                 ? o.ConfirmedAt < oldestMinute * 60
                 : o.SubmittedAt < expiredSubmission).ExecuteDeleteAsync(ct);
+            await db.SearchDecisions.Where(d => d.ObservedAt < expiredSubmission).ExecuteDeleteAsync(ct);
+            await PruneHistoryAsync(db, config.Settings.HistoryRetentionDays, now, ct);
+            await db.RetirementUploads.Where(o => o.Seen < expiredSubmission).ExecuteDeleteAsync(ct);
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                DELETE FROM torrentarr_maintenance_state
+                WHERE Key LIKE '%||search-rest:%'
+                    AND CASE WHEN json_valid(Data) THEN json_extract(Data, '$.SearchRestUntil') END < {now.ToUnixTimeSeconds()}
+                """, ct);
             _lastPrune = minute;
         }
+    }
+
+    private static async Task ObserveSearchGrabsAsync(TorrentarrDbContext db, string instance, ArrInstanceConfig arr,
+        DateTimeOffset now, Func<ArrInstanceConfig, string, CancellationToken, Task<JArray>> read, CancellationToken ct)
+    {
+        var since = arr.Search.UnsuccessfulSearchRestMinutes > 0 ? now.AddDays(-7) : now.AddMinutes(-30);
+        var server = ArrActivityTracking.ServerKey(arr);
+        var decisions = (await db.SearchDecisions.Where(d => d.Instance == instance
+            && d.ObservedAt > since.ToUnixTimeSeconds() && d.Key.StartsWith("submitted:") && d.GrabbedAt == null && d.NoGrabAt == null).ToListAsync(ct))
+            .Select(row => (Row: row, Entry: System.Text.Json.JsonSerializer.Deserialize<SearchDecisionHistory.Decision>(row.Data)))
+            .Where(pair => pair.Entry?.Server == server && pair.Entry.SubmittedAt.HasValue).ToList();
+        if (arr.Search.UnsuccessfulSearchRestMinutes > 0)
+        {
+            var recentCompletion = now.ToUnixTimeSeconds() - SearchItemRest.ConfirmationSeconds - 15 * 60;
+            var completed = await db.ArrActivityOperations.AsNoTracking().Where(operation => operation.Instance == instance
+                && operation.Server == server && operation.Kind == "search" && operation.Outcome == "completed"
+                && operation.ConfirmedAt >= recentCompletion)
+                .Select(operation => new { operation.CommandId, operation.SubmittedAt }).ToListAsync(ct);
+            var confirmed = completed.Select(operation => (operation.CommandId, operation.SubmittedAt)).ToHashSet();
+            decisions = decisions.Where(pair => pair.Row.ObservedAt >= now.AddMinutes(-30).ToUnixTimeSeconds()
+                || pair.Entry!.CommandId is int command && confirmed.Contains((command, pair.Entry.SubmittedAt!.Value))).ToList();
+        }
+        if (decisions.Count == 0) return;
+        since = DateTimeOffset.FromUnixTimeSeconds(decisions.Min(pair => pair.Entry!.SubmittedAt!.Value));
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        var history = await read(arr, $"history/since?date={Uri.EscapeDataString(since.ToString("O"))}&eventType=1", timeout.Token);
+        foreach (var (row, entry) in decisions)
+            row.GrabbedAt = FindSearchGrab(entry!, history, now);
+        await SearchItemRest.ReconcileAsync(db, instance, arr, decisions, history, now, ct);
+    }
+
+    internal static long? FindSearchGrab(SearchDecisionHistory.Decision decision, JArray history, DateTimeOffset now)
+    {
+        if (decision.SubmittedAt is not long submitted) return null;
+        var itemField = decision.Item.Type.ToLowerInvariant() switch
+        {
+            "movie" => "movieId",
+            "episode" => "episodeId",
+            "album" => "albumId",
+            "artist" => "artistId",
+            "book" => "bookId",
+            "author" => "authorId",
+            _ => null
+        };
+        if (itemField == null) return null;
+        var ids = (decision.CoveredIds ?? []).ToHashSet();
+        return history.OfType<JObject>().Where(entry =>
+                entry["eventType"]?.Value<string>()?.ToLowerInvariant() is "grabbed" or "1"
+                && int.TryParse(entry[itemField]?.Value<string>(), out var id) && ids.Contains(id)
+                && !string.IsNullOrWhiteSpace(entry["downloadId"]?.Value<string>()))
+            .Select(entry => EvidenceTimestamp(entry["date"]))
+            .Where(date => date >= submitted && date <= now.ToUnixTimeSeconds())
+            .Select(date => (long?)date).Min();
+    }
+
+    internal static long EvidenceTimestamp(JToken? token) => token switch
+    {
+        JValue { Value: DateTime date } when date.Kind != DateTimeKind.Unspecified => new DateTimeOffset(date).ToUnixTimeSeconds(),
+        JValue { Value: DateTimeOffset date } => date.ToUnixTimeSeconds(),
+        JValue { Value: string text } when DateTimeOffset.TryParse(text, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AssumeUniversal, out var date) => date.ToUnixTimeSeconds(),
+        _ => -1L
+    };
+
+    internal static Task<int> PruneHistoryAsync(TorrentarrDbContext db, int days, DateTimeOffset now, CancellationToken ct = default)
+    {
+        var cutoff = days >= (now - DateTimeOffset.MinValue).TotalDays ? DateTimeOffset.MinValue : now.AddDays(-Math.Max(1, days));
+        return db.WorkerHistory.Where(e => e.Timestamp < cutoff).ExecuteDeleteAsync(ct);
+    }
+
+    internal static void ReconcileHistory(List<WorkerHistoryEvent> events, List<ArrActivityOperation> operations,
+        JArray commands, string server, DateTimeOffset now, IReadOnlyList<ImportPlanReceipt>? importPlans = null)
+    {
+        foreach (var entry in events)
+        {
+            if (entry.Server != server || entry.Timestamp < now.AddDays(-7)) { entry.Outcome = "unknown"; continue; }
+            var command = commands.FirstOrDefault(c => c["id"]?.Value<int>() == entry.CommandId);
+            var state = command?["status"]?.Value<string>()?.ToLowerInvariant();
+            var result = command?["result"]?.Value<string>()?.ToLowerInvariant();
+            var plan = importPlans?.FirstOrDefault(plan => plan.Files.Any(file => file.CommandId == entry.CommandId));
+            if (entry.Type == "import" && plan != null)
+            {
+                var files = plan.Files.Where(file => file.CommandId == entry.CommandId).ToArray();
+                if (files.All(file => file.State == "confirmed")) entry.Outcome = plan.State == "confirmed" ? "completed" : "partial";
+                else if (files.All(file => file.State != "pending")) entry.Outcome = files.Any(file => file.State == "confirmed") ? "partial" : "failed";
+                if (entry.Outcome != "submitted") entry.CompletedAt = now;
+                UpdateImportHistoryDetails(entry, command, files);
+                continue;
+            }
+            if (entry.Type == "import" && command?["name"]?.Value<string>() == "ManualImport")
+            {
+                // A lost receipt must not fall back to whole-download success from one history event.
+                UpdateImportHistoryDetails(entry, command, []);
+                continue;
+            }
+            if (state is "failed" or "aborted" or "cancelled" or "canceled" || result is "failed" or "unsuccessful" or "2")
+                entry.Outcome = "failed";
+            else if (entry.Type == "import")
+            {
+                var operation = operations.FirstOrDefault(o => o.CommandId == entry.CommandId && o.Server == entry.Server
+                    && entry.SubmittedAt != null && Math.Abs(o.SubmittedAt - entry.SubmittedAt.Value) <= 5);
+                if (operation?.Outcome == "completed") entry.Outcome = "completed";
+                else if (operation?.Outcome == "failed") entry.Outcome = "failed";
+            }
+            else if (state == "completed" && result is "successful" or "1") entry.Outcome = "completed";
+            if (entry.Outcome is "completed" or "failed") entry.CompletedAt = now;
+            if (entry.Type == "import") UpdateImportHistoryDetails(entry, command, []);
+        }
+    }
+
+    private static void UpdateImportHistoryDetails(WorkerHistoryEvent entry, JToken? command, IReadOnlyList<ImportPlanFile> files)
+    {
+        JObject details;
+        try { details = JObject.Parse(entry.Details); }
+        catch (Newtonsoft.Json.JsonException) { details = new(); }
+        if (command != null)
+        {
+            details["commandStatus"] = command["status"]?.DeepClone();
+            details["commandResult"] = command["result"]?.DeepClone();
+            var reason = command["message"]?.Value<string>() ?? command["exception"]?.Value<string>();
+            if (!string.IsNullOrWhiteSpace(reason))
+            {
+                var safe = Torrentarr.Core.Services.DiagnosticText.Safe(reason);
+                details["failureReason"] = safe[..Math.Min(2000, safe.Length)];
+            }
+        }
+        if (files.Count > 0) details["files"] = JArray.FromObject(files.Take(500));
+        entry.Details = details.ToString(Newtonsoft.Json.Formatting.None);
     }
 
     internal static async Task ReconcileAsync(TorrentarrDbContext db, List<ArrActivityOperation> pending,
@@ -156,8 +319,7 @@ public sealed class ArrActivityCollector(IServiceScopeFactory scopes, IServicePr
         return history["id"] != null && !string.IsNullOrEmpty(operation.DownloadId)
             && string.Equals(history["downloadId"]?.Value<string>(), operation.DownloadId, StringComparison.OrdinalIgnoreCase)
             && (string.Equals(type, expected, StringComparison.OrdinalIgnoreCase) || type == numeric)
-            && DateTimeOffset.TryParse(history["date"]?.Value<string>(), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var date)
-            && date.ToUnixTimeSeconds() >= operation.SubmittedAt;
+            && EvidenceTimestamp(history["date"]) is var date && date >= 0 && date >= operation.SubmittedAt;
     }
 }
 

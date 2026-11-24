@@ -7,6 +7,8 @@
 #   - ./config.toml (current directory)
 
 [Settings]
+# Optional reviewed exclusion lists shared by explicitly referencing Arr instances.
+# SharedFileFilters = [{ Name = "reviewed", Source = "filters/reviewed.txt" }]
 # Internal config schema version - managed automatically
 ConfigVersion = "7.0.0"
 
@@ -15,6 +17,9 @@ ConsoleLevel = "INFO"
 
 # Enable logging to files (logs/ directory)
 Logging = true
+
+# Days to retain worker action history (positive integer)
+HistoryRetentionDays = 30
 
 # Sleep time when no internet connection (seconds)
 NoInternetSleepTimer = 15
@@ -109,6 +114,7 @@ Port = 8080
 # qBittorrent authentication
 UserName = "admin"
 Password = "adminadmin"
+# For qBittorrent 5.2+, use AuthMode = "api-key" and set APIKey to the key generated in qBittorrent.
 
 # If true, do not verify TLS certificates for HTTPS WebUI (self-signed certs). Disables MITM protection for that connection.
 SkipTLSVerify = false
@@ -168,6 +174,12 @@ SearchOnly = false
 # Processing only mode (no searches)
 ProcessingOnly = false
 
+[Radarr-Movies.Torrent]
+# Optional targeted Copy imports. Equal/higher per-item custom-format scores may override quality/cutoff policy.
+RescueBlockedImports = false
+FailedTorrentAction = 'existing' # 'move' preserves the entry and payload
+FailedTorrentDestinations = [] # e.g. [{ Client = 'qBit', Category = 'parked' }]
+
 # Example Sonarr instance for TV shows
 [Sonarr-TV]
 URI = "http://localhost:8989"
@@ -187,6 +199,17 @@ Managed = true
 Category = "lidarr-music"
 SearchOnly = false
 ProcessingOnly = false
+
+# Proactive search gates are independent and disabled by default.
+[Radarr-Movies.EntrySearch]
+UnsuccessfulSearchRestMinutes = 0 # Confirmed no-grab rest; maximum seven days
+IncludeTags = []                 # Arr tag labels on the movie; any include matches
+ExcludeTags = []                 # Any exclusion wins
+RequireRadarrAvailability = false # Use Radarr's isAvailable, not an inferred date
+QuietHoursEnabled = false
+QuietHoursStart = '22:00'         # Start inclusive, HH:mm
+QuietHoursEnd = '07:00'           # End exclusive; can cross midnight
+QuietHoursTimeZone = 'Etc/UTC'    # Explicit IANA timezone
 
 # Example Readarr instance for books (ebook + audiobook allowlist)
 [Readarr-Books]

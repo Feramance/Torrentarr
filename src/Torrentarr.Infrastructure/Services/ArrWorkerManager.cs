@@ -339,6 +339,7 @@ public class ArrWorkerManager : BackgroundService
         {
             while (!ct.IsCancellationRequested)
             {
+                using var history = WorkerHistory.Begin(_scopeFactory, _logger, instanceName, "torrent", arrCfg);
                 using var configuration = _config.BeginOperation();
                 var intervals = TorrentScanSchedule.Intervals(_config);
                 var due = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -409,6 +410,7 @@ public class ArrWorkerManager : BackgroundService
         {
             while (!ct.IsCancellationRequested)
             {
+                using var history = WorkerHistory.Begin(_scopeFactory, _logger, instanceName, "search", arrCfg);
 
                 try
                 {
@@ -1118,7 +1120,7 @@ public class ArrWorkerManager : BackgroundService
         _logger.LogDebug("Script Config:  PrioritizeTodaysReleases={Today}", searchConfig.PrioritizeTodaysReleases);
         _logger.LogDebug("Script Config:  SearchBySeries={BySeries}", searchConfig.SearchBySeries);
         _logger.LogDebug("Script Config:  SearchOmbiRequests={Ombi}", searchConfig.Ombi?.SearchOmbiRequests ?? false);
-        _logger.LogDebug("Script Config:  SearchOverseerrRequests={Overseerr}", searchConfig.Overseerr?.SearchOverseerrRequests ?? false);
+        _logger.LogDebug("Script Config:  Seerr request search enabled={Seerr}", searchConfig.Overseerr?.SearchOverseerrRequests ?? false);
 
         var qbitCfg = _config.QBitInstances.Values.FirstOrDefault(q =>
             q.ManagedCategories.Contains(arrCfg.Category));

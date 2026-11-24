@@ -82,6 +82,7 @@ internal sealed class RegisteredTorrentClient(ITorrentClient client) : ITorrentC
     public Task<bool> EditCategoryAsync(string name, string savePath, CancellationToken ct = default) => UseAsync(() => client.EditCategoryAsync(name, savePath, ct));
     public Task<bool> DeleteCategoryAsync(string name, CancellationToken ct = default) => UseAsync(() => client.DeleteCategoryAsync(name, ct));
     public Task<TorrentTransferRecord?> GetTransferInfoAsync(CancellationToken ct = default) => UseAsync(() => client.GetTransferInfoAsync(ct));
+    public Task<bool?> GetAlternateSpeedLimitsStateAsync(CancellationToken ct = default) => UseAsync(() => client.GetAlternateSpeedLimitsStateAsync(ct));
     public Task<TorrentClientSnapshot?> GetMainDataAsync(long? revision = null, CancellationToken ct = default) => UseAsync(() => client.GetMainDataAsync(revision, ct));
     public Task<IReadOnlyDictionary<string, byte[]>> ExportResumeDataAsync(string hash, CancellationToken ct = default) => UseAsync(() => client.ExportResumeDataAsync(hash, ct));
 }

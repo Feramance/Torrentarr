@@ -1,10 +1,56 @@
 import { describe, expect, it } from "vitest";
+import { getArrFieldSets } from "../../pages/config/configFields";
 import {
   CONFIG_SCHEMA,
   CONFIG_SCHEMA_FIELD_COUNT,
 } from "../../config/configFields.generated";
 
 describe("generated config schema", () => {
+  it("labels Seerr while editing legacy Overseerr config paths", () => {
+    for (const name of ["Radarr-Movies", "Sonarr-TV"]) {
+      const fields = getArrFieldSets(name).entryOverseerrFields;
+      expect(fields).toHaveLength(6);
+      expect(fields.every((field) => field.path?.[1] === "Overseerr")).toBe(
+        true,
+      );
+      expect(fields).toContainEqual(
+        expect.objectContaining({
+          label: "Seerr API Key",
+          path: ["EntrySearch", "Overseerr", "OverseerrAPIKey"],
+        }),
+      );
+    }
+    expect(getArrFieldSets("Lidarr-Music").entryOverseerrFields).toEqual([]);
+  });
+
+  it("offers opt-in import rescue for all supported Arr adapters", () => {
+    const hasRescue = (instance: string) =>
+      getArrFieldSets(instance).torrentFields.some(
+        (field) => field.path?.join(".") === "Torrent.RescueBlockedImports",
+      );
+    expect(hasRescue("Radarr-Movies")).toBe(true);
+    expect(hasRescue("Sonarr-TV")).toBe(true);
+    expect(hasRescue("Lidarr-Music")).toBe(true);
+    expect(hasRescue("Readarr-Books")).toBe(true);
+  });
+  it("offers shared search gates and restricts availability to Radarr", () => {
+    for (const name of [
+      "Radarr-Movies",
+      "Sonarr-TV",
+      "Lidarr-Music",
+      "Readarr-Books",
+    ]) {
+      const fields = getArrFieldSets(name).entryFields.map((field) =>
+        field.path?.join("."),
+      );
+      expect(fields).toContain("EntrySearch.IncludeTags");
+      expect(fields).toContain("EntrySearch.ExcludeTags");
+      expect(fields).toContain("EntrySearch.QuietHoursTimeZone");
+      expect(fields.includes("EntrySearch.RequireRadarrAvailability")).toBe(
+        name.startsWith("Radarr"),
+      );
+    }
+  });
   it("exposes the live browser-origin allowlist", () => {
     const origins = CONFIG_SCHEMA.sections.WebUI.find(
       (field) => String(field.key) === "CorsAllowedOrigins",

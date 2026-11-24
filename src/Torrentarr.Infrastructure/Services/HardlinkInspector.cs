@@ -7,6 +7,10 @@ namespace Torrentarr.Infrastructure.Services;
 
 public sealed class HardlinkInspector : IHardlinkInspector
 {
+    public Task<HardlinkRootInspection> InspectLibraryRootsAsync(IReadOnlyList<string> files, IReadOnlyList<string> roots,
+        IReadOnlyList<string> ignored, int budget, CancellationToken ct = default)
+        => Task.FromResult(RootHardlinkInspector.Inspect(files, roots, ignored, budget, ct));
+
     public async Task<int?> GetLinkCountAsync(string path, CancellationToken ct = default)
     {
         if (!File.Exists(path)) return null;

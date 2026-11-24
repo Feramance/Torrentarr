@@ -41,11 +41,15 @@ public sealed class SafeDeletionService : ISafeDeletionService
         TorrentRemovalIntent intent, CancellationToken ct = default)
         => RemoveAsync(clientInstanceId, hash, removeContent, null, ct, intent);
 
+    public Task<SafeDeletionResult> RemoveObservedTorrentAsync(TorrentInfo expected, TorrentRemovalIntent intent, CancellationToken ct = default)
+        => RemoveAsync(expected.ClientInstanceId, expected.Hash, true, null, ct, intent, expected);
+
     public Task<SafeDeletionResult> RemoveMaintenanceTorrentAsync(string clientInstanceId, string hash, bool removeContent, TorrentInventory inventory, CancellationToken ct = default)
         => RemoveAsync(clientInstanceId, hash, removeContent, inventory, ct);
 
     private async Task<SafeDeletionResult> RemoveAsync(string clientInstanceId, string hash, bool removeContent,
-        TorrentInventory? validatedInventory, CancellationToken ct, TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit)
+        TorrentInventory? validatedInventory, CancellationToken ct, TorrentRemovalIntent intent = TorrentRemovalIntent.SeedingLimit,
+        TorrentInfo? observedTorrent = null)
     {
         using var configuration = _config.BeginOperation();
         using var processing = ConfigMutationGuard.EnterProcessing();
@@ -54,7 +58,7 @@ public sealed class SafeDeletionService : ISafeDeletionService
         if (client == null || cfg == null)
             return new(false, true, 0, "Torrent client is disconnected or unconfigured.");
 
-        var expected = validatedInventory?.Torrents.FirstOrDefault(t =>
+        var expected = observedTorrent ?? validatedInventory?.Torrents.FirstOrDefault(t =>
             t.Torrent.ClientInstanceId.Equals(clientInstanceId, StringComparison.OrdinalIgnoreCase)
             && t.Torrent.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase))?.Torrent
             ?? (await client.GetTorrentsAsync(cancellationToken: ct))
@@ -62,7 +66,19 @@ public sealed class SafeDeletionService : ISafeDeletionService
         if (expected == null) return new(false, true, 0, "Torrent no longer exists in the client.");
         var clearance = await ProtectionDecisionAsync(clientInstanceId, hash, ct, expected, intent: intent);
         if (!clearance.Allowed)
+        {
+            await WorkerHistory.RecordAsync(new()
+            {
+                Type = "torrent-removal",
+                SubjectType = "torrent",
+                SubjectId = hash,
+                ClientInstance = clientInstanceId,
+                Summary = $"Removal blocked: {expected.Name}",
+                Outcome = "blocked",
+                Details = System.Text.Json.JsonSerializer.Serialize(new { reason = DiagnosticText.Safe(clearance.Reason), intent = intent.ToString() })
+            });
             return new(false, true, 0, clearance.Reason) { RemovalDecision = clearance };
+        }
 
         if (!removeContent)
             return await client.DeleteTorrentsAsync([hash], false, ct)
@@ -287,6 +303,14 @@ public sealed class SafeDeletionService : ISafeDeletionService
             var current = (await client.GetTorrentsAsync(cancellationToken: ct)).FirstOrDefault(t => t.Hash.Equals(hash, StringComparison.OrdinalIgnoreCase));
             if (current == null) return Block("torrent.missing", $"Torrent '{hash}' no longer exists on '{instanceId}'", "Refresh the torrent list; no deletion was sent.");
             current.ClientInstanceId = instanceId;
+            var rescueDb = scope.ServiceProvider.GetService<TorrentarrDbContext>();
+            if (rescueDb == null && _config.ArrInstances.Values.Any(arr => arr.Torrent.RescueBlockedImports
+                && CategoryOwnershipHelper.ArrOwnsTorrent(_config, arr, current)))
+                return Block("import.rescue-unavailable", "Import rescue evidence is unavailable", "Restore the database service before automatic removal.");
+            if (rescueDb != null && FailedTorrentReceipt.BlocksRemoval(rescueDb, current))
+                return Block("torrent.failed-category", "A failed category move protects this torrent", "Review the saved move and Arr queue outcome.");
+            if (rescueDb != null && ImportRescueReceipt.BlocksRemoval(rescueDb, current, intent))
+                return Block("import.rescue", "Import rescue is pending or this failed outcome has already been rescued", "Wait for reconciliation and preserve confirmed imports from failed outcomes.");
             if (ownedFileCleanup)
             {
                 var db = scope.ServiceProvider.GetService<TorrentarrDbContext>();
@@ -295,8 +319,20 @@ public sealed class SafeDeletionService : ISafeDeletionService
             }
             if (expected != null && !SeedingService.SameRemovalCandidate(expected, current))
                 return Block("torrent.changed", SeedingService.DescribeRemovalChanges(expected, current), "Wait for a fresh evaluation of the changed torrent.");
+            if (expected?.ObservedAtUnixSeconds > 0)
+            {
+                var age = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - expected.ObservedAtUnixSeconds;
+                var maxAge = 2 * (_config.GetTorrentClient(instanceId)?.TorrentScanIntervalSeconds ?? 30);
+                if (age < 0 || age > maxAge)
+                    return Block("torrent.download-stale", $"The stall observation is {age}s old (limit {maxAge}s).", "Wait for a fresh stall evaluation.");
+                if (expected.Downloaded != current.Downloaded || expected.AmountLeft != current.AmountLeft)
+                    return Block("torrent.download-changed", "The torrent's downloaded or remaining bytes changed during authorization.", "Wait for a fresh stall evaluation.");
+            }
             if (stateBeforeOwnedPause != null && (SeedingService.IsStalledUploadState(stateBeforeOwnedPause) || intent == TorrentRemovalIntent.StalledDownload))
+            {
+                if (intent == TorrentRemovalIntent.OrdinaryRetirement) current.ObservedRetirementState = current.State;
                 current.State = stateBeforeOwnedPause;
+            }
             var decision = await seeding.EvaluateRemovalAsync(current, intent, ct);
             if (decision != null) return decision;
             var allowed = intent == TorrentRemovalIntent.SeedingLimit
@@ -335,7 +371,18 @@ public sealed class SafeDeletionService : ISafeDeletionService
         validation = ValidateFileSource(path, cfg);
         if (validation != null) return Denied(validation);
         ct.ThrowIfCancellationRequested();
+        var existed = File.Exists(path);
         File.Delete(path);
+        if (existed) await WorkerHistory.RecordAsync(new()
+        {
+            Type = "delete",
+            SubjectType = "file",
+            SubjectId = hash,
+            ClientInstance = instanceId,
+            Summary = $"Deleted excluded file: {Path.GetFileName(path)}",
+            Outcome = "completed",
+            Details = System.Text.Json.JsonSerializer.Serialize(new { file = DiagnosticText.Safe(Path.GetFileName(path)), reason = "Rejected by file allowlist" })
+        });
         return true;
     }
 

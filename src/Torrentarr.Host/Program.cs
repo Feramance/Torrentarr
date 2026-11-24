@@ -98,7 +98,6 @@ Directory.CreateDirectory(logsPath);
 
 // Config web: placeholder for redacted secrets; must be in scope before any handler that uses it
 const string REDACTED_PLACEHOLDER = "[redacted]";
-const string SensitiveKeyPatternRegex = @"(apikey|api_key|token|password|secret|passkey|credential)";
 
 // Mutable level switch — lets /web/loglevel and /api/loglevel change the level at runtime
 var levelSwitch = new LoggingLevelSwitch(LogEventLevel.Information);
@@ -182,7 +181,8 @@ try
         Log.Information("Log level set to {Level} from config ConsoleLevel", levelSwitch.MinimumLevel);
     }
 
-    if (!config.GetAllTorrentClients().Values.Any(q => q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME"))
+    if (!config.GetAllTorrentClients().Values.Any(q => q.Host != "CHANGE_ME" &&
+            (q.AuthMode == "api-key" || (q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME"))))
     {
         Log.Warning("qBittorrent is not configured. Please configure via WebUI at http://localhost:{Port}", config.WebUI.Port);
         Log.Warning("Or edit the config file at: {Path}", ConfigurationLoader.GetDefaultConfigPath());
@@ -228,6 +228,7 @@ try
     builder.Services.AddSingleton<IProcessOrchestrator>(sp => sp.GetRequiredService<WorkerProcessSupervisor>());
     builder.Services.AddSingleton<SearchYearCursor>();
     builder.Services.AddSingleton<StalledUploadTracker>();
+    builder.Services.AddSingleton<DownloadStallTracker>();
     builder.Services.AddHostedService(sp => sp.GetRequiredService<WorkerProcessSupervisor>());
     builder.Services.AddHostedService<ProcessOrchestratorService>();
     // Scoped services (one per request / scope)
@@ -264,7 +265,10 @@ try
     builder.Services.AddSingleton<OperationalIssueReporter>();
     builder.Services.AddSingleton<IOperationalIssueReporter>(sp => sp.GetRequiredService<OperationalIssueReporter>());
     builder.Services.AddHostedService(sp => sp.GetRequiredService<OperationalIssueReporter>());
+    builder.Services.AddSingleton<SharedFileFilterService>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<SharedFileFilterService>());
     builder.Services.AddHostedService<OperationalIssueMonitor>();
+    builder.Services.AddHostedService<IssueAlertDispatcher>();
     builder.Services.AddHttpClient();
     builder.Services.AddHttpClient("ArrOpen").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
     builder.Services.AddHttpClient("ArrOpenSkipTls").ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
@@ -621,9 +625,19 @@ try
 
     app.MapOperationalIssueEndpoints("/web");
     app.MapOperationalIssueEndpoints("/api");
+    app.MapIssueAlertTest("/web");
+    app.MapIssueAlertTest("/api");
     app.MapStatisticsEndpoints();
     app.MapTransferHistory();
     app.MapArrActivity();
+    app.MapSearchDecisions("/web");
+    app.MapWorkerHistory("/web");
+    app.MapSharedFileFilters("/web");
+    app.MapFailedTorrentDestinations("/web");
+    app.MapSearchDecisions("/api");
+    app.MapWorkerHistory("/api");
+    app.MapSharedFileFilters("/api");
+    app.MapFailedTorrentDestinations("/api");
     app.MapArrCatalogEndpoints();
     app.MapRadarrMoviesEndpoints();
 
@@ -745,8 +759,9 @@ try
     });
 
     // Web Processes — host tasks and real worker heartbeats; clients use /web/status.
-    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, WorkerProcessSupervisor workers) =>
+    app.MapGet("/web/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, WorkerProcessSupervisor workers, TorrentarrDbContext db) =>
     {
+        var lastActions = await WorkerHistory.LastActionsAsync(db, cfg.ArrInstances.Keys);
         var processes = stateMgr.GetAll().Select(s => new
         {
             category = s.Category,
@@ -776,7 +791,7 @@ try
         }).ToList<object>();
 
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchesTriggered = status.SearchesTriggered, itemsSearched = status.ItemsSearched, downloadingCount = status.DownloadingCount, seedingCount = status.SeedingCount, observedAt = status.ObservedAt, observationError = status.ObservationError, pausedLastPass = status.PausedLastPass, resumedLastPass = status.ResumedLastPass, handledLastPass = status.HandledLastPass, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchesTriggered = status.SearchesTriggered, itemsSearched = status.ItemsSearched, downloadingCount = status.DownloadingCount, seedingCount = status.SeedingCount, observedAt = status.ObservedAt, observationError = status.ObservationError, pausedLastPass = status.PausedLastPass, resumedLastPass = status.ResumedLastPass, handledLastPass = status.HandledLastPass, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = WorkerHistory.RestoreLast(status.Torrent, status.IsAlive, status.Name, "torrent", lastActions), search = WorkerHistory.RestoreLast(status.Search, status.IsAlive, status.Name, "search", lastActions) });
 
         return Results.Ok(new { processes });
     });
@@ -1147,7 +1162,7 @@ try
         };
         // Serialize then redact sensitive keys (API keys, passwords, tokens) before sending to frontend
         var jObj = Newtonsoft.Json.Linq.JObject.FromObject(flat, Newtonsoft.Json.JsonSerializer.Create(jsonSettings));
-        var redacted = StripSensitiveKeys(jObj);
+        var redacted = WebUIAuthHelpers.RedactConfigResponse(jObj);
 
         // Config version mismatch warning (qBitrr parity): return { config, warning } so frontend can show toast
         var validation = ConfigurationLoader.ValidateConfigVersion(cfg);
@@ -1181,6 +1196,7 @@ try
             TrackerRules.NormalizeNested(updatedConfig);
             InstanceRenamePersistence.Validate(cfg, updatedConfig, renames);
             TrackerRules.RenameReferences(cfg, updatedConfig, renames);
+            FailedTorrentRouting.RenameReferences(cfg, updatedConfig, renames);
             var (valid, validationError) = ConfigValidationHelper.ValidateAll(updatedConfig);
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
@@ -1262,6 +1278,7 @@ try
         var isAuthenticated = ctx.User?.Identity?.IsAuthenticated == true;
         if (!isAuthenticated && IsAuthRequired(cfg))
             return Results.Json(new { token = "" }, statusCode: 401);
+        ctx.Response.Headers.CacheControl = "no-store";
         return Results.Ok(new { token = cfg.WebUI.Token });
     });
 
@@ -1416,8 +1433,9 @@ try
         });
     });
 
-    app.MapGet("/api/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, WorkerProcessSupervisor workers) =>
+    app.MapGet("/api/processes", async (ProcessStateManager stateMgr, TorrentarrConfig cfg, WorkerProcessSupervisor workers, TorrentarrDbContext db) =>
     {
+        var lastActions = await WorkerHistory.LastActionsAsync(db, cfg.ArrInstances.Keys);
         var processes = stateMgr.GetAll().Select(s => new
         {
             category = s.Category,
@@ -1446,7 +1464,7 @@ try
             status = s.Status
         }).ToList<object>();
         foreach (var status in (await workers.GetProcessStatusAsync()).Values)
-            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchesTriggered = status.SearchesTriggered, itemsSearched = status.ItemsSearched, downloadingCount = status.DownloadingCount, seedingCount = status.SeedingCount, observedAt = status.ObservedAt, observationError = status.ObservationError, pausedLastPass = status.PausedLastPass, resumedLastPass = status.ResumedLastPass, handledLastPass = status.HandledLastPass, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = status.Torrent, search = status.Search });
+            processes.Add(new { category = cfg.ArrInstances.GetValueOrDefault(status.Name)?.Category ?? status.Name, name = status.Name, kind = status.Kind, pid = status.ProcessId, alive = status.IsAlive, rebuilding = false, searchesTriggered = status.SearchesTriggered, itemsSearched = status.ItemsSearched, downloadingCount = status.DownloadingCount, seedingCount = status.SeedingCount, observedAt = status.ObservedAt, observationError = status.ObservationError, pausedLastPass = status.PausedLastPass, resumedLastPass = status.ResumedLastPass, handledLastPass = status.HandledLastPass, searchSummary = status.SearchSummary, searchTimestamp = status.SearchTimestamp, queueCount = status.QueueCount, categoryCount = status.CategoryCount, metricType = status.MetricType, status = status.Status ?? (status.IsAlive ? "Running" : "Stopped"), restartKey = status.Name, restartable = true, torrent = WorkerHistory.RestoreLast(status.Torrent, status.IsAlive, status.Name, "torrent", lastActions), search = WorkerHistory.RestoreLast(status.Search, status.IsAlive, status.Name, "search", lastActions) });
         return Results.Ok(new { processes });
     });
 
@@ -1775,7 +1793,7 @@ try
     app.MapGet("/api/config", (TorrentarrConfig cfg) =>
     {
         var token = Newtonsoft.Json.Linq.JObject.FromObject(cfg);
-        return Results.Content(StripSensitiveKeys(token).ToString(Newtonsoft.Json.Formatting.None), "application/json");
+        return Results.Content(WebUIAuthHelpers.RedactConfigResponse(token).ToString(Newtonsoft.Json.Formatting.None), "application/json");
     });
 
     app.MapPost("/api/config", async (HttpRequest request, TorrentarrConfig cfg, ConfigurationLoader loader, WorkerProcessSupervisor workerMgr, QBitCategoryWorkerManager qbitCategoryMgr, ITorrentClientRegistry registry, TorrentarrDbContext db, IServiceProvider services) =>
@@ -1802,6 +1820,7 @@ try
             TrackerRules.NormalizeNested(updatedConfig);
             InstanceRenamePersistence.Validate(cfg, updatedConfig, renames);
             TrackerRules.RenameReferences(cfg, updatedConfig, renames);
+            FailedTorrentRouting.RenameReferences(cfg, updatedConfig, renames);
             var (valid, validationError) = ConfigValidationHelper.ValidateAll(updatedConfig);
             if (!valid)
                 return Results.BadRequest(new { error = validationError });
@@ -2229,41 +2248,13 @@ static async Task<IResult> SaveAndRespondConfigUpdate(
 }
 
 /// <summary>
-/// Recursively redact string values whose keys match <see cref="SensitiveKeyPatternRegex"/>.
-/// Returns a new JToken with sensitive values replaced by <see cref="REDACTED_PLACEHOLDER"/>.
-/// </summary>
-static Newtonsoft.Json.Linq.JToken StripSensitiveKeys(Newtonsoft.Json.Linq.JToken token)
-{
-    if (token is Newtonsoft.Json.Linq.JObject obj)
-    {
-        var result = new Newtonsoft.Json.Linq.JObject();
-        foreach (var prop in obj.Properties())
-        {
-            if (prop.Value.Type == Newtonsoft.Json.Linq.JTokenType.String && System.Text.RegularExpressions.Regex.IsMatch(prop.Name, SensitiveKeyPatternRegex, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-                result[prop.Name] = REDACTED_PLACEHOLDER;
-            else
-                result[prop.Name] = StripSensitiveKeys(prop.Value);
-        }
-        return result;
-    }
-    if (token is Newtonsoft.Json.Linq.JArray arr)
-    {
-        var result = new Newtonsoft.Json.Linq.JArray();
-        foreach (var item in arr)
-            result.Add(StripSensitiveKeys(item));
-        return result;
-    }
-    return token.DeepClone();
-}
-
-/// <summary>
 /// Returns true if a dotted config key refers to a sensitive value (e.g. "Radarr-1080.APIKey").
 /// </summary>
 static bool IsSensitiveDottedKey(string dottedKey)
 {
     if (string.IsNullOrEmpty(dottedKey) || !dottedKey.Contains('.')) return false;
     var lastPart = dottedKey[(dottedKey.LastIndexOf('.') + 1)..];
-    return System.Text.RegularExpressions.Regex.IsMatch(lastPart, SensitiveKeyPatternRegex, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    return System.Text.RegularExpressions.Regex.IsMatch(lastPart, WebUIAuthHelpers.SensitiveKeyPattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 }
 
 /// <summary>
@@ -2395,7 +2386,8 @@ class ProcessOrchestratorService : BackgroundService
     private void RefreshConfiguration()
     {
         _qbitConfigured = _config.GetAllTorrentClients().Values.Any(q =>
-            !q.Disabled && q.Host != "CHANGE_ME" && q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME");
+            !q.Disabled && q.Host != "CHANGE_ME" &&
+            (q.AuthMode == "api-key" || (q.UserName != "CHANGE_ME" && q.Password != "CHANGE_ME")));
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

@@ -807,7 +807,7 @@ Or explore related topics:
 
 - [Configuration File Reference](../config-file.md) - Complete TOML syntax
 - [qBittorrent Configuration](../qbittorrent.md) - qBittorrent setup
-- [Overseerr Integration](../search/overseerr.md) - Request management
+- [Seerr Integration](../search/overseerr.md) - Request management
 - [Ombi Integration](../search/ombi.md) - Alternative requests
 - [Troubleshooting](../../troubleshooting/index.md) - Common issues
 - [Features Overview](../../features/index.md) - What Torrentarr can do

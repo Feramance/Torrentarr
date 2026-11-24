@@ -17,6 +17,28 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [Theory]
     [InlineData("/web/config")]
     [InlineData("/api/config")]
+    public async Task ConfigReadsExposeTheSavedWebhookDestination(string endpoint)
+    {
+        using var client = _factory.CreateClientWithApiToken();
+        var settings = _factory.Services.GetRequiredService<TorrentarrConfig>().Settings;
+        var original = settings.IssueAlertsSecretUrl;
+        const string webhook = "https://alerts.example/webhook?token=delivery-key";
+        try
+        {
+            settings.IssueAlertsSecretUrl = webhook;
+            using var document = JsonDocument.Parse(await client.GetStringAsync(endpoint));
+            document.RootElement.GetProperty("Settings").GetProperty("IssueAlertsSecretUrl")
+                .GetString().Should().Be(webhook);
+        }
+        finally
+        {
+            settings.IssueAlertsSecretUrl = original;
+        }
+    }
+
+    [Theory]
+    [InlineData("/web/config")]
+    [InlineData("/api/config")]
     public async Task ScopedTrackerRulesArePublishedAndReferencesFollowRenames(string endpoint)
     {
         using var client = _factory.CreateClientWithApiToken();
@@ -78,6 +100,12 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
             (await deletion.Content.ReadAsStringAsync()).Should().Contain("Shared").And.Contain(first);
             File.ReadAllText(loader.ConfigPath).Should().Be(before);
 
+            using var stateScope = _factory.Services.CreateScope();
+            var stateDb = stateScope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
+            var oldRestKey = firstArr.ToUpperInvariant() + "||search-rest:fixture:1:MOVIE";
+            var newRestKey = renamedArr.ToUpperInvariant() + "||search-rest:fixture:1:MOVIE";
+            stateDb.MaintenanceState.Add(new() { Key = oldRestKey, Data = "{\"SearchRestUntil\":123}" });
+            await stateDb.SaveChangesAsync();
             using var rename = await Save(new()
             {
                 [$"TorrentClient.{first}"] = null,
@@ -91,6 +119,9 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
             cfg.Trackers[0].ClientIds.Should().Equal(renamed, second);
             cfg.Trackers[1].ArrInstances.Should().Equal(renamedArr, secondArr);
             loader.Load(false).Trackers.Should().BeEquivalentTo(cfg.Trackers, o => o.WithStrictOrdering());
+            (await stateDb.MaintenanceState.AsNoTracking().AnyAsync(row => row.Key == oldRestKey)).Should().BeFalse();
+            (await stateDb.MaintenanceState.AsNoTracking().SingleAsync(row => row.Key == newRestKey)).Data.Should().Contain("123");
+            await stateDb.MaintenanceState.Where(row => row.Key == newRestKey).ExecuteDeleteAsync();
         }
         finally
         {
@@ -252,63 +283,72 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
     [InlineData("/web/config", true)]
     [InlineData("/api/config", false)]
     [InlineData("/api/config", true)]
-    public async Task RenameClient_PreservesPasswordAndStoredState(string endpoint, bool canonical)
+    public async Task RenameClient_PreservesCredentialsAndStoredState(string endpoint, bool canonical)
     {
         var client = _factory.CreateClientWithApiToken();
         using var scope = _factory.Services.CreateScope();
         var config = scope.ServiceProvider.GetRequiredService<Torrentarr.Core.Configuration.TorrentarrConfig>();
         var prefix = canonical ? "TorrentClient." : "";
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var sourceName = $"qBit-before-{suffix}";
+        var targetName = $"qBit-after-{suffix}";
         var source = new Torrentarr.Core.Configuration.QBitConfig()
         {
             Host = "fixture",
             Disabled = true,
             Password = "secret",
+            AuthMode = "api-key",
+            APIKey = "qbt_ABCDEFGHIJKLMNOPQRSTUVWXYZ01",
         };
-        if (canonical) config.TorrentClients["qBit-before"] = source;
-        else config.QBitInstances["qBit-before"] = source;
+        if (canonical) config.TorrentClients[sourceName] = source;
+        else config.QBitInstances[sourceName] = source;
         var db = scope.ServiceProvider.GetRequiredService<TorrentarrDbContext>();
         db.TorrentLibrary.Add(new()
         {
             Hash = "rename-state",
-            QbitInstance = "qBit-before",
+            QbitInstance = sourceName,
             Imported = true,
             AllowedSeeding = true,
             AllowedStalled = true,
             FreeSpacePaused = true
         });
-        db.OperationalIssues.Add(new() { Code = "rename.test", Category = "system", ClientInstance = "qBit-before", FirstObserved = DateTime.UtcNow, LastObserved = DateTime.UtcNow });
+        db.OperationalIssues.Add(new() { Code = "rename.test", Category = "system", ClientInstance = sourceName, FirstObserved = DateTime.UtcNow, LastObserved = DateTime.UtcNow });
         await db.SaveChangesAsync();
         try
         {
             var response = await client.PostAsJsonAsync(endpoint, new
             {
-                renames = new Dictionary<string, string> { ["qBit-before"] = "qBit-after" },
+                renames = new Dictionary<string, string> { [sourceName] = targetName },
                 changes = new Dictionary<string, object?>
                 {
-                    [prefix + "qBit-before"] = null,
-                    [prefix + "qBit-after.Host"] = "fixture",
-                    [prefix + "qBit-after.Disabled"] = true,
-                    [prefix + "qBit-after.Password"] = "[redacted]",
+                    [prefix + sourceName] = null,
+                    [$"{prefix}{targetName}.Host"] = "fixture",
+                    [$"{prefix}{targetName}.Disabled"] = true,
+                    [$"{prefix}{targetName}.Password"] = "[redacted]",
+                    [$"{prefix}{targetName}.APIKey"] = "[redacted]",
                 }
             });
             response.EnsureSuccessStatusCode();
             var state = await db.TorrentLibrary.AsNoTracking().SingleAsync(t => t.Hash == "rename-state");
-            state.QbitInstance.Should().Be("qBit-after");
-            (await db.OperationalIssues.AsNoTracking().SingleAsync(i => i.Code == "rename.test")).ClientInstance.Should().Be("qBit-after");
+            state.QbitInstance.Should().Be(targetName);
+            (await db.OperationalIssues.AsNoTracking().SingleAsync(i => i.Code == "rename.test")).ClientInstance.Should().Be(targetName);
             state.Imported.Should().BeTrue(); state.AllowedSeeding.Should().BeTrue();
             state.AllowedStalled.Should().BeTrue(); state.FreeSpacePaused.Should().BeTrue();
             var clients = Torrentarr.Core.Configuration.TorrentClientConfigExtensions.GetAllTorrentClients(config);
-            clients.Should().NotContainKey("qBit-before");
-            clients["qBit-after"].Password.Should().Be("secret");
+            clients.Should().NotContainKey(sourceName);
+            clients[targetName].Password.Should().Be("secret");
+            clients[targetName].APIKey.Should().Be(source.APIKey);
+            var redactedConfig = await client.GetStringAsync(endpoint);
+            redactedConfig.Should().NotContain(source.APIKey);
         }
         finally
         {
             await db.OperationalIssues.Where(i => i.Code == "rename.test").ExecuteDeleteAsync();
             await db.TorrentLibrary.Where(t => t.Hash == "rename-state").ExecuteDeleteAsync();
-            config.QBitInstances.Remove("qBit-before");
-            config.QBitInstances.Remove("qBit-after");
-            config.TorrentClients.Remove("qBit-before");
-            config.TorrentClients.Remove("qBit-after");
+            config.QBitInstances.Remove(sourceName);
+            config.QBitInstances.Remove(targetName);
+            config.TorrentClients.Remove(sourceName);
+            config.TorrentClients.Remove(targetName);
         }
     }
 
@@ -470,23 +510,46 @@ public class ConfigEndpointTests : IClassFixture<TorrentarrWebApplicationFactory
                 ["Radarr-RoundTrip.Category"] = "movies-roundtrip",
                 ["Radarr-RoundTrip.Managed"] = true,
                 ["Radarr-RoundTrip.ImportMode"] = "Copy",
+                ["Radarr-RoundTrip.Torrent.RescueBlockedImports"] = true,
                 ["Radarr-RoundTrip.EntrySearch.SearchMissing"] = false,
-                ["Radarr-RoundTrip.EntrySearch.DoUpgradeSearch"] = true
+                ["Radarr-RoundTrip.EntrySearch.DoUpgradeSearch"] = true,
+                ["Radarr-RoundTrip.EntrySearch.UnsuccessfulSearchRestMinutes"] = 60,
+                ["Radarr-RoundTrip.EntrySearch.IncludeTags"] = new[] { "wanted" },
+                ["Radarr-RoundTrip.EntrySearch.ExcludeTags"] = new[] { "skip" },
+                ["Radarr-RoundTrip.EntrySearch.RequireRadarrAvailability"] = true,
+                ["Radarr-RoundTrip.EntrySearch.QuietHoursEnabled"] = true,
+                ["Radarr-RoundTrip.EntrySearch.QuietHoursStart"] = "23:30",
+                ["Radarr-RoundTrip.EntrySearch.QuietHoursEnd"] = "06:15",
+                ["Radarr-RoundTrip.EntrySearch.QuietHoursTimeZone"] = "Europe/Malta"
             }
         };
         var post = await client.PostAsync("/web/config", new StringContent(
             JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"));
         post.StatusCode.Should().Be(HttpStatusCode.OK);
 
+        var partial = await client.PostAsJsonAsync("/web/config", new
+        {
+            changes = new Dictionary<string, object> { ["Radarr-RoundTrip.ReSearch"] = false }
+        });
+        partial.StatusCode.Should().Be(HttpStatusCode.OK);
         var get = await client.GetAsync("/web/config");
         get.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = JsonDocument.Parse(await get.Content.ReadAsStringAsync()).RootElement;
         json.TryGetProperty("Radarr-RoundTrip", out var arr).Should().BeTrue();
         arr.GetProperty("ImportMode").GetString().Should().Be("Copy");
+        arr.GetProperty("Torrent").GetProperty("RescueBlockedImports").GetBoolean().Should().BeTrue();
         arr.TryGetProperty("EntrySearch", out var entrySearch).Should().BeTrue("Search must serialize as EntrySearch");
         arr.TryGetProperty("Search", out _).Should().BeFalse();
         entrySearch.GetProperty("SearchMissing").GetBoolean().Should().BeFalse();
         entrySearch.GetProperty("DoUpgradeSearch").GetBoolean().Should().BeTrue();
+        entrySearch.GetProperty("UnsuccessfulSearchRestMinutes").GetInt32().Should().Be(60);
+        entrySearch.GetProperty("IncludeTags")[0].GetString().Should().Be("wanted");
+        entrySearch.GetProperty("ExcludeTags")[0].GetString().Should().Be("skip");
+        entrySearch.GetProperty("RequireRadarrAvailability").GetBoolean().Should().BeTrue();
+        entrySearch.GetProperty("QuietHoursEnabled").GetBoolean().Should().BeTrue();
+        entrySearch.GetProperty("QuietHoursStart").GetString().Should().Be("23:30");
+        entrySearch.GetProperty("QuietHoursEnd").GetString().Should().Be("06:15");
+        entrySearch.GetProperty("QuietHoursTimeZone").GetString().Should().Be("Europe/Malta");
 
         var cleanup = new
         {

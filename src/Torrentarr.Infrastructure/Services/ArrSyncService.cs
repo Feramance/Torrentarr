@@ -1,3 +1,4 @@
+using Newtonsoft.Json.Linq;
 using Torrentarr.Core.Interfaces;
 using Torrentarr.Core.Services;
 using Torrentarr.Core.Configuration;
@@ -15,7 +16,7 @@ namespace Torrentarr.Infrastructure.Services;
 /// Called once at worker startup and periodically during the worker loop.
 ///
 /// SyncAsync updates catalog and search metadata; SyncQueueAsync updates downloads;
-/// MarkRequestsAsync applies Ombi/Overseerr request flags.
+/// MarkRequestsAsync applies Ombi and Seerr request flags.
 /// </summary>
 public class ArrSyncService
 {
@@ -30,6 +31,7 @@ public class ArrSyncService
     private readonly ITorrentClientRegistry? _torrents;
     private readonly ISafeDeletionService? _deletion;
     private readonly IOperationalIssueReporter? _issues;
+    private readonly IArrImportService? _imports;
 
     public ArrSyncService(ILogger<ArrSyncService> logger, TorrentarrConfig config,
         TorrentarrDbContext db, DatabaseRestartCoordinator restartCoordinator)
@@ -40,7 +42,7 @@ public class ArrSyncService
         TorrentarrConfig config,
         TorrentarrDbContext db,
         DatabaseRestartCoordinator restartCoordinator,
-        ITorrentClientRegistry? torrents, ISafeDeletionService? deletion, IOperationalIssueReporter? issues = null)
+        ITorrentClientRegistry? torrents, ISafeDeletionService? deletion, IOperationalIssueReporter? issues = null, IArrImportService? imports = null)
     {
         _logger = logger;
         _config = config;
@@ -49,12 +51,15 @@ public class ArrSyncService
         _torrents = torrents;
         _deletion = deletion;
         _issues = issues;
+        _imports = imports;
     }
 
     public async Task SyncAsync(string instanceName, CancellationToken ct = default)
     {
         using var logScope = _logger.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = instanceName, ["Operation"] = "CatalogSync" });
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        using var history = WorkerHistory.ObserveCatalog();
+        using var action = WorkerHistory.Active("Refreshing Arr catalog");
         _logger.LogInformation("[{Instance}] Starting sync for Arr instance {Name}", instanceName, instanceName);
 
         if (!_config.ArrInstances.TryGetValue(instanceName, out var arrConfig))
@@ -74,6 +79,14 @@ public class ArrSyncService
 
         try
         {
+            if (_imports != null)
+            {
+                await _imports.ReconcileImportRescuesAsync(arrConfig.Category, ct);
+                await _imports.ReconcileFailedTorrentMovesAsync(arrConfig.Category, ct);
+            }
+            var catalog = new SearchCatalogState(ArrActivityTracking.ServerKey(arrConfig), arrConfig.Category,
+                DateTimeOffset.UtcNow.ToUnixTimeSeconds(), false, Guid.NewGuid().ToString("N"));
+            if (_db.Database.IsSqlite()) MaintenancePersistence.Write(_db, SearchCatalogState.ObservationKey(instanceName), catalog);
             switch (arrConfig.Type.ToLowerInvariant())
             {
                 case "radarr":
@@ -97,6 +110,9 @@ public class ArrSyncService
                     return;
             }
 
+            if (_db.Database.IsSqlite())
+                MaintenancePersistence.Write(_db, SearchCatalogState.ObservationKey(instanceName),
+                    catalog with { Ready = true, At = DateTimeOffset.UtcNow.ToUnixTimeSeconds() });
             if (_issues != null) await _issues.ResolveAsync(SyncIssue(instanceName, "catalog"), ct);
             _logger.LogInformation("[{Instance}] Sync completed for {Name}; elapsed={ElapsedMs:F1}ms", instanceName, instanceName, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds);
         }
@@ -110,6 +126,14 @@ public class ArrSyncService
             _logger.LogError(ex, "[{Instance}] ArrSyncService: error syncing {Type} instance {Name}", instanceName, arrConfig.Type, instanceName);
             throw;
         }
+    }
+
+    public void RecordSearchYear(string instance, ArrInstanceConfig arr, int? year)
+    {
+        if (!_db.Database.IsSqlite() || !SearchYearCursor.ShouldFilter(arr)) return;
+        MaintenancePersistence.Write(_db, SearchCatalogState.YearKey(instance),
+            new SearchCatalogState(ArrActivityTracking.ServerKey(arr), arr.Category, 0, true, "",
+                SearchDecisionHistory.SettingsKey(arr), year));
     }
 
     /// <summary>
@@ -550,10 +574,13 @@ public class ArrSyncService
     // ── Ombi / Overseerr request marking ────────────────────────────────────
 
     /// <summary>
-    /// Fetches approved requests from Ombi/Overseerr and marks matching DB entries as IsRequest=true.
+    /// Fetches eligible requests from Ombi and Seerr (including legacy Overseerr) and marks matching DB entries as IsRequest=true.
     /// Lidarr is not supported by either service.
     /// </summary>
-    public async Task MarkRequestsAsync(string instanceName, CancellationToken ct = default)
+    public Task MarkRequestsAsync(string instanceName, CancellationToken ct = default) =>
+        MarkRequestsAsync(instanceName, null, ct);
+
+    internal async Task MarkRequestsAsync(string instanceName, HttpClient? requestHttp, CancellationToken ct)
     {
         using var logScope = _logger.BeginScope(new Dictionary<string, object> { ["ProcessInstance"] = instanceName });
         _logger.LogInformation("Evaluating request marking for {Instance}", instanceName);
@@ -591,72 +618,58 @@ public class ArrSyncService
         var requestTmdbIds = new HashSet<int>();
         var requestTvdbIds = new HashSet<int>();
 
-        var ombiHttp = ombi?.SkipTLSVerify == true ? _skipTlsHttpClient : _sharedHttpClient;
+        var ombiHttp = requestHttp ?? (ombi?.SkipTLSVerify == true ? _skipTlsHttpClient : _sharedHttpClient);
 
-        // ── Ombi ────────────────────────────────────────────────────────────
         if (useOmbi)
         {
             try
             {
-                var endpoint = arrConfig.Type.Equals("radarr", StringComparison.OrdinalIgnoreCase)
-                    ? "/api/v1/Request/movie"
-                    : "/api/v1/Request/tvlite";
-                var req = new System.Net.Http.HttpRequestMessage(
-                    System.Net.Http.HttpMethod.Get,
-                    $"{ombi!.OmbiURI.TrimEnd('/')}{endpoint}");
+                var isMovie = arrConfig.Type.Equals("radarr", StringComparison.OrdinalIgnoreCase);
+                var endpoint = isMovie ? "/api/v1/Request/movie" : "/api/v1/Request/tvlite";
+                using var req = new HttpRequestMessage(HttpMethod.Get, $"{ombi!.OmbiURI.TrimEnd('/')}{endpoint}");
                 req.Headers.Add("ApiKey", ombi.OmbiAPIKey);
-                var resp = await ombiHttp.SendAsync(req, ct);
-                if (resp.IsSuccessStatusCode)
+                using var resp = await ombiHttp.SendAsync(req, ct);
+                resp.EnsureSuccessStatusCode();
+                var requests = JArray.Parse(await resp.Content.ReadAsStringAsync(ct));
+                var ids = isMovie ? requestTmdbIds : requestTvdbIds;
+                foreach (var entry in requests)
                 {
-                    var json = await resp.Content.ReadAsStringAsync(ct);
-                    var requests = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Newtonsoft.Json.Linq.JObject>>(json);
-                    if (requests != null)
-                    {
-                        foreach (var entry in requests)
-                        {
-                            if (ombi.ApprovedOnly && entry["denied"]?.ToObject<bool?>() == true)
-                                continue;
-                            if (arrConfig.Type.Equals("radarr", StringComparison.OrdinalIgnoreCase))
-                            {
-                                var tmdbId = entry["theMovieDbId"]?.ToObject<int?>();
-                                if (tmdbId.HasValue && tmdbId.Value > 0)
-                                    requestTmdbIds.Add(tmdbId.Value);
-                            }
-                            else
-                            {
-                                var tvdbId = entry["tvDbId"]?.ToObject<int?>();
-                                if (tvdbId.HasValue && tvdbId.Value > 0)
-                                    requestTvdbIds.Add(tvdbId.Value);
-                            }
-                        }
-                    }
+                    if (entry is not JObject request)
+                        throw new Newtonsoft.Json.JsonException("Ombi response contains an invalid request.");
+                    var eligible = isMovie
+                        ? IsEligibleOmbiRequest(request, ombi.ApprovedOnly)
+                        : (request["childRequests"] as JArray)?.OfType<JObject>()
+                            .Any(child => IsEligibleOmbiRequest(child, ombi.ApprovedOnly)) == true;
+                    var id = request[isMovie ? "theMovieDbId" : "tvDbId"]?.ToObject<int?>() ?? 0;
+                    if (eligible && id > 0)
+                        ids.Add(id);
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 _logger.LogWarning(ex, "ArrSyncService: failed to fetch Ombi requests for {Name}", instanceName);
+                return;
             }
         }
 
-        // ── Overseerr ───────────────────────────────────────────────────────
         if (useOverseerr)
         {
             try
             {
                 var mediaType = arrConfig.Type.Equals("radarr", StringComparison.OrdinalIgnoreCase) ? "movie" : "tv";
-                var fetched = await new OverseerrRequestFetcher(_logger)
+                var fetched = await new OverseerrRequestFetcher(_logger, requestHttp)
                     .FetchAsync(overseerr!, mediaType, ct);
-                foreach (var id in fetched.TmdbIds)
-                    requestTmdbIds.Add(id);
-                foreach (var id in fetched.TvdbIds)
-                    requestTvdbIds.Add(id);
+                requestTmdbIds.UnionWith(fetched.TmdbIds);
+                requestTvdbIds.UnionWith(fetched.TvdbIds);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
-                _logger.LogWarning(ex, "ArrSyncService: failed to fetch Overseerr requests for {Name}", instanceName);
+                _logger.LogWarning(ex, "ArrSyncService: failed to fetch Seerr requests for {Name}", instanceName);
+                return;
             }
         }
 
+        ct.ThrowIfCancellationRequested();
         // ── Update DB ───────────────────────────────────────────────────────
         try
         {
@@ -693,11 +706,16 @@ public class ArrSyncService
                     requestSeriesIds.Count, instanceName);
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             _logger.LogError(ex, "ArrSyncService: failed to update IsRequest flags for {Name}", instanceName);
         }
     }
+
+    private static bool IsEligibleOmbiRequest(JObject request, bool approvedOnly) =>
+        request["denied"]?.ToObject<bool?>() != true
+        && request["available"]?.ToObject<bool?>() != true
+        && (!approvedOnly || request["approved"]?.ToObject<bool?>() == true);
 
     // ── Lidarr ──────────────────────────────────────────────────────────────
 
@@ -1756,6 +1774,18 @@ public class ArrSyncService
             if (!complete || matches.Count != 1)
             {
                 _logger.LogInformation("Arr cleanup blocked for {Hash}: owning client is unknown or ambiguous", downloadId);
+                continue;
+            }
+            if (_imports != null)
+            {
+                var rescue = await _imports.TryRescueImportAsync(matches[0].Torrent, cfg.Category, ct);
+                if (rescue is ImportRescueOutcome.Pending or ImportRescueOutcome.Confirmed) continue;
+            }
+            else if (cfg.Torrent.RescueBlockedImports) continue;
+            if (FailedTorrentRouting.Enabled(cfg))
+            {
+                if (_imports != null)
+                    await _imports.ParkFailedTorrentAsync(matches[0].Torrent, cfg.Category, blocklist: true, replace: cfg.ReSearch, ct);
                 continue;
             }
             var removal = await _deletion.RemoveTorrentAsync(matches[0].Instance, downloadId, true, ct);

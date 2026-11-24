@@ -28,21 +28,34 @@ public class TorrentarrDbContext : DbContext
     public DbSet<AlbumQueueModel> AlbumQueue { get; set; }
     public DbSet<BookQueueModel> BookQueue { get; set; }
     public DbSet<FilesQueued> FilesQueued { get; set; }
+    public DbSet<WorkerHistoryEvent> WorkerHistory { get; set; }
     public DbSet<SearchActivity> SearchActivity { get; set; }
     public DbSet<SonarrSearchRetry> SonarrSearchRetries { get; set; }
     public DbSet<MaintenanceState> MaintenanceState { get; set; }
 
     public DbSet<ArrActivitySample> ArrActivitySamples { get; set; }
     public DbSet<ArrActivityOperation> ArrActivityOperations { get; set; }
+    public DbSet<SearchDecision> SearchDecisions { get; set; }
 
     public DbSet<TransferSample> TransferSamples { get; set; }
 
     public DbSet<OperationalIssue> OperationalIssues { get; set; }
+    public DbSet<IssueAlertEvent> IssueAlertEvents { get; set; }
+    public DbSet<RetirementUploadObservation> RetirementUploads { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<WorkerHistoryEvent>().Property(e => e.Timestamp).HasConversion<long>();
+        modelBuilder.Entity<WorkerHistoryEvent>().Property(e => e.CompletedAt).HasConversion<long>();
+        modelBuilder.Entity<WorkerHistoryEvent>().HasIndex(e => new { e.Instance, e.Id }).HasDatabaseName("IX_history_instance");
+        modelBuilder.Entity<WorkerHistoryEvent>().HasIndex(e => new { e.Instance, e.Loop, e.Id }).HasDatabaseName("IX_history_loop");
+        modelBuilder.Entity<WorkerHistoryEvent>().HasIndex(e => new { e.Type, e.Id }).HasDatabaseName("IX_history_type");
+        modelBuilder.Entity<WorkerHistoryEvent>().HasIndex(e => e.Timestamp).HasDatabaseName("IX_history_timestamp");
+        modelBuilder.Entity<RetirementUploadObservation>().HasKey(o => new { o.Client, o.Hash });
+        modelBuilder.Entity<IssueAlertEvent>().HasIndex(e => new { e.IssueId, e.OpenedAt, e.State }).IsUnique();
         modelBuilder.Entity<ArrActivitySample>().HasKey(s => new { s.Instance, s.Minute });
+        modelBuilder.Entity<SearchDecision>().HasKey(s => new { s.Instance, s.Key });
         modelBuilder.Entity<ArrActivitySample>().HasIndex(s => s.Minute);
         modelBuilder.Entity<ArrActivityOperation>().HasKey(s => new { s.Instance, s.Server, s.CommandId });
         modelBuilder.Entity<ArrActivityOperation>().HasIndex(s => new { s.Instance, s.Server, s.EvidenceId }).IsUnique();

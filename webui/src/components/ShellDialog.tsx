@@ -60,9 +60,15 @@ export function ShellDialog({
     if (!anchor) {
       const trigger = document.activeElement as HTMLElement | null;
       dialog.showModal();
+      const rootOverflow = document.documentElement.style.overflow;
+      const bodyOverflow = document.body.style.overflow;
+      document.documentElement.style.overflow = "hidden";
+      document.body.style.overflow = "hidden";
       return () => {
         dialog.close();
-        trigger?.focus();
+        document.documentElement.style.overflow = rootOverflow;
+        document.body.style.overflow = bodyOverflow;
+        trigger?.focus({ preventScroll: true });
       };
     }
 

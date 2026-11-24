@@ -63,11 +63,14 @@ const payload = {
   rotated: false,
   truncated: false,
 };
-function view(active = true) {
+function view(
+  active = true,
+  relatedLogs?: Parameters<typeof LogsView>[0]["relatedLogs"],
+) {
   return render(
     <ToastProvider>
       <WebUIProvider>
-        <LogsView active={active} />
+        <LogsView active={active} relatedLogs={relatedLogs} />
       </WebUIProvider>
     </ToastProvider>,
   );
@@ -91,6 +94,37 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe("log viewer parity", () => {
+  it("selects the run's log day and can return to normal browsing when history has expired", async () => {
+    vi.mocked(api.getLogs).mockResolvedValue({
+      files: ["all-20261117.log", "all-20261116.log", "worker-A-20261116.log"],
+    });
+    const runId = "0123456789abcdef0123456789abcdef";
+    vi.mocked(api.searchLogs).mockResolvedValue({
+      query: runId,
+      truncated: false,
+      matches: [],
+      files_searched: ["all-20261116.log"],
+    });
+    view(true, { stream: "all", runId, startedAt: "2026-11-16T23:59:00Z" });
+    expect(
+      await screen.findByText("No retained logs matched this run."),
+    ).toBeVisible();
+    expect(api.searchLogs).toHaveBeenCalledWith(
+      "all-20261116.log",
+      expect.stringContaining(runId),
+      {
+        regex: true,
+        caseSensitive: true,
+        includeRotated: true,
+        includeDates: true,
+        context: 2,
+      },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Return to log browsing" }),
+    );
+    expect(screen.getByRole("button", { name: "Search file" })).toBeVisible();
+  });
   it("falls back to delta polling after repeated stream failures", async () => {
     view();
     await waitFor(() => expect(Stream.instances.length).toBeGreaterThan(0));

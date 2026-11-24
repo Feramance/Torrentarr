@@ -65,6 +65,10 @@ Torrentarr's configuration is organized into several sections:
 
 The `[Settings]` section contains global configuration that applies to all Torrentarr operations.
 
+Use `SharedFileFilters` for [named file filter sources](torrents.md#shared-file-filter-lists).
+Use `IssueAlertsEnabled`, `IssueAlertsSecretUrl`, and `IssueAlertTypes` to configure
+[issue webhook delivery](../webui/issues.md#webhook-alerts).
+
 ### Complete Settings Example
 
 ```toml
@@ -124,6 +128,10 @@ Internal configuration schema version. **DO NOT MODIFY** this value manually. To
 The numeric **major** of this field follows Torrentarr’s release policy: **one major version ahead of qBitrr’s** (e.g. while qBitrr is on 5.x, Torrentarr’s line is 6.x). It is not meant to equal qBitrr’s package version.
 
 ---
+
+### HistoryRetentionDays
+
+`HistoryRetentionDays = 30` keeps worker action history for 30 days by default. Set a positive number of days in General settings or `[Settings]`; changes apply during the next hourly cleanup. History survives restarts and starts collecting after upgrade. The History page, immediately below Logs, filters worker actions and observed item additions, updates, and deletions by worker and action type.
 
 ### ConsoleLevel
 
@@ -897,7 +905,12 @@ UserName = "admin"
 Password = "adminpass"
 ```
 
-For detailed qBittorrent configuration, see the [qBittorrent Configuration Guide](qbittorrent.md).
+Both `[qBit]` and `[TorrentClient.<id>]` support `AuthMode` and `APIKey`.
+The default authentication mode is `legacy`. [API key authentication](qbittorrent.md#api-key-authentication)
+
+See [retirement guards](seeding.md#retirement-guards) for client seeding defaults
+and category overrides, and [library-aware hardlink auditing](maintenance.md#library-aware-hardlink-auditing)
+for root-based storage settings.
 
 ---
 
@@ -912,9 +925,9 @@ Arr sections follow the naming pattern `[<Type>-<Name>]`:
 
 Each Arr instance has its own section with subsections for:
 
-- `[<Type>-<Name>.Search]` - Automated searching
-- `[<Type>-<Name>.Overseerr]` - Request integration (Radarr/Sonarr only)
-- `[<Type>-<Name>.Torrent]` - Torrent management
+- `[<Type>-<Name>.EntrySearch]` - Automated searching, including [pacing, library gates, and quiet hours](search/index.md#proactive-search-pacing)
+- `[<Type>-<Name>.EntrySearch.Overseerr]` - Request integration (Radarr/Sonarr only)
+- `[<Type>-<Name>.Torrent]` - Torrent management, including [shared filters](torrents.md#shared-file-filter-lists), [stall safeguards](torrents.md#qbittorrent-stall-safeguards), and [failed torrent handling](torrents.md#import-rejection-and-deferred-removal)
 - `[<Type>-<Name>.Torrent.SeedingMode]` - Seeding configuration
 - `[[Trackers]]` with `ArrInstances` - Per-integration tracker rules
 

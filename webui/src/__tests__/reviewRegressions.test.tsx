@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, act } from "@testing-library/react";
 import { pathnameUrlBase, resetUrlBaseCacheForTests } from "../api/urlBase";
 import { sectionHasCategoryChanges } from "../pages/config/configValidation";
+import * as api from "../api/client";
 import { SecureField } from "../pages/config/configFieldComponents";
 import {
   ToastProvider,
@@ -60,11 +61,73 @@ it("generates a 128-bit hex credential without a weak random fallback", () => {
       return bytes;
     });
   const change = vi.fn();
-  render(<SecureField label="Token" value="" onChange={change} />);
+  render(
+    <SecureField label="Token" value="" onChange={change} isWebApiToken />,
+  );
   fireEvent.click(screen.getByRole("button", { name: /generate|refresh/i }));
   expect(random).toHaveBeenCalled();
   expect(change).toHaveBeenCalledWith("ab".repeat(16));
 });
+it("loads the saved Web API token only on reveal and clears it on hide", async () => {
+  const getToken = vi
+    .spyOn(api, "getToken")
+    .mockResolvedValue({ token: "saved-token" });
+  const change = vi.fn();
+  render(
+    <SecureField
+      label="Token"
+      value="[redacted]"
+      onChange={change}
+      isWebApiToken
+    />,
+  );
+  const input = screen.getByLabelText("Token");
+  expect(input).toHaveValue("");
+  expect(getToken).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole("button", { name: "Show Token" }));
+  const hide = await screen.findByRole("button", { name: "Hide Token" });
+  expect(input).toHaveValue("saved-token");
+  expect(input).toHaveAttribute("type", "text");
+  fireEvent.click(hide);
+  expect(input).toHaveValue("");
+  expect(input).toHaveAttribute("type", "password");
+  expect(change).not.toHaveBeenCalled();
+});
+
+it("keeps the saved token masked on reveal failure and discards a stale reveal after editing", async () => {
+  let resolveReveal!: (value: { token: string }) => void;
+  vi.spyOn(api, "getToken")
+    .mockRejectedValueOnce(new Error("Unavailable"))
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveReveal = resolve;
+        }),
+    );
+  const change = vi.fn();
+  const field = (value: string) => (
+    <SecureField label="Token" value={value} onChange={change} isWebApiToken />
+  );
+  const { rerender } = render(field("[redacted]"));
+  const input = screen.getByLabelText("Token");
+  const show = screen.getByRole("button", { name: "Show Token" });
+
+  fireEvent.click(show);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Could not load");
+  expect(input).toHaveAttribute("type", "password");
+
+  fireEvent.click(show);
+  fireEvent.change(input, { target: { value: "draft-token" } });
+  rerender(field("draft-token"));
+  await act(async () => resolveReveal({ token: "old-token" }));
+  expect(input).toHaveAttribute("type", "password");
+  fireEvent.click(show);
+  expect(input).toHaveValue("draft-token");
+  expect(input).toHaveAttribute("type", "text");
+  expect(change).toHaveBeenCalledOnce();
+});
+
 it("shows a repeated toast immediately after dismissal", () => {
   let actions!: ReturnType<typeof useToast>;
   function Harness() {

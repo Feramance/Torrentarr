@@ -54,8 +54,15 @@ public class TorrentarrConfig
 
 }
 
+public sealed class SharedFileFilterDefinition
+{
+    public string Name { get; set; } = "";
+    public string Source { get; set; } = "";
+}
+
 public class SettingsConfig
 {
+    public int HistoryRetentionDays { get; set; } = 30;
     public string ConfigVersion { get; set; } = ConfigurationLoader.ExpectedConfigVersion;
     public string ConsoleLevel { get; set; } = "INFO";
     public bool Logging { get; set; } = true;
@@ -70,6 +77,10 @@ public class SettingsConfig
     public bool FFprobeAutoUpdate { get; set; } = true;
     public bool AutoUpdateEnabled { get; set; } = false;
     public string AutoUpdateCron { get; set; } = "0 3 * * 0";
+    public List<SharedFileFilterDefinition> SharedFileFilters { get; set; } = [];
+    public bool IssueAlertsEnabled { get; set; }
+    public string IssueAlertsSecretUrl { get; set; } = "";
+    public List<string> IssueAlertTypes { get; set; } = [];
     /// <summary>Release channel: latest, stable, or nightly.</summary>
     public string AutoUpdateChannel { get; set; } = "latest";
     public bool AutoRestartProcesses { get; set; } = true;
@@ -105,6 +116,8 @@ public class TorrentClientInstanceConfig
     public int Port { get; set; } = 8080;
     public string UserName { get; set; } = "CHANGE_ME";
     public string Password { get; set; } = "CHANGE_ME";
+    public string AuthMode { get; set; } = "legacy";
+    public string APIKey { get; set; } = "";
     /// <summary>When true, do not verify TLS certificates for this qBittorrent WebUI (self-signed certs).</summary>
     public bool SkipTLSVerify { get; set; }
     [Newtonsoft.Json.JsonConverter(typeof(TorrentScanIntervalJsonConverter))]
@@ -221,6 +234,9 @@ public class HardlinkMaintenanceConfig
     public bool Enabled { get; set; }
     public string Tag { get; set; } = "noHL";
     public bool CountLinksInsideRoot { get; set; }
+    public List<string> LibraryRoots { get; set; } = [];
+    public List<string> IgnoredRoots { get; set; } = [];
+    public int MaxInspectedEntriesPerRun { get; set; } = 10000;
     public List<string> Categories { get; set; } = new();
     public List<string> ExcludedTags { get; set; } = new();
 }
@@ -277,6 +293,8 @@ public class TrackerAssignmentConfig
 
 public class CategorySeedingConfig
 {
+    public int MinimumReportedSeeders { get; set; }
+    public int MinimumUploadInactivitySeconds { get; set; }
     public int DownloadRateLimitPerTorrent { get; set; } = -1;
     public int UploadRateLimitPerTorrent { get; set; } = -1;
     public double MaxUploadRatio { get; set; } = -1;
@@ -295,6 +313,8 @@ public class CategorySeedingConfig
 
 public class CategorySeedingCategoryOverride
 {
+    public int? MinimumReportedSeeders { get; set; }
+    public int? MinimumUploadInactivitySeconds { get; set; }
     public string Name { get; set; } = "";
     public int? DownloadRateLimitPerTorrent { get; set; }
     public int? UploadRateLimitPerTorrent { get; set; }
@@ -402,6 +422,10 @@ public class ArrInstanceConfig
 
 public class TorrentConfig
 {
+    public string FailedTorrentAction { get; set; } = FailedTorrentRouting.Existing;
+    public List<FailedTorrentDestination> FailedTorrentDestinations { get; set; } = [];
+    public bool RescueBlockedImports { get; set; }
+    public List<string> SharedFileFilters { get; set; } = [];
     public bool CaseSensitiveMatches { get; set; }
     public List<string> FolderExclusionRegex { get; set; } = new() { @"\bextras?\b", @"\bfeaturettes?\b", @"\bsamples?\b", @"\bscreens?\b" };
     public List<string> FileNameExclusionRegex { get; set; } = new() { @"\bsample\b", @"brarbg.com\b", @"\btrailer\b" };
@@ -411,6 +435,9 @@ public class TorrentConfig
     public int MaximumETA { get; set; } = -1;
     public double MaximumDeletablePercentage { get; set; } = 0.99;
     public bool DoNotRemoveSlow { get; set; } = true;
+    public bool RespectAlternateSpeedLimits { get; set; }
+    public int MetadataStallMinutes { get; set; }
+    public bool ResetStallOnDownloadProgress { get; set; }
     public int StalledDelay { get; set; } = 15;
     public bool ReSearchStalled { get; set; }
     public bool? RemoveDeadTrackers { get; set; }
@@ -444,6 +471,16 @@ public class SearchConfig
     public bool AlsoSearchSpecials { get; set; }
     public bool Unmonitored { get; set; }
     public int SearchLimit { get; set; } = 5;
+    public int RecentGrabCooldownMinutes { get; set; }
+    public int ActiveDownloadCeiling { get; set; }
+    public List<string> IncludeTags { get; set; } = [];
+    public List<string> ExcludeTags { get; set; } = [];
+    public int UnsuccessfulSearchRestMinutes { get; set; }
+    public bool RequireRadarrAvailability { get; set; }
+    public bool QuietHoursEnabled { get; set; }
+    public string QuietHoursStart { get; set; } = "22:00";
+    public string QuietHoursEnd { get; set; } = "07:00";
+    public string QuietHoursTimeZone { get; set; } = "Etc/UTC";
     public bool SearchByYear { get; set; } = true;
     public bool SearchInReverse { get; set; }
     public int SearchRequestsEvery { get; set; } = 300;

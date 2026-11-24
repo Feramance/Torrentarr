@@ -110,6 +110,10 @@ public sealed class OperationalIssueEndpointTests
             group.GetProperty("affected").GetInt32().Should().Be(1);
             group.GetProperty("occurrences").GetInt32().Should().Be(occurrences);
             group.GetProperty("impact").GetString().Should().Contain("Original blocker evidence");
+            var blocker = group.GetProperty("examples")[0].GetProperty("evidence").GetProperty("removal").GetProperty("blockers")[0];
+            blocker.GetProperty("code").GetString().Should().Be("test.blocker");
+            blocker.GetProperty("reason").GetString().Should().Be("Original blocker evidence");
+            blocker.GetProperty("remediation").GetString().Should().Be("Retry after recovery");
         }
 
         await Scan();
@@ -154,11 +158,12 @@ public sealed class OperationalIssueEndpointTests
         using var factory = new IssueFactory(); using var client = factory.CreateClientWithApiToken();
         var reporter = factory.Services.GetRequiredService<IOperationalIssueReporter>();
         var issue = new OperationalIssueReport("test.profile", "automation", "Search skipped", "Original profile preserved.", "Check profiles.", ArrInstance: "Sonarr-TV", SubjectId: "1", Severity: "warning");
-        await reporter.ReportAsync(issue); await reporter.ReportAsync(issue with { SubjectId = "2" });
+        await reporter.ReportAsync(issue.WithEvidence("password=private-test-value"));
+        await reporter.ReportAsync(issue with { SubjectId = "2" });
         factory.Clock.Advance(29);
         var hidden = await client.GetFromJsonAsync<JsonElement>(prefix + "/issues");
         hidden.GetProperty("total").GetInt32().Should().Be(0);
-        await reporter.ReportAsync(issue);
+        await reporter.ReportAsync(issue.WithEvidence("password=private-test-value"));
         factory.Clock.Advance(1);
         var newError = issue with { SubjectId = "new-error", Severity = "error" };
         await reporter.ReportAsync(newError);
@@ -173,6 +178,17 @@ public sealed class OperationalIssueEndpointTests
         await reporter.ResolveAsync(issue);
         var active = await client.GetFromJsonAsync<JsonElement>(prefix + "/issues");
         active.GetProperty("items")[0].GetProperty("affected").GetInt32().Should().Be(1);
+        var activeGroup = active.GetProperty("items")[0];
+        activeGroup.GetProperty("hasResolvedItems").GetBoolean().Should().BeTrue();
+        var scopedDetails = prefix + "/issues/" + activeGroup.GetProperty("id").GetInt64();
+        var activeItems = await client.GetFromJsonAsync<JsonElement>(scopedDetails + "?state=active");
+        activeItems.GetProperty("total").GetInt32().Should().Be(1);
+        var recoveredItems = await client.GetFromJsonAsync<JsonElement>(scopedDetails + "?state=resolved&severity=warning&page_size=1");
+        recoveredItems.GetProperty("total").GetInt32().Should().Be(1);
+        var recoveredItem = recoveredItems.GetProperty("items")[0];
+        recoveredItem.GetProperty("subjectId").GetString().Should().Be("1");
+        recoveredItem.GetProperty("evidence").GetProperty("detail").GetString().Should().NotContain("private-test-value");
+        recoveredItem.TryGetProperty("evidenceJson", out _).Should().BeFalse();
         var history = await client.GetFromJsonAsync<JsonElement>(prefix + "/issues?state=resolved");
         history.GetProperty("items")[0].GetProperty("affected").GetInt32().Should().Be(2);
         (await client.GetAsync(prefix + "/issues?state=invalid")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
@@ -271,6 +287,7 @@ public sealed class OperationalIssueEndpointTests
         var group = response.GetProperty("items")[0];
         var example = group.GetProperty("examples")[0];
         example.GetProperty("subjectName").GetString().Should().Be(matches == 1 ? "Anime episode" : null);
+        example.GetProperty("relatedLogStream").GetString().Should().Be("worker-Sonarr-Anime");
         example.GetProperty("subjectCategory").GetString().Should().Be(matches == 1 ? "sonarr-anime/season" : "sonarr-anime");
         example.GetProperty("clientInstance").GetString().Should().BeEmpty();
         var history = await client.GetFromJsonAsync<JsonElement>("/web/issues/" + group.GetProperty("id").GetInt64());

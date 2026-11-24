@@ -59,3 +59,58 @@ Issue details show the affected subject's evidence and next action. HTTP request
 Rechecks deferred by an active recovery claim or safety limit are recorded as skipped with a reason, rather than as client failures. Missing unselected or incomplete torrent files retain ownership protection without generating missing-file warnings. Successfully checked orphan prerequisites clear their old alerts even when another selected operation is blocked.
 
 Scheduled previews also reconcile older alerts for the operations they inspect; previews with temporary configuration overrides do not clear production alerts. Tracker observations expire from their original fetch time, and unknown states are rechecked sooner. Recovered or removed torrents clear their tracker alerts during host inspections, without waiting for an Arr worker cycle. Ordinary user pauses remain protected without being counted as automation issues unless an actual protection risk is present.
+
+
+## Library-aware hardlink auditing
+
+Open **Maintenance → Storage → Hardlink audit** for the selected client. The
+library-entry budget is under **Advanced**.
+
+Enable `Maintenance.Hardlinks.CountLinksInsideRoot` to distinguish a library link
+from copies linked only inside download or cross-seed folders. List local library
+and ignored roots explicitly. Each root must match a `Maintenance.PathMappings`
+local root. Configure the corresponding client path even when library files are
+outside the torrent download mappings.
+
+```toml
+[[TorrentClient.seedbox.Maintenance.PathMappings]]
+ClientPath = '/library'
+LocalPath = '/data/library'
+
+[[TorrentClient.seedbox.Maintenance.PathMappings]]
+ClientPath = '/library/cross-seed'
+LocalPath = '/data/library/cross-seed'
+
+[TorrentClient.seedbox.Maintenance.Hardlinks]
+Enabled = true
+CountLinksInsideRoot = true
+LibraryRoots = ['/data/library']
+IgnoredRoots = ['/data/library/cross-seed']
+MaxInspectedEntriesPerRun = 10000
+MaxInspectedTorrentsPerRun = 1000
+RemoveClearedTag = true
+Tag = 'noHL'
+```
+
+The audit examines the largest mapped torrent file, using device and inode
+identity to find a different directory entry in the library scope. A cross-seed
+link outside that scope supplies no library evidence. Nested library roots are
+scanned once. Ignored subtrees are excluded, and an ignored root containing an
+entire library root makes coverage unknown.
+
+Root-aware inspection supports 64-bit Linux with local ext2/3/4, XFS, Btrfs,
+tmpfs, and OverlayFS mounts providing complete `statx` identity. CIFS/SMB,
+NFS, other filesystems, and other operating systems produce an explicit unknown
+result. The ordinary link-count audit remains available independently.
+
+The scan uses directory handles and refuses symlinks, special files, nested
+filesystem mounts, missing paths, incomplete identity, and changing files or
+directories. It stops after the entry budget, thirty seconds, or sixty-four
+nested directory levels. A preview shares one coverage pass among its selected
+torrents. Execution rechecks coverage and shares the configured entry budget
+across its actions. A budget-limited run may require another normal run.
+
+Complete coverage without a library link can propose the missing-hardlink tag.
+A verified library link can remove only a tag recorded as applied by Torrentarr,
+when `RemoveClearedTag` is enabled. Incomplete coverage preserves tags and shows
+the reason in maintenance diagnostics. This tool performs tag changes only.

@@ -1051,6 +1051,7 @@ public class ConfigurationLoader
         {
             var settingsDefaults = new (string Key, object Default)[]
             {
+                ("HistoryRetentionDays", (long)30),
                 ("ConsoleLevel", "INFO"),
                 ("Logging", true),
                 ("NoInternetSleepTimer", (long)15),
@@ -1348,8 +1349,24 @@ public class ConfigurationLoader
         if (table.TryGetValue("AutoUpdateEnabled", out var autoUpdate))
             settings.AutoUpdateEnabled = Convert.ToBoolean(autoUpdate);
 
+        if (table.TryGetValue("HistoryRetentionDays", out var retention))
+            settings.HistoryRetentionDays = Convert.ToInt32(retention);
+        if (settings.HistoryRetentionDays <= 0) throw new FormatException("HistoryRetentionDays must be positive.");
+
         if (table.TryGetValue("AutoUpdateCron", out var updateCron))
             settings.AutoUpdateCron = updateCron?.ToString() ?? "0 3 * * 0";
+        if (table.TryGetValue("SharedFileFilters", out var sharedFilters) && sharedFilters is IEnumerable<object> filterDefinitions)
+            settings.SharedFileFilters = filterDefinitions.OfType<TomlTable>().Select(row => new SharedFileFilterDefinition
+            {
+                Name = row.TryGetValue("Name", out var name) ? name?.ToString() ?? "" : "",
+                Source = row.TryGetValue("Source", out var source) ? source?.ToString() ?? "" : ""
+            }).ToList();
+        if (table.TryGetValue("IssueAlertsEnabled", out var issueAlertsEnabled))
+            settings.IssueAlertsEnabled = Convert.ToBoolean(issueAlertsEnabled);
+        if (table.TryGetValue("IssueAlertsSecretUrl", out var issueAlertsUrl))
+            settings.IssueAlertsSecretUrl = issueAlertsUrl?.ToString() ?? "";
+        if (table.TryGetValue("IssueAlertTypes", out var issueAlertTypes) && issueAlertTypes is TomlArray alertArray)
+            settings.IssueAlertTypes = alertArray.Select(x => x?.ToString() ?? "").ToList();
 
         if (table.TryGetValue("AutoUpdateChannel", out var updateChannel))
             settings.AutoUpdateChannel = NormalizeAutoUpdateChannel(updateChannel?.ToString());
@@ -1404,6 +1421,8 @@ public class ConfigurationLoader
             qbit.Password = password?.ToString() ?? "CHANGE_ME";
         else
             qbit.Password = "CHANGE_ME";
+        if (table.TryGetValue("AuthMode", out var authMode)) qbit.AuthMode = authMode?.ToString() ?? "";
+        if (table.TryGetValue("APIKey", out var apiKey)) qbit.APIKey = apiKey?.ToString() ?? "";
 
         if (table.TryGetValue("SkipTLSVerify", out var skipTls))
             qbit.SkipTLSVerify = Convert.ToBoolean(skipTls);
@@ -1591,6 +1610,10 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("StalledDelay", out var stalledDelay))
             seeding.StalledDelay = DurationParser.ParseToMinutes(stalledDelay, -1);
+        if (table.TryGetValue("MinimumReportedSeeders", out var minimumReportedSeeders))
+            seeding.MinimumReportedSeeders = Convert.ToInt32(minimumReportedSeeders);
+        if (table.TryGetValue("MinimumUploadInactivitySeconds", out var minimumUploadInactivity))
+            seeding.MinimumUploadInactivitySeconds = Convert.ToInt32(minimumUploadInactivity);
 
         if (table.TryGetValue("IgnoreTorrentsYoungerThan", out var ignoreYounger))
             seeding.IgnoreTorrentsYoungerThan = DurationParser.ParseToSeconds(ignoreYounger, 180);
@@ -1640,6 +1663,10 @@ public class ConfigurationLoader
             category.TrackerUpdateBuffer = DurationParser.ParseToSeconds(updateBuffer, 0);
         if (table.TryGetValue("StalledDelay", out var stalledDelayOverride))
             category.StalledDelay = DurationParser.ParseToMinutes(stalledDelayOverride, -1);
+        if (table.TryGetValue("MinimumReportedSeeders", out var minimumReportedSeeders))
+            category.MinimumReportedSeeders = Convert.ToInt32(minimumReportedSeeders);
+        if (table.TryGetValue("MinimumUploadInactivitySeconds", out var minimumUploadInactivity))
+            category.MinimumUploadInactivitySeconds = Convert.ToInt32(minimumUploadInactivity);
         if (table.TryGetValue("IgnoreTorrentsYoungerThan", out var ignoreOverride))
             category.IgnoreTorrentsYoungerThan = DurationParser.ParseToSeconds(ignoreOverride, 180);
         return category;
@@ -1857,6 +1884,18 @@ public class ConfigurationLoader
         if (table.TryGetValue("CaseSensitiveMatches", out var caseSensitive))
             torrent.CaseSensitiveMatches = Convert.ToBoolean(caseSensitive);
 
+        if (table.TryGetValue("SharedFileFilters", out var sharedFilters) && sharedFilters is TomlArray sharedArray)
+            torrent.SharedFileFilters = sharedArray.Select(x => x?.ToString() ?? "").ToList();
+        if (table.TryGetValue("FailedTorrentAction", out var failedAction))
+            torrent.FailedTorrentAction = failedAction?.ToString() ?? "";
+        if (table.TryGetValue("FailedTorrentDestinations", out var failedRoutes) && failedRoutes is IEnumerable<object> routes)
+            torrent.FailedTorrentDestinations = routes.OfType<TomlTable>().Select(row => new FailedTorrentDestination
+            {
+                Client = row.TryGetValue("Client", out var client) ? client?.ToString() ?? "" : "",
+                Category = row.TryGetValue("Category", out var category) ? category?.ToString() ?? "" : ""
+            }).ToList();
+        if (table.TryGetValue("RescueBlockedImports", out var rescueBlockedImports))
+            torrent.RescueBlockedImports = Convert.ToBoolean(rescueBlockedImports);
         if (table.TryGetValue("FolderExclusionRegex", out var folderExclusions) && folderExclusions is TomlArray folderArray)
             torrent.FolderExclusionRegex = folderArray.Select(x => x?.ToString() ?? "").ToList();
 
@@ -1880,6 +1919,12 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("DoNotRemoveSlow", out var doNotRemoveSlow))
             torrent.DoNotRemoveSlow = Convert.ToBoolean(doNotRemoveSlow);
+        if (table.TryGetValue("RespectAlternateSpeedLimits", out var respectAlternateSpeedLimits))
+            torrent.RespectAlternateSpeedLimits = Convert.ToBoolean(respectAlternateSpeedLimits);
+        if (table.TryGetValue("MetadataStallMinutes", out var metadataStallMinutes))
+            torrent.MetadataStallMinutes = Convert.ToInt32(metadataStallMinutes);
+        if (table.TryGetValue("ResetStallOnDownloadProgress", out var resetStallOnDownloadProgress))
+            torrent.ResetStallOnDownloadProgress = Convert.ToBoolean(resetStallOnDownloadProgress);
 
         if (table.TryGetValue("StalledDelay", out var stalledDelay))
             torrent.StalledDelay = DurationParser.ParseToMinutes(stalledDelay, 15);
@@ -1953,6 +1998,23 @@ public class ConfigurationLoader
 
         if (table.TryGetValue("SearchLimit", out var searchLimit))
             search.SearchLimit = Convert.ToInt32(searchLimit);
+        if (table.TryGetValue("RecentGrabCooldownMinutes", out var grabCooldown))
+            search.RecentGrabCooldownMinutes = Convert.ToInt32(grabCooldown);
+        if (table.TryGetValue("ActiveDownloadCeiling", out var activeDownloadCeiling))
+            search.ActiveDownloadCeiling = Convert.ToInt32(activeDownloadCeiling);
+
+        if (table.TryGetValue("IncludeTags", out var includeTags) && includeTags is TomlArray included)
+            search.IncludeTags = included.Select(x => x?.ToString() ?? "").ToList();
+        if (table.TryGetValue("ExcludeTags", out var excludeTags) && excludeTags is TomlArray excluded)
+            search.ExcludeTags = excluded.Select(x => x?.ToString() ?? "").ToList();
+        if (table.TryGetValue("UnsuccessfulSearchRestMinutes", out var restMinutes))
+            search.UnsuccessfulSearchRestMinutes = Convert.ToInt32(restMinutes);
+        if (table.TryGetValue("RequireRadarrAvailability", out var availability))
+            search.RequireRadarrAvailability = Convert.ToBoolean(availability);
+        if (table.TryGetValue("QuietHoursEnabled", out var quietEnabled)) search.QuietHoursEnabled = Convert.ToBoolean(quietEnabled);
+        if (table.TryGetValue("QuietHoursStart", out var quietStart)) search.QuietHoursStart = quietStart.ToString() ?? "";
+        if (table.TryGetValue("QuietHoursEnd", out var quietEnd)) search.QuietHoursEnd = quietEnd.ToString() ?? "";
+        if (table.TryGetValue("QuietHoursTimeZone", out var quietZone)) search.QuietHoursTimeZone = quietZone.ToString() ?? "";
 
         if (table.TryGetValue("SearchByYear", out var searchByYear))
             search.SearchByYear = Convert.ToBoolean(searchByYear);
@@ -2228,6 +2290,14 @@ public class ConfigurationLoader
         sb.AppendLine($"FFprobeAutoUpdate = {config.Settings.FFprobeAutoUpdate.ToString().ToLower()}");
         sb.AppendLine($"AutoUpdateEnabled = {config.Settings.AutoUpdateEnabled.ToString().ToLower()}");
         sb.AppendLine($"AutoUpdateCron = \"{EscapeTomlString(config.Settings.AutoUpdateCron)}\"");
+        if (config.Settings.SharedFileFilters.Count > 0)
+            sb.AppendLine($"SharedFileFilters = [{string.Join(", ", config.Settings.SharedFileFilters.Select(item => "{ Name = \"" + EscapeTomlString(item.Name) + "\", Source = \"" + EscapeTomlString(item.Source) + "\" }"))}]");
+        sb.AppendLine($"HistoryRetentionDays = {config.Settings.HistoryRetentionDays}");
+        if (config.Settings.IssueAlertsEnabled) sb.AppendLine("IssueAlertsEnabled = true");
+        if (!string.IsNullOrEmpty(config.Settings.IssueAlertsSecretUrl))
+            sb.AppendLine($"IssueAlertsSecretUrl = \"{EscapeTomlString(config.Settings.IssueAlertsSecretUrl)}\"");
+        if (config.Settings.IssueAlertTypes.Count > 0)
+            sb.AppendLine($"IssueAlertTypes = [{string.Join(", ", config.Settings.IssueAlertTypes.Select(type => $"\"{EscapeTomlString(type)}\""))}]");
         sb.AppendLine($"AutoUpdateChannel = \"{EscapeTomlString(config.Settings.AutoUpdateChannel)}\"");
         sb.AppendLine($"AutoRestartProcesses = {config.Settings.AutoRestartProcesses.ToString().ToLower()}");
         sb.AppendLine($"MaxProcessRestarts = {config.Settings.MaxProcessRestarts}");
@@ -2302,6 +2372,8 @@ public class ConfigurationLoader
             sb.AppendLine($"Port = {qbit.Port}");
             sb.AppendLine($"UserName = \"{EscapeTomlString(qbit.UserName)}\"");
             sb.AppendLine($"Password = \"{EscapeTomlString(qbit.Password)}\"");
+            if (qbit.AuthMode != "legacy") sb.AppendLine($"AuthMode = \"{EscapeTomlString(qbit.AuthMode)}\"");
+            if (!string.IsNullOrEmpty(qbit.APIKey)) sb.AppendLine($"APIKey = \"{EscapeTomlString(qbit.APIKey)}\"");
             sb.AppendLine($"SkipTLSVerify = {qbit.SkipTLSVerify.ToString().ToLower()}");
             sb.AppendLine($"TorrentScanIntervalSeconds = {qbit.TorrentScanIntervalSeconds}");
             if (!string.IsNullOrEmpty(qbit.DownloadPath))
@@ -2325,6 +2397,10 @@ public class ConfigurationLoader
             sb.AppendLine(FormattableString.Invariant($"HitAndRunPartialSeedRatio = {qbit.CategorySeeding.HitAndRunPartialSeedRatio}"));
             sb.AppendLine($"TrackerUpdateBuffer = {qbit.CategorySeeding.TrackerUpdateBuffer}");
             sb.AppendLine($"StalledDelay = {qbit.CategorySeeding.StalledDelay}");
+            if (qbit.CategorySeeding.MinimumReportedSeeders != 0)
+                sb.AppendLine($"MinimumReportedSeeders = {qbit.CategorySeeding.MinimumReportedSeeders}");
+            if (qbit.CategorySeeding.MinimumUploadInactivitySeconds != 0)
+                sb.AppendLine($"MinimumUploadInactivitySeconds = {qbit.CategorySeeding.MinimumUploadInactivitySeconds}");
             sb.AppendLine($"IgnoreTorrentsYoungerThan = {qbit.CategorySeeding.IgnoreTorrentsYoungerThan}");
             foreach (var category in qbit.CategorySeeding.Categories.Where(category => !string.IsNullOrWhiteSpace(category.Name)))
             {
@@ -2343,6 +2419,8 @@ public class ConfigurationLoader
                 if (category.HitAndRunPartialSeedRatio.HasValue) sb.AppendLine(FormattableString.Invariant($"HitAndRunPartialSeedRatio = {category.HitAndRunPartialSeedRatio.Value}"));
                 if (category.TrackerUpdateBuffer.HasValue) sb.AppendLine($"TrackerUpdateBuffer = {category.TrackerUpdateBuffer.Value}");
                 if (category.StalledDelay.HasValue) sb.AppendLine($"StalledDelay = {category.StalledDelay.Value}");
+                if (category.MinimumReportedSeeders.HasValue) sb.AppendLine($"MinimumReportedSeeders = {category.MinimumReportedSeeders}");
+                if (category.MinimumUploadInactivitySeconds.HasValue) sb.AppendLine($"MinimumUploadInactivitySeconds = {category.MinimumUploadInactivitySeconds}");
                 if (category.IgnoreTorrentsYoungerThan.HasValue) sb.AppendLine($"IgnoreTorrentsYoungerThan = {category.IgnoreTorrentsYoungerThan.Value}");
             }
             sb.AppendLine();
@@ -2380,6 +2458,13 @@ public class ConfigurationLoader
             // Torrent section
             sb.AppendLine($"[{kvp.Key}.Torrent]");
             sb.AppendLine($"CaseSensitiveMatches = {instance.Torrent.CaseSensitiveMatches.ToString().ToLower()}");
+            if (instance.Torrent.SharedFileFilters.Count > 0)
+                sb.AppendLine($"SharedFileFilters = [{string.Join(", ", instance.Torrent.SharedFileFilters.Select(QuoteTomlPattern))}]");
+            if (instance.Torrent.FailedTorrentAction != FailedTorrentRouting.Existing)
+                sb.AppendLine($"FailedTorrentAction = \"{EscapeTomlString(instance.Torrent.FailedTorrentAction)}\"");
+            if (instance.Torrent.FailedTorrentDestinations.Count > 0)
+                sb.AppendLine($"FailedTorrentDestinations = [{string.Join(", ", instance.Torrent.FailedTorrentDestinations.Select(route => "{ Client = \"" + EscapeTomlString(route.Client) + "\", Category = \"" + EscapeTomlString(route.Category) + "\" }"))}]");
+            if (instance.Torrent.RescueBlockedImports) sb.AppendLine("RescueBlockedImports = true");
             sb.AppendLine($"FolderExclusionRegex = [{string.Join(", ", instance.Torrent.FolderExclusionRegex.Select(QuoteTomlPattern))}]");
             sb.AppendLine($"FileNameExclusionRegex = [{string.Join(", ", instance.Torrent.FileNameExclusionRegex.Select(QuoteTomlPattern))}]");
             // Use TOML literal strings (single-quoted) for file extensions so backslashes
@@ -2390,6 +2475,9 @@ public class ConfigurationLoader
             sb.AppendLine($"MaximumETA = {instance.Torrent.MaximumETA}");
             sb.AppendLine(FormattableString.Invariant($"MaximumDeletablePercentage = {instance.Torrent.MaximumDeletablePercentage}"));
             sb.AppendLine($"DoNotRemoveSlow = {instance.Torrent.DoNotRemoveSlow.ToString().ToLower()}");
+            if (instance.Torrent.RespectAlternateSpeedLimits) sb.AppendLine("RespectAlternateSpeedLimits = true");
+            if (instance.Torrent.MetadataStallMinutes != 0) sb.AppendLine($"MetadataStallMinutes = {instance.Torrent.MetadataStallMinutes}");
+            if (instance.Torrent.ResetStallOnDownloadProgress) sb.AppendLine("ResetStallOnDownloadProgress = true");
             sb.AppendLine($"StalledDelay = {instance.Torrent.StalledDelay}");
             sb.AppendLine($"ReSearchStalled = {instance.Torrent.ReSearchStalled.ToString().ToLower()}");
             sb.AppendLine();
@@ -2419,6 +2507,21 @@ public class ConfigurationLoader
             }
             sb.AppendLine($"Unmonitored = {instance.Search.Unmonitored.ToString().ToLower()}");
             sb.AppendLine($"SearchLimit = {instance.Search.SearchLimit}");
+            if (instance.Search.RecentGrabCooldownMinutes != 0)
+                sb.AppendLine($"RecentGrabCooldownMinutes = {instance.Search.RecentGrabCooldownMinutes}");
+            if (instance.Search.ActiveDownloadCeiling != 0)
+                sb.AppendLine($"ActiveDownloadCeiling = {instance.Search.ActiveDownloadCeiling}");
+            if (instance.Search.IncludeTags.Count > 0)
+                sb.AppendLine($"IncludeTags = [{string.Join(", ", instance.Search.IncludeTags.Select(tag => "\"" + EscapeTomlString(tag) + "\""))}]");
+            if (instance.Search.ExcludeTags.Count > 0)
+                sb.AppendLine($"ExcludeTags = [{string.Join(", ", instance.Search.ExcludeTags.Select(tag => "\"" + EscapeTomlString(tag) + "\""))}]");
+            if (instance.Search.UnsuccessfulSearchRestMinutes > 0)
+                sb.AppendLine($"UnsuccessfulSearchRestMinutes = {instance.Search.UnsuccessfulSearchRestMinutes}");
+            if (instance.Search.RequireRadarrAvailability) sb.AppendLine("RequireRadarrAvailability = true");
+            if (instance.Search.QuietHoursEnabled) sb.AppendLine("QuietHoursEnabled = true");
+            sb.AppendLine($"QuietHoursStart = \"{EscapeTomlString(instance.Search.QuietHoursStart)}\"");
+            sb.AppendLine($"QuietHoursEnd = \"{EscapeTomlString(instance.Search.QuietHoursEnd)}\"");
+            sb.AppendLine($"QuietHoursTimeZone = \"{EscapeTomlString(instance.Search.QuietHoursTimeZone)}\"");
             if (ArrSectionHelper.SupportsSearchByYear(instance.Type))
             {
                 sb.AppendLine($"SearchByYear = {instance.Search.SearchByYear.ToString().ToLower()}");

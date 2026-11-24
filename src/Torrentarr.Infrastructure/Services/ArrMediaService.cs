@@ -127,6 +127,47 @@ public class ArrMediaService : IArrMediaService
             : _searchExecutor.ExecuteSearchesAsync(instanceName, candidates, cancellationToken));
     }
 
+    internal async Task<(long At, int Count, SonarrSearchPlan[] Plans)?> PreviewCurrentAsync(
+        string name, ArrInstanceConfig arr, CancellationToken ct)
+    {
+        if (!arr.Managed || arr.ProcessingOnly || !_dbContext.Database.IsSqlite() || _searchExecutor is not SearchExecutor executor)
+            return null;
+        var catalogKey = SearchCatalogState.ObservationKey(name);
+        var version = await SearchCatalogState.ReadAsync(_dbContext, catalogKey, ct);
+        if (version == null || !version.Ready || version.Server != ArrActivityTracking.ServerKey(arr)
+            || !CategoryPathHelper.CategoryEquals(version.Category, arr.Category)) return null;
+        var year = await SearchCatalogState.ReadAsync(_dbContext, SearchCatalogState.YearKey(name), ct);
+        var plans = new List<SonarrSearchPlan>();
+        // The worker runs missing work before its additive upgrade pass.
+        if (!arr.Search.DoUpgradeSearch && arr.Search.SearchMissing)
+            await AddPlansAsync(await GetSearchCandidatesAsync(name, arr, ct));
+        if (arr.Search.DoUpgradeSearch || arr.Search.QualityUnmetSearch || arr.Search.CustomFormatUnmetSearch)
+            await AddPlansAsync(await GetUpgradeCandidatesAsync(name, arr, ct));
+        if (version != await SearchCatalogState.ReadAsync(_dbContext, catalogKey, ct)
+            || year != await SearchCatalogState.ReadAsync(_dbContext, SearchCatalogState.YearKey(name), ct)
+            || _config.Revision != _config.LatestRevision) return null;
+        // A successful submission in the first pass normally clears the same candidate from the upgrade pass.
+        var unique = plans.DistinctBy(plan =>
+        {
+            var item = SearchDecisionHistory.Describe(plan);
+            return (item.Id, item.Type, item.SeriesId, item.Season, item.ArtistId, item.AuthorId, item.Scope);
+        }).ToArray();
+        return (version.At, unique.Length, unique.Take(SearchDecisionHistory.MaxPreview).ToArray());
+
+        async Task AddPlansAsync(List<SearchCandidate> candidates)
+        {
+            if (SearchYearCursor.ShouldFilter(arr) && candidates.Count > 0)
+            {
+                var years = await CollectYearsAsync(name, arr, ct);
+                var selected = year?.Settings == SearchDecisionHistory.SettingsKey(arr) && year.Server == version.Server
+                    && year.Year is int stored && years.Contains(stored) ? year.Year
+                    : SearchYearCursor.OrderYears(years, arr.Search.SearchInReverse).Select(value => (int?)value).FirstOrDefault();
+                candidates = FilterSearchYear(candidates, selected);
+            }
+            plans.AddRange(await executor.PlanProactiveAsync(name, arr, candidates, ct));
+        }
+    }
+
     public async Task<List<WantedMedia>> GetWantedMediaAsync(string category, CancellationToken cancellationToken = default)
     {
         var wanted = new List<WantedMedia>();
@@ -351,7 +392,7 @@ public class ArrMediaService : IArrMediaService
                             Title = movie.Title,
                             Type = "Movie",
                             Reason = movie.Reason ?? "Missing",
-                            Priority = priority,
+                            Priority = movie.IsRequest && priority == ReasonPriority["Missing"] ? 0 : priority,
                             Year = movie.Year
                         });
                     }
@@ -614,10 +655,11 @@ public class ArrMediaService : IArrMediaService
         foreach (var candidate in candidates)
             _logger.LogInformation("Search year decision for {Title} [id={ArrId}, instance={Instance}]: year={Year}, current={CurrentYear}, todaysRelease={Today}, eligible={Eligible}",
                 candidate.Title, candidate.ArrId, instanceName, candidate.Year, currentYear, candidate.IsTodaysRelease, candidate.IsTodaysRelease || candidate.Year == currentYear);
-        return candidates
-            .Where(c => c.IsTodaysRelease || c.Year == currentYear)
-            .ToList();
+        return FilterSearchYear(candidates, currentYear);
     }
+
+    private static List<SearchCandidate> FilterSearchYear(List<SearchCandidate> candidates, int? year) =>
+        year == null ? candidates : candidates.Where(candidate => candidate.IsTodaysRelease || candidate.Year == year).ToList();
 
     internal async Task<List<int>> CollectYearsAsync(
         string instanceName,

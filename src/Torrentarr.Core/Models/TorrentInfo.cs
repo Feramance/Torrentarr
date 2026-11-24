@@ -7,6 +7,12 @@ namespace Torrentarr.Core.Models;
 /// </summary>
 public class TorrentInfo
 {
+    [JsonIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public long ObservedAtUnixSeconds { get; set; }
+
+    [JsonIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public string? ObservedRetirementState { get; set; }
+
     [JsonProperty("hash")]
     public string Hash { get; set; } = "";
 
@@ -43,8 +49,11 @@ public class TorrentInfo
     [JsonProperty("tracker")]
     public string Tracker { get; set; } = "";
 
-    [JsonProperty("uploaded")]
-    public long Uploaded { get; set; }
+    [JsonProperty("uploaded", NullValueHandling = NullValueHandling.Ignore)]
+    public long Uploaded { get => ObservedUploaded ?? 0; set => ObservedUploaded = value; }
+
+    [JsonIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public long? ObservedUploaded { get; private set; }
 
     [JsonProperty("downloaded")]
     public long Downloaded { get; set; }
@@ -94,8 +103,11 @@ public class TorrentInfo
     [JsonProperty("private")]
     public bool? IsPrivate { get; set; }
 
-    [JsonProperty("num_complete")]
-    public int CompletePeers { get; set; }
+    [JsonProperty("num_complete", NullValueHandling = NullValueHandling.Ignore)]
+    public int CompletePeers { get => ObservedSeeders ?? 0; set => ObservedSeeders = value; }
+
+    [JsonIgnore, System.Text.Json.Serialization.JsonIgnore]
+    public int? ObservedSeeders { get; private set; }
 
     [JsonProperty("dlspeed")]
     public long DownloadSpeed { get; set; }

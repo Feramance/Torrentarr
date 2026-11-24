@@ -1,3 +1,5 @@
+using Torrentarr.Core.Models;
+
 namespace Torrentarr.Core.Services;
 
 /// <summary>Category arguments are resolved owner categories, not raw client subcategories.</summary>
@@ -9,7 +11,20 @@ public interface IArrImportService
         string category,
         CancellationToken cancellationToken = default);
 
+    Task<ImportResult> TriggerImportAsync(TorrentInfo torrent, string category, CancellationToken cancellationToken = default)
+        => TriggerImportAsync(torrent.Hash, torrent.ContentPath, category, cancellationToken);
+
     Task<bool> IsImportedAsync(string hash, string category, DateTimeOffset historySince, CancellationToken cancellationToken = default);
+
+    Task ParkFailedTorrentAsync(TorrentInfo torrent, string category, bool blocklist, bool replace,
+        CancellationToken ct = default) => Task.CompletedTask;
+
+    Task ReconcileFailedTorrentMovesAsync(string category, CancellationToken ct = default) => Task.CompletedTask;
+
+    Task ReconcileImportRescuesAsync(string category, CancellationToken ct = default) => Task.CompletedTask;
+
+    Task<ImportRescueOutcome> TryRescueImportAsync(TorrentInfo torrent, string category, CancellationToken ct = default)
+        => Task.FromResult(ImportRescueOutcome.NotApplicable);
 
     Task MarkAsImportedAsync(string instanceId, string hash, IEnumerable<string> tags, CancellationToken cancellationToken = default);
 
@@ -28,9 +43,12 @@ public interface IArrImportService
     Task<bool> BlocklistAndReSearchAsync(string hash, string category, CancellationToken cancellationToken = default);
 }
 
+public enum ImportRescueOutcome { NotApplicable, Pending, Confirmed, Unconfirmed }
+
 public class ImportResult
 {
     public bool Success { get; set; }
+    public bool Deferred { get; set; }
     public string Message { get; set; } = "";
     public int? CommandId { get; set; }
 }

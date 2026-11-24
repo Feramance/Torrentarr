@@ -282,7 +282,7 @@ public partial class SonarrClient : IArrActivityClient
     /// Delete item from queue
     /// </summary>
     public async Task<bool> DeleteFromQueueAsync(int id, bool removeFromClient = true, bool blocklist = false,
-        CancellationToken ct = default, bool skipRedownload = false, bool throwOnFailure = false)
+        CancellationToken ct = default, bool skipRedownload = false, bool throwOnFailure = false, bool singleAttempt = false)
     {
         var request = await CreateRequestAsync($"queue/{id}", Method.Delete, ct);
         AddApiKeyHeader(request);
@@ -298,7 +298,8 @@ public partial class SonarrClient : IArrActivityClient
             request.AddQueryParameter("blocklistMethod", blocklist ? blocklistMethod : "doNotBlocklist");
         }
 
-        var response = await ArrClientResponse.ExecuteAsync(_client, request, ct);
+        var response = singleAttempt ? await ArrClientResponse.ExecuteOnceAsync(_client, request, ct)
+            : await ArrClientResponse.ExecuteAsync(_client, request, ct);
         if (throwOnFailure) ArrClientResponse.EnsureSuccess(response, $"DELETE queue/{id} (blocklist={blocklist})");
         return response.IsSuccessful;
     }
@@ -407,6 +408,10 @@ public partial class SonarrClient : IArrActivityClient
     private async Task<RestRequest> CreateRequestAsync(string path, Method method, CancellationToken ct)
     {
         var info = await SonarrApiDiscovery.ResolveAsync(_baseUrl, _apiKey, _skipTlsVerify, ct);
+        // Sonarr v5 accepts multiple download IDs for a manual-import preview.
+        if (info.ApiVersion == "v5" && path.StartsWith("manualimport?", StringComparison.Ordinal))
+            path = path.Replace("?downloadId=", "?downloadIds=", StringComparison.Ordinal)
+                .Replace("&downloadId=", "&downloadIds=", StringComparison.Ordinal);
         return new RestRequest($"api/{info.ApiVersion}/{path}", method);
     }
 

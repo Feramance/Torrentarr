@@ -19,7 +19,7 @@ public class ArrSyncSearchProgressTests
     [Theory]
     [InlineData("sonarr", "episodefilesmodel")]
     [InlineData("lidarr", "trackfilesmodel")]
-    public async Task IdenticalSync_PreservesRowsAndDoesNotWrite(string type, string table)
+    public async Task IdenticalSync_RefreshesObservationWithoutRewritingCatalog(string type, string table)
     {
         using var api = new ArrSyncStub();
         var config = new TorrentarrConfig();
@@ -34,7 +34,10 @@ public class ArrSyncSearchProgressTests
         db.ChangeTracker.Clear();
         await sync.SyncAsync("Test");
         (await db.Database.SqlQueryRaw<int>(idSql).SingleAsync()).Should().Be(id);
-        (await db.Database.SqlQueryRaw<int>("SELECT total_changes() AS Value").SingleAsync()).Should().Be(changes);
+        // Only the start and completion of the catalog observation should be written.
+        (await db.Database.SqlQueryRaw<int>("SELECT total_changes() AS Value").SingleAsync()).Should().Be(changes + 2);
+        (await SearchCatalogState.ReadAsync(db, SearchCatalogState.ObservationKey("Test"), default))
+            .Should().Match<SearchCatalogState>(observation => observation.Ready);
         if (type == "lidarr") (await db.Tracks.SingleAsync()).ArrId.Should().Be(1);
         else
         {

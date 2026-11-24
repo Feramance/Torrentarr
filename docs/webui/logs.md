@@ -16,14 +16,26 @@ that bound does not truncate the file on disk.
   a fallback. It pauses when the page is inactive.
 - **Follow** controls scrolling independently of Live.
 - Level buttons and the viewer's find control filter/search the loaded window.
-- **Search file** searches on the server; include rotated files for older history.
-  Search results are bounded and indicate truncation.
+- **Search file** searches on the server; include rotated files for older entries
+  from the selected date. Search results are bounded and indicate truncation.
 - **Download** returns the complete selected file, including entries outside the
   loaded window. Download individual rotated files for previous days.
 
 Multiline exception causes and appended operation/cycle/client/torrent context are
 preserved. A request accepted by Arr is a submission result; check later observation
 messages for completed work.
+
+## Related logs and support details
+
+In **Maintenance → Recent Runs**, **View related logs** searches the aggregate
+stream by maintenance run ID. In **Processes → Search activity**, the same action
+opens logs for the decision's recorded worker and submission cycle. Related log
+searches include retained rotations. If no matching records remain, use
+**Return to log browsing** to return to the ordinary stream view.
+
+In **Issues**, **Browse worker logs** opens the known worker stream when
+available. **Copy details** copies a redacted support summary from an issue,
+maintenance run, or search decision.
 
 ## Detail and retention
 
@@ -46,7 +58,7 @@ Host exposes these routes under both `/web` and `/api`; standalone WebUI uses
 | `GET /web/logs` | Available files and metadata |
 | `GET /web/logs/{name}` | Bounded tail/history or byte delta |
 | `GET /web/logs/{name}/stream` | Live events and rotation notifications |
-| `GET /web/logs/{name}/search` | Bounded server search, optionally including rotated files |
+| `GET /web/logs/{name}/search` | Bounded server search. With rotation enabled, `include_dates=1` searches other retained dates in the same daily stream as well. |
 | `GET /web/logs/{name}/download` | Complete file download |
 | `POST /web/loglevel` | Runtime verbosity |
 

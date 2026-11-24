@@ -74,6 +74,101 @@ public class SearchExecutorTests
     }
 
     [Fact]
+    public async Task ItemRestDefersOnlyTheAffectedProactiveItem()
+    {
+        var config = CreateConfigWithRadarr();
+        config.ArrInstances["Radarr-test"].Search.UnsuccessfulSearchRestMinutes = 60;
+        var clock = new ManualClock { Now = DateTimeOffset.Parse("2026-11-21T12:00:00Z") };
+        var expiry = clock.Now.AddMinutes(1).ToUnixTimeSeconds();
+        var service = CreateTestService(config);
+        service.Clock = clock;
+        service.Pacing = () => new(null, null, Rest: new(new Dictionary<string, long> { ["1:MOVIE"] = expiry }));
+        SearchCandidate[] candidates = [new() { ArrId = 1, Type = "Movie", Reason = "Missing" },
+            new() { ArrId = 2, Type = "Movie", Reason = "Upgrade" }];
+        var result = await service.ExecuteSearchesAsync("Radarr-test", candidates);
+        result.SearchedIds.Should().Equal(2);
+        clock.Now = DateTimeOffset.FromUnixTimeSeconds(expiry);
+        result = await service.ExecuteSearchesAsync("Radarr-test", [candidates[0]]);
+        result.SearchedIds.Should().Equal(1);
+        service.Pacing = () => throw new InvalidOperationException("Replacements should skip rest.");
+        result = await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1, Type = "Movie", Reason = "Retry" }]);
+        result.SearchedIds.Should().Equal(1);
+    }
+
+    [Fact]
+    public async Task LibraryAndQuietHourGatesHoldProactiveWorkButAllowReplacements()
+    {
+        var config = CreateConfigWithRadarr();
+        var arr = config.ArrInstances["Radarr-test"];
+        arr.Search.RequireRadarrAvailability = true;
+        var service = CreateTestService(config);
+        service.Clock = new ManualClock { Now = DateTimeOffset.Parse("2026-11-21T23:00:00Z") };
+        service.Pacing = () => new(null, null, new(new Dictionary<int, SearchLibraryEvidence>
+        { [1] = new(null, false), [2] = new(null, true) }));
+        SearchCandidate[] candidates = [new() { ArrId = 1, Type = "Movie", Reason = "Missing" },
+            new() { ArrId = 2, Type = "Movie", Reason = "Upgrade" }];
+        var result = await service.ExecuteSearchesAsync("Radarr-test", candidates);
+        result.SearchedIds.Should().Equal(2);
+        service.TriggeredCandidates.Clear();
+        arr.Search.QuietHoursEnabled = true;
+        result = await service.ExecuteSearchesAsync("Radarr-test", candidates);
+        result.SearchesTriggered.Should().Be(0);
+        service.Pacing = () => throw new InvalidOperationException("Replacements should not observe proactive gates.");
+        result = await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1, Type = "Movie", Reason = "Retry" }]);
+        result.SearchedIds.Should().Equal(1);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TagExclusionDoesNotHoldTheSearchYear(bool changesBeforeSubmission)
+    {
+        var config = CreateConfigWithRadarr();
+        var arr = config.ArrInstances["Radarr-test"];
+        arr.Search.SearchByYear = true;
+        arr.Search.ExcludeTags = ["skip"];
+        var service = CreateTestService(config);
+        var observed = 0;
+        service.Pacing = () => new(null, null, new(new Dictionary<int, SearchLibraryEvidence>
+        {
+            [1] = new(changesBeforeSubmission && ++observed == 1 ? [] : ["skip"], null)
+        }));
+
+        var result = await service.ExecuteSearchesAsync("Radarr-test",
+            [new() { ArrId = 1, Type = "Movie", Reason = "Missing", Year = 2020 }]);
+
+        result.LoopCompleted.Should().BeTrue();
+        service.TriggeredCandidates.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PacingChecksFreshEvidenceAndKeepsReplacementSearchesIndependent()
+    {
+        var config = CreateConfigWithRadarr();
+        config.ArrInstances["Radarr-test"].Search.ActiveDownloadCeiling = 2;
+        config.ArrInstances["Radarr-test"].Search.RecentGrabCooldownMinutes = 2;
+        var clock = new ManualClock { Now = DateTimeOffset.Parse("2026-11-17T12:00:00Z") };
+        var service = CreateTestService(config);
+        service.Clock = clock;
+        var observed = 0;
+        var grabs = new Dictionary<int, long> { [1] = clock.Now.ToUnixTimeSeconds() - 30 };
+        service.Pacing = () => new(++observed == 1 ? 1 : 2, grabs);
+        SearchCandidate[] candidates = [new() { ArrId = 1, Type = "Movie", Reason = "Missing" },
+            new() { ArrId = 2, Type = "Movie", Reason = "Upgrade" }];
+        var result = await service.ExecuteSearchesAsync("Radarr-test", candidates);
+        result.LoopCompleted.Should().BeFalse();
+        service.TriggeredCandidates.Should().BeEmpty();
+        observed.Should().Be(2);
+
+        service.Pacing = () => new(1, grabs);
+        result = await service.ExecuteSearchesAsync("Radarr-test", candidates);
+        result.SearchedIds.Should().Equal(2);
+        service.Pacing = () => throw new InvalidOperationException("A replacement search should skip pacing.");
+        result = await service.ExecuteSearchesAsync("Radarr-test", [new() { ArrId = 1, Type = "Movie", Reason = "Retry" }]);
+        result.SearchedIds.Should().Equal(1);
+    }
+
+    [Fact]
     public async Task EmptySearch_ExplainsWhyNothingWasSubmittedAtInformation()
     {
         var logger = new ActivityLogger<SearchExecutor>();
@@ -588,6 +683,7 @@ internal sealed class TestSearchExecutor : SearchExecutor
     public bool FailProgressSave { get; set; }
     public int ActiveCommandCount { get; set; }
     public Action? OnCapacityRead { get; set; }
+    public Func<SearchPacingObservation>? Pacing { get; set; }
     public List<SearchCandidate> TriggeredCandidates { get; } = new();
 
     public TestSearchExecutor(
@@ -605,6 +701,9 @@ internal sealed class TestSearchExecutor : SearchExecutor
         OnCapacityRead?.Invoke();
         return Task.FromResult(ActiveCommandCount);
     }
+
+    internal override Task<SearchPacingObservation> ObservePacingAsync(ArrInstanceConfig arr, CancellationToken ct) =>
+        Pacing == null ? base.ObservePacingAsync(arr, ct) : Task.FromResult(Pacing());
 
     protected override Task<bool> TriggerSearchForCandidateAsync(
         string instanceName,

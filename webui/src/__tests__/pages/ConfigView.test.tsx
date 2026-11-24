@@ -147,6 +147,60 @@ async function openSection(name: string): Promise<void> {
   await userEvent.click(button);
 }
 
+it("groups the new Arr fields with the settings they control", async () => {
+  server.use(
+    http.get("/web/config", () => HttpResponse.json(configWithInstances)),
+  );
+  renderConfig();
+  await openSection("Radarr-1080");
+
+  const group = (name: string) =>
+    within(
+      screen.getByRole("heading", { name, exact: true }).closest("section")!,
+    );
+  expect(
+    group("Proactive search controls").getByRole("textbox", {
+      name: "Active-download ceiling",
+    }),
+  ).toBeVisible();
+  expect(
+    group("Quiet hours").getByRole("textbox", { name: "Quiet hours timezone" }),
+  ).toBeVisible();
+  expect(
+    group("Failed torrents and import rescue").getByRole("checkbox", {
+      name: "Rescue supported blocked imports",
+    }),
+  ).toBeVisible();
+  expect(
+    group("Stall safeguards").getByRole("checkbox", {
+      name: "Reset stalled grace on download progress",
+    }),
+  ).toBeVisible();
+  expect(
+    group("File filtering").getByRole("textbox", {
+      name: "Shared file filter lists",
+    }),
+  ).toBeVisible();
+});
+
+it("offers the supported issue alert types in the General editor", async () => {
+  server.use(
+    http.get("/web/config", () => HttpResponse.json(configWithInstances)),
+  );
+  renderConfig();
+  const issueTypes = await screen.findByRole("combobox", {
+    name: "Issue types",
+  });
+  await userEvent.click(issueTypes);
+  expect(
+    within(screen.getByRole("listbox"))
+      .getAllByRole("option")
+      .map((option) => option.textContent),
+  ).toEqual(["worker", "import", "tracker"]);
+  await userEvent.click(screen.getByRole("option", { name: "tracker" }));
+  expect(screen.getByRole("button", { name: "Remove tracker" })).toBeVisible();
+});
+
 it("saves the explicit choice to keep protection off for an unchanged monitor list", async () => {
   const config = {
     ...configQbitOnly,
@@ -930,53 +984,69 @@ it.each(["Interface & Access", "Radarr-1080"])(
   },
 );
 
-it("uses the shared client dialog and saves only the selected torrent client", async () => {
-  let changes: Record<string, unknown> = {};
-  server.use(
-    http.get("/web/config", () =>
-      HttpResponse.json({
-        ...configQbitOnly,
-        TorrentClient: {
-          seedbox: {
-            Type: "transmission",
-            Host: "old-host",
-            Port: 9091,
-            Password: "[redacted]",
-            Maintenance: {
-              PathMappings: [
-                { ClientPath: "/old", LocalPath: "/new", FutureProperty: true },
-              ],
+it.each([false, true])(
+  "saves only edited torrent-client fields (replace password=%s)",
+  async (replacePassword) => {
+    let changes: Record<string, unknown> = {};
+    server.use(
+      http.get("/web/config", () =>
+        HttpResponse.json({
+          ...configQbitOnly,
+          TorrentClient: {
+            seedbox: {
+              Type: "transmission",
+              Host: "old-host",
+              Port: 9091,
+              Password: "[redacted]",
+              Maintenance: {
+                PathMappings: [
+                  {
+                    ClientPath: "/old",
+                    LocalPath: "/new",
+                    FutureProperty: true,
+                  },
+                ],
+              },
             },
           },
-        },
+        }),
+      ),
+      http.post("/web/config", async ({ request }) => {
+        changes = (
+          (await request.json()) as { changes: Record<string, unknown> }
+        ).changes;
+        return HttpResponse.json(okUpdateResponse);
       }),
-    ),
-    http.post("/web/config", async ({ request }) => {
-      changes = ((await request.json()) as { changes: Record<string, unknown> })
-        .changes;
-      return HttpResponse.json(okUpdateResponse);
-    }),
-  );
-  const user = userEvent.setup();
-  renderConfig();
-  await openSection("seedbox");
-  expect(
-    screen.getByRole("textbox", { name: "Client Type", exact: true }),
-  ).toHaveValue("transmission");
-  expect(
-    screen.getByText("Path mappings", { selector: "h4" }),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByRole("button", { name: "Open Shared Settings" }),
-  ).toBeEnabled();
-  const host = screen.getByRole("textbox", { name: "Host", exact: true });
-  await user.clear(host);
-  await user.type(host, "new-host");
-  await user.click(screen.getByRole("button", { name: "Save", exact: true }));
-  await waitFor(() =>
-    expect(changes).toEqual({ "TorrentClient.seedbox.Host": "new-host" }),
-  );
-});
+    );
+    const user = userEvent.setup();
+    renderConfig();
+    await openSection("seedbox");
+    expect(
+      screen.getByRole("textbox", { name: "Client Type", exact: true }),
+    ).toHaveValue("transmission");
+    expect(
+      screen.getByText("Path mappings", { selector: "h4" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open Shared Settings" }),
+    ).toBeEnabled();
+    const password = screen.getByLabelText("Password", { exact: true });
+    expect(password).toHaveValue("");
+    if (replacePassword) await user.type(password, "replacement-password");
+    const host = screen.getByRole("textbox", { name: "Host", exact: true });
+    await user.clear(host);
+    await user.type(host, "new-host");
+    await user.click(screen.getByRole("button", { name: "Save", exact: true }));
+    await waitFor(() =>
+      expect(changes).toEqual({
+        "TorrentClient.seedbox.Host": "new-host",
+        ...(replacePassword
+          ? { "TorrentClient.seedbox.Password": "replacement-password" }
+          : {}),
+      }),
+    );
+  },
+);
 
 it.each([false, true])(
   "saves mapping add/edit/remove/clear and retains a failed draft (canonical=%s)",
@@ -1054,6 +1124,7 @@ it.each([false, true])(
       );
     };
     await open();
+    await user.click(screen.getByText("/downloads → /data", { exact: true }));
     fireEvent.change(
       screen.getByRole("textbox", { name: "Torrentarr path", exact: true }),
       { target: { value: "/edited" } },
@@ -1068,19 +1139,21 @@ it.each([false, true])(
     ).toHaveValue("/edited");
     expect(mappings).toEqual(initial);
     fail = false;
+    await user.click(screen.getByRole("button", { name: "Done" }));
     await user.click(screen.getByRole("button", { name: "Add path mapping" }));
+    const second = screen.getByRole("group", { name: "Path mapping 2" });
     fireEvent.change(
-      screen.getAllByRole("textbox", {
+      within(second).getByRole("textbox", {
         name: "Torrent client path",
         exact: true,
-      })[1],
+      }),
       { target: { value: "D:\\Downloads\\TV" } },
     );
     fireEvent.change(
-      screen.getAllByRole("textbox", {
+      within(second).getByRole("textbox", {
         name: "Torrentarr path",
         exact: true,
-      })[1],
+      }),
       { target: { value: "/tv files" } },
     );
     await save();
@@ -1101,17 +1174,19 @@ it.each([false, true])(
     ).toBeInTheDocument();
     await open();
     expect(
-      screen.getAllByRole("textbox", {
-        name: "Torrentarr path",
-        exact: true,
-      })[0],
-    ).toHaveValue("/edited");
+      screen.getByText("/downloads → /edited", { exact: true }),
+    ).toBeVisible();
+    const savedSecond = screen.getByRole("group", { name: "Path mapping 2" });
+    if (!savedSecond.hasAttribute("open")) {
+      await user.click(savedSecond.querySelector("summary")!);
+    }
     await user.click(
-      screen.getAllByRole("button", { name: "Remove path mapping" })[1],
+      within(savedSecond).getByRole("button", { name: "Remove path mapping" }),
     );
     await save();
     expect(mappings).toHaveLength(1);
     await open();
+    await user.click(screen.getByText("/downloads → /edited", { exact: true }));
     await user.click(
       screen.getByRole("button", { name: "Remove path mapping" }),
     );
@@ -1899,6 +1974,8 @@ it("focuses the affected free-space monitor and preserves edits on fallback", as
 });
 
 it("edits General using the existing Settings keys", async () => {
+  const originalWebhook = "https://alerts.example/original";
+  const newWebhook = "https://alerts.example/replacement";
   let changes: Record<string, unknown> = {};
   server.use(
     http.get("/web/config", () =>
@@ -1909,6 +1986,7 @@ it("edits General using the existing Settings keys", async () => {
           ConsoleLevel: "INFO",
           AutoUpdateCron: "0 3 * * 0",
           AutoUpdateChannel: "latest",
+          IssueAlertsSecretUrl: originalWebhook,
         },
       }),
     ),
@@ -1925,11 +2003,19 @@ it("edits General using the existing Settings keys", async () => {
   });
   expect(category).toHaveValue("failed");
   fireEvent.change(category, { target: { value: "failed-updated" } });
+  const webhook = within(general).getByRole("textbox", {
+    name: "Webhook destination",
+  });
+  expect(webhook).toHaveValue(originalWebhook);
+  fireEvent.change(webhook, { target: { value: newWebhook } });
   await userEvent.click(
     within(general).getByRole("button", { name: "Save", exact: true }),
   );
   await waitFor(() =>
-    expect(changes).toEqual({ "Settings.FailedCategory": "failed-updated" }),
+    expect(changes).toEqual({
+      "Settings.FailedCategory": "failed-updated",
+      "Settings.IssueAlertsSecretUrl": newWebhook,
+    }),
   );
 });
 

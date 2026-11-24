@@ -18,6 +18,7 @@ public static class MaintenanceConfigValidation
             return "Maintenance ages, retention, and per-run limits must be non-negative; preview TTL must be positive.";
         if (config.CategoryTransitions == null || config.CategoryMappings == null || config.TrackerAssignments == null
             || config.ExplicitCategories == null || config.ExcludedCategories == null || config.ExcludedTags == null
+            || config.Hardlinks.LibraryRoots == null || config.Hardlinks.IgnoredRoots == null
             || config.Orphans.ExcludePatterns == null || config.Hardlinks.Categories == null || config.Hardlinks.ExcludedTags == null
             || config.AutomaticManagement.IgnoredTags == null || config.Unregistered.Messages == null)
             return "Maintenance collections must be lists, not null.";
@@ -41,10 +42,15 @@ public static class MaintenanceConfigValidation
         if (recovery.Outcome is not ("keep" or "recycle") || recovery.States == null || recovery.MaxRepairAttempts < 1
             || recovery.MaxPerRun < 0 || recovery.RetryMinutes < 1 || recovery.RecheckTimeoutMinutes < 1 || recovery.SustainedFailureMinutes < 1 || recovery.HealthyResetMinutes < 1)
             return "Invalid error recovery policy.";
-        if (config.Orphans.ScanRoots == null || config.Orphans.MaxInspectedFilesPerRun < 1 || config.Hardlinks.MaxInspectedTorrentsPerRun < 1 || config.RecycleBin.MaxFilesDeletedPerRun < 0)
+        if (config.Orphans.ScanRoots == null || config.Orphans.MaxInspectedFilesPerRun < 1 || config.Hardlinks.MaxInspectedTorrentsPerRun < 1 || config.Hardlinks.MaxInspectedEntriesPerRun is < 1 or > 1000000 || config.RecycleBin.MaxFilesDeletedPerRun < 0)
             return "Invalid scan roots or inspection/deletion cap.";
         if (config.Orphans.ScanRoots.Any(root => !config.PathMappings.Any(m => m != null && m.LocalPath == root)))
             return "Each orphan scan root must match an explicit local path mapping.";
+        if (config.Hardlinks.LibraryRoots.Concat(config.Hardlinks.IgnoredRoots).Any(root =>
+            string.IsNullOrWhiteSpace(root) || !config.PathMappings.Any(mapping => mapping != null && mapping.LocalPath == root)))
+            return "Each hardlink library or ignored root must match an explicit local path mapping.";
+        if (config.Hardlinks.LibraryRoots.Count > 32 || config.Hardlinks.IgnoredRoots.Count > 32)
+            return "Hardlink audits support at most 32 library and ignored roots.";
         var roots = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (mapping, index) in config.PathMappings.Select((value, index) => (value, index)))
         {

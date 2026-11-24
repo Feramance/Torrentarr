@@ -36,6 +36,182 @@ public sealed class MaintenanceSafetyTests : IDisposable
     private TorrentClientInstanceConfig ClientConfig => _config.TorrentClients["one"];
 
     [Fact]
+    public async Task PendingImportRescue_BlocksNativeRemovalEvenAfterThePolicyIsDisabled()
+    {
+        var torrent = AddTorrent();
+        ClientConfig.Maintenance.RecycleBin.Enabled = false;
+        ClientConfig.CategorySeeding.HitAndRunMode = "disabled";
+        MaintenancePersistence.Write(_db, ImportRescueReceipt.Key(torrent), new ImportRescueReceipt
+        {
+            Stage = "pending",
+            AddedOn = torrent.AddedOn,
+            SubmittedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            Server = new string('A', 64),
+            OwnerCategory = "MOVIES",
+            MovieId = 10,
+            Path = "/downloads/movie.mkv",
+            ContentPath = torrent.ContentPath,
+            SavePath = torrent.SavePath
+        });
+        var result = await _deletion.RemoveTorrentAsync("one", torrent.Hash, true);
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("import.rescue");
+        _client.Verify(client => client.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ParkedTorrentRemainsProtectedAfterItsCategoryAndPolicyChange()
+    {
+        var torrent = AddTorrent();
+        ClientConfig.Maintenance.RecycleBin.Enabled = false;
+        ClientConfig.CategorySeeding.HitAndRunMode = "disabled";
+        torrent.Category = "parked";
+        var receipt = new FailedTorrentReceipt(torrent.AddedOn, "server", "client", "SOURCE", "source", "parked",
+            torrent.SavePath, torrent.ContentPath, "done", [7], false, false, []);
+        MaintenancePersistence.Write(_db, FailedTorrentReceipt.Key(torrent), receipt);
+        var result = await _deletion.RemoveTorrentAsync("one", torrent.Hash, true);
+        result.Success.Should().BeFalse();
+        result.Error.Should().Contain("torrent.failed-category");
+        _client.Verify(client => client.DeleteTorrentsAsync(It.IsAny<List<string>>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("parking")]
+    [InlineData("rescue")]
+    public async Task CompletionCleanupHonorsDurableRetention(string? claim)
+    {
+        var torrent = AddTorrent();
+        torrent.State = "uploading";
+        ClientConfig.CategorySeeding.HitAndRunMode = "disabled";
+        _db.TorrentLibrary.Add(new() { Hash = torrent.Hash, QbitInstance = "one", Imported = true });
+        await _db.SaveChangesAsync();
+
+        if (claim == "parking")
+        {
+            MaintenancePersistence.Write(_db, FailedTorrentReceipt.Key(torrent),
+                new FailedTorrentReceipt(torrent.AddedOn, "server", "client", "MOVIES", "movies", "parked",
+                    torrent.SavePath, torrent.ContentPath, "moving", [7], false, false, []));
+        }
+        if (claim == "rescue")
+        {
+            MaintenancePersistence.Write(_db, ImportRescueReceipt.Key(torrent), new ImportRescueReceipt
+            {
+                Stage = "pending",
+                AddedOn = torrent.AddedOn,
+                SubmittedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                Server = new string('A', 64),
+                OwnerCategory = "MOVIES",
+                MovieId = 10,
+                Path = torrent.ContentPath,
+                ContentPath = torrent.ContentPath,
+                SavePath = torrent.SavePath
+            });
+        }
+
+        var result = await _seeding.RemoveCompletedTorrentsAsync("movies");
+
+        result.Errors.Should().BeEmpty();
+        result.TorrentsRemoved.Should().Be(claim == null ? 1 : 0);
+        result.TorrentsProtected.Should().Be(claim == null ? 0 : 1);
+    }
+
+    [Fact]
+    public async Task RootHardlinkAudit_ApplySharesOneScanBudgetAcrossActions()
+    {
+        foreach (var hash in new[] { "first", "second" })
+        {
+            var torrent = AddTorrent(hash, hash + ".mkv"); torrent.Tags = "noHL";
+            MaintenancePersistence.Write(_db, MaintenancePersistence.Key("one", hash, "tag:NOHL"),
+                new TagOwnership { Owned = true, AddedOn = torrent.AddedOn });
+        }
+        ClientConfig.Maintenance.Hardlinks = new()
+        {
+            Enabled = true,
+            CountLinksInsideRoot = true,
+            RemoveClearedTag = true,
+            LibraryRoots = [_root],
+            MaxInspectedEntriesPerRun = 1
+        };
+        var inspector = new Mock<IHardlinkInspector>();
+        inspector.Setup(service => service.InspectLibraryRootsAsync(It.IsAny<IReadOnlyList<string>>(),
+            It.IsAny<IReadOnlyList<string>>(), It.IsAny<IReadOnlyList<string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> paths, IReadOnlyList<string> roots, IReadOnlyList<string> ignored,
+                int budget, CancellationToken ct) => new HardlinkRootInspection(paths.ToDictionary(path => path, _ => budget > 0 ? (bool?)true : null),
+                    budget > 0 ? "fixture coverage" : "scan budget exhausted", Math.Min(budget, 1)));
+        _client.Setup(client => client.RemoveTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        using var maintenance = new MaintenanceCoordinator(_config, _registry.Object, _inventory, new PathMappingService(),
+            inspector.Object, _deletion, NullLogger<MaintenanceCoordinator>.Instance, _services.GetRequiredService<IServiceScopeFactory>());
+        var plan = await maintenance.PreviewAsync(new() { ClientInstanceIds = ["one"], Operations = [MaintenanceOperation.HardlinkAudit] });
+        plan.Actions.Should().HaveCount(2);
+        var run = await maintenance.ApplyOnceAsync(plan.PlanId);
+        run.Applied.Should().Be(1);
+        run.Skipped.Should().Be(1);
+        inspector.Verify(service => service.InspectLibraryRootsAsync(It.IsAny<IReadOnlyList<string>>(),
+            It.IsAny<IReadOnlyList<string>>(), It.IsAny<IReadOnlyList<string>>(), 0, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(true, true, 1)]
+    [InlineData(false, true, 0)]
+    [InlineData(true, null, 0)]
+    public async Task RootHardlinkAudit_OnlyClearsOwnedTagsWithCompleteCoverage(bool owned, bool? linked, int expected)
+    {
+        var torrent = AddTorrent(); torrent.Tags = "noHL";
+        ClientConfig.Maintenance.Hardlinks = new()
+        {
+            Enabled = true,
+            CountLinksInsideRoot = true,
+            RemoveClearedTag = true,
+            LibraryRoots = [_root]
+        };
+        if (owned)
+            MaintenancePersistence.Write(_db, MaintenancePersistence.Key("one", torrent.Hash, "tag:NOHL"),
+                new TagOwnership { Owned = true, AddedOn = torrent.AddedOn });
+        var inspector = new Mock<IHardlinkInspector>();
+        inspector.Setup(service => service.InspectLibraryRootsAsync(It.IsAny<IReadOnlyList<string>>(),
+            It.IsAny<IReadOnlyList<string>>(), It.IsAny<IReadOnlyList<string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> paths, IReadOnlyList<string> roots, IReadOnlyList<string> ignored,
+                int budget, CancellationToken ct) => new HardlinkRootInspection(paths.ToDictionary(path => path, _ => linked), "fixture coverage", 1));
+        using var maintenance = new MaintenanceCoordinator(_config, _registry.Object, _inventory, new PathMappingService(),
+            inspector.Object, _deletion, NullLogger<MaintenanceCoordinator>.Instance, _services.GetRequiredService<IServiceScopeFactory>());
+        var plan = await maintenance.PreviewAsync(new() { ClientInstanceIds = ["one"], Operations = [MaintenanceOperation.HardlinkAudit] });
+        plan.Actions.Count(action => action.Kind == MaintenanceActionKind.RemoveTag && action.BlockedReason == null).Should().Be(expected);
+        plan.Actions.Should().OnlyContain(action => !action.Destructive);
+        if (expected == 1) plan.Actions.Single().Reason.Should().Contain("fixture coverage");
+        if (linked == null) plan.Diagnostics.Should().Contain(diagnostic => diagnostic.Message.Contains("fixture coverage"));
+    }
+
+    [Fact]
+    public async Task RootHardlinkAudit_RechecksCoverageBeforeClearingATag()
+    {
+        var torrent = AddTorrent(); torrent.Tags = "noHL";
+        ClientConfig.Maintenance.Hardlinks = new()
+        {
+            Enabled = true,
+            CountLinksInsideRoot = true,
+            RemoveClearedTag = true,
+            LibraryRoots = [_root]
+        };
+        MaintenancePersistence.Write(_db, MaintenancePersistence.Key("one", torrent.Hash, "tag:NOHL"),
+            new TagOwnership { Owned = true, AddedOn = torrent.AddedOn });
+        bool? linked = true;
+        var inspector = new Mock<IHardlinkInspector>();
+        inspector.Setup(service => service.InspectLibraryRootsAsync(It.IsAny<IReadOnlyList<string>>(),
+            It.IsAny<IReadOnlyList<string>>(), It.IsAny<IReadOnlyList<string>>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<string> paths, IReadOnlyList<string> roots, IReadOnlyList<string> ignored,
+                int budget, CancellationToken ct) => new HardlinkRootInspection(paths.ToDictionary(path => path, _ => linked), "fixture coverage", 1));
+        using var maintenance = new MaintenanceCoordinator(_config, _registry.Object, _inventory, new PathMappingService(),
+            inspector.Object, _deletion, NullLogger<MaintenanceCoordinator>.Instance, _services.GetRequiredService<IServiceScopeFactory>());
+        var plan = await maintenance.PreviewAsync(new() { ClientInstanceIds = ["one"], Operations = [MaintenanceOperation.HardlinkAudit] });
+        plan.Actions.Should().ContainSingle(action => action.Kind == MaintenanceActionKind.RemoveTag);
+        linked = null;
+        var run = await maintenance.ApplyOnceAsync(plan.PlanId);
+        run.Applied.Should().Be(0);
+        _client.Verify(client => client.RemoveTagsAsync(It.IsAny<List<string>>(), It.IsAny<List<string>>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task PreviewLogs_SanitizeUnknownClientNamesAndErrors()
     {
         var logger = new ActivityLogger<MaintenanceCoordinator>(Microsoft.Extensions.Logging.LogLevel.Debug);
@@ -73,6 +249,28 @@ public sealed class MaintenanceSafetyTests : IDisposable
         MaintenanceCoordinator.CanResolvePreviewIssue("maintenance.preview.orphan-prerequisite", "one", preview).Should().Be(resolved);
         preview.CriticalErrors.Add("Inspection unavailable");
         MaintenanceCoordinator.CanResolvePreviewIssue("maintenance.preview.orphan-prerequisite", "one", preview).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("blocked", 1, 0, false, true)]
+    [InlineData("partial", 1, 0, false, true)]
+    [InlineData("blocked", 0, 0, false, false)]
+    [InlineData("partial", 1, 1, false, false)]
+    [InlineData("blocked", 1, 0, true, false)]
+    public void MissingFileIssue_RecoversWhenInspectionSucceededDespiteBlockedActions(
+        string state, int blockedActions, int uninspectable, bool stillObserved, bool resolved)
+    {
+        var preview = new MaintenancePlan
+        {
+            OperationResults = [
+                new() { ClientInstanceId = "one", Operation = MaintenanceOperation.OrphanScan, State = "ready" },
+                new() { ClientInstanceId = "one", Operation = MaintenanceOperation.UnregisteredCleanup,
+                    State = state, BlockedActions = blockedActions, Uninspectable = uninspectable }
+            ]
+        };
+        if (stillObserved) preview.Diagnostics.Add(new() { ClientInstanceId = "one", Code = "missing-file" });
+
+        MaintenanceCoordinator.CanResolvePreviewIssue("maintenance.preview.missing-file", "one", preview).Should().Be(resolved);
     }
 
     public MaintenanceSafetyTests(ITestOutputHelper output)

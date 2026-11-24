@@ -47,7 +47,7 @@ public class QBittorrentConnectionManager : BackgroundService, ITorrentClientReg
     private readonly Dictionary<string, ConnectionSettings> _settings = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, AuthenticationFailure> _authenticationFailures = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _connectionErrors = new(StringComparer.OrdinalIgnoreCase);
-    private sealed record ConnectionSettings(string Type, string Host, int Port, string UserName, string Password, bool SkipTLSVerify);
+    private sealed record ConnectionSettings(string Type, string Host, int Port, string UserName, string Password, bool SkipTLSVerify, string AuthMode, string APIKey);
     private sealed record AuthenticationFailure(ConnectionSettings Settings, long Revision);
     private readonly ConcurrentDictionary<string, DateTime> _lastConnected = new(StringComparer.OrdinalIgnoreCase);
     private readonly IReadOnlyDictionary<string, ITorrentClientFactory> _factories;
@@ -111,7 +111,7 @@ public class QBittorrentConnectionManager : BackgroundService, ITorrentClientReg
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(5));
         var ct = timeout.Token;
-        var settings = new ConnectionSettings(config.Type, config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify);
+        var settings = new ConnectionSettings(config.Type, config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify, config.AuthMode, config.APIKey);
         var revision = _config?.Revision ?? 0;
         using var connectionScope = _logger.BeginScope(new Dictionary<string, object> { ["Operation"] = "ClientConnection", ["ClientInstance"] = name });
         _logger.LogDebug("Client connection reconciliation: type={Type}; endpoint={Host}:{Port}; disabled={Disabled}; revision={Revision}; probeBudget=5s", config.Type, DiagnosticText.Safe(config.Host), config.Port, config.Disabled, revision);
@@ -257,7 +257,7 @@ public class QBittorrentConnectionManager : BackgroundService, ITorrentClientReg
                 }
                 else
                 {
-                    var settings = new ConnectionSettings(config.Type, config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify);
+                    var settings = new ConnectionSettings(config.Type, config.Host, config.Port, config.UserName, config.Password, config.SkipTLSVerify, config.AuthMode, config.APIKey);
                     lock (_clientsLock)
                     {
                         var inactive = config.Disabled || config.Host == "CHANGE_ME";
